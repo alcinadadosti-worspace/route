@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { linkLigacao, linkWhatsApp, type GeoPonto } from '@rota/shared';
+import { linkLigacao, linkWhatsApp, type GeoPonto, type ResultadoEntrega } from '@rota/shared';
 import { Mapa } from './Mapa';
 import { Login } from './Login';
 import { useAutenticacao } from './useAutenticacao';
 import { useRotaDoDia } from './useRotaDoDia';
+import { registrarResultado } from './servicoEntrega';
 
 type Tema = 'galpao' | 'patio';
 
@@ -16,8 +17,10 @@ interface ParadaDemo {
   itens: number;
   volumes: number;
   pesoKg: number;
-  status: 'pendente' | 'entregue' | 'trilha';
+  status: 'pendente' | 'entregue' | 'trilha' | 'insucesso';
   observacao?: string;
+  /** Presente apenas nas paradas de rota real (não demo). */
+  pedidoId?: string;
 }
 
 const CD_DEMO = { nome: 'CD ARAPIRACA', lat: -9.7515, lng: -36.6612 };
@@ -67,13 +70,21 @@ const ICONE_STATUS: Record<ParadaDemo['status'], string> = {
   pendente: '●',
   entregue: '✔',
   trilha: '▲',
+  insucesso: '✖',
 };
 
 const TEXTO_STATUS: Record<ParadaDemo['status'], string> = {
   pendente: 'A entregar',
   entregue: 'Entregue',
   trilha: 'Mapear no local',
+  insucesso: 'Insucesso',
 };
+
+const MOTIVOS_INSUCESSO: Array<{ resultado: ResultadoEntrega; rotulo: string }> = [
+  { resultado: 'ausente', rotulo: 'Ausente' },
+  { resultado: 'nao_localizado', rotulo: 'Não localizado' },
+  { resultado: 'recusa', rotulo: 'Recusa' },
+];
 
 export function App() {
   const [tema, setTema] = useState<Tema>('galpao');
@@ -102,11 +113,26 @@ export function App() {
             itens: p.itens.length,
             volumes: p.volumes,
             pesoKg: p.pesoBrutoKg,
-            status: p.status === 'entregue' ? 'entregue' : 'pendente',
+            status:
+              p.status === 'entregue'
+                ? 'entregue'
+                : p.status === 'insucesso'
+                  ? 'insucesso'
+                  : 'pendente',
+            pedidoId: p.pedidoId,
           }))
         : PARADAS_DEMO,
     [rota],
   );
+  const [insucessoAberto, setInsucessoAberto] = useState<string | null>(null);
+
+  function resolver(pedidoId: string | undefined, resultado: ResultadoEntrega) {
+    if (!rota || !pedidoId) return;
+    const parada = rota.paradas.find((p) => p.pedidoId === pedidoId);
+    if (!parada) return;
+    registrarResultado(rota, parada, resultado);
+    setInsucessoAberto(null);
+  }
 
   const pontosMapa = useMemo(
     () =>
@@ -191,7 +217,7 @@ export function App() {
             {ICONE_STATUS[p.status]} {TEXTO_STATUS[p.status]}
           </span>
 
-          {p.status !== 'entregue' && (
+          {(p.status === 'pendente' || p.status === 'trilha') && (
             <div className="acoes">
               {p.telefone && (
                 <>
@@ -201,7 +227,30 @@ export function App() {
                   </a>
                 </>
               )}
-              {!rota && (
+              {rota ? (
+                <>
+                  <button className="confirmar" onClick={() => resolver(p.pedidoId, 'entregue')}>
+                    ✔ Confirmar entrega
+                  </button>
+                  <button
+                    className="insucesso-botao"
+                    onClick={() =>
+                      setInsucessoAberto(insucessoAberto === p.pedidoId ? null : (p.pedidoId ?? null))
+                    }
+                  >
+                    ✖ Registrar insucesso
+                  </button>
+                  {insucessoAberto === p.pedidoId && (
+                    <div className="motivos">
+                      {MOTIVOS_INSUCESSO.map((m) => (
+                        <button key={m.resultado} onClick={() => resolver(p.pedidoId, m.resultado)}>
+                          {m.rotulo}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
                 <button className="confirmar" onClick={() => navigator.vibrate?.(80)}>
                   ✔ Confirmar entrega
                 </button>

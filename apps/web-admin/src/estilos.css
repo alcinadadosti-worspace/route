@@ -278,6 +278,14 @@ td input[type='checkbox'] {
   margin: 16px 0;
 }
 
+.cabecalho-secao {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
 .sucesso {
   border: 1px solid var(--verde-maq);
   border-left-width: 6px;

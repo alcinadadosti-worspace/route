@@ -132,14 +132,14 @@ export interface Trilha {
   versao: number;
 }
 
-/** `entregas/{entregaId}` — seção 7.5. */
+/** `entregas/{entregaId}` — seção 7.5. Posição null quando o GPS falhar no toque. */
 export interface Entrega {
   pedidoId: string;
   rotaId: string;
   clienteId: string;
   resultado: ResultadoEntrega;
   confirmadaEm: string;
-  posicaoConfirmacao: GeoPonto;
+  posicaoConfirmacao: GeoPonto | null;
 }
 
 /** Doc `config/cds` — centros de distribuição de partida (seção 7.6). */

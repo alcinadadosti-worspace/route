@@ -7,13 +7,14 @@ export interface PontoMapa {
   ordem: number;
   cliente: string;
   coordenada: GeoPonto;
-  status: 'pendente' | 'entregue' | 'trilha';
+  status: 'pendente' | 'entregue' | 'trilha' | 'insucesso';
 }
 
 const COR_STATUS: Record<PontoMapa['status'], string> = {
   pendente: '#ffb020',
   entregue: '#2ea043',
   trilha: '#ff5f1f',
+  insucesso: '#d64545',
 };
 
 /**

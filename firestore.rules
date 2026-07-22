@@ -19,9 +19,16 @@ service cloud.firestore {
     }
 
     // Motorista lê apenas as próprias rotas; escritório lê todas.
+    // Em campo (RF-18), o dono da rota atualiza o status das paradas e a
+    // conclusão — nada além desses campos.
     match /rotas/{rotaId} {
       allow read: if escritorio() || (logado() && resource.data.motoristaId == request.auth.uid);
-      allow write: if false;
+      allow update: if logado()
+        && resource.data.motoristaId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['paradas', 'status', 'concluidaEm'])
+        && request.resource.data.status in ['em_execucao', 'concluida'];
+      allow create, delete: if false;
     }
 
     // Clientes: sem CPF em claro por desenho (hash + máscara); o motorista
@@ -31,10 +38,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Pedidos guardam os valores da nota: restritos ao escritório (seção 13).
+    // Pedidos guardam os valores da nota: leitura restrita ao escritório
+    // (seção 13). A confirmação em campo pode escrever SÓ o status — sem
+    // permissão de leitura, o motorista nunca vê o documento.
     match /pedidos/{pedidoId} {
       allow read: if escritorio();
-      allow write: if false;
+      allow update: if logado()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['entregue', 'insucesso'];
+      allow create, delete: if false;
     }
 
     match /usuarios/{uid} {
@@ -52,9 +64,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Registro de entrega/insucesso (seção 7.5): criado em campo, imutável.
     match /entregas/{entregaId} {
       allow read: if escritorio();
-      allow write: if false;
+      allow create: if logado()
+        && request.resource.data.keys().hasAll(
+             ['pedidoId', 'rotaId', 'clienteId', 'resultado', 'confirmadaEm'])
+        && request.resource.data.resultado in ['entregue', 'ausente', 'nao_localizado', 'recusa'];
+      allow update, delete: if false;
     }
   }
 }

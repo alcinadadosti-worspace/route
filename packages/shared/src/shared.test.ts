@@ -5,6 +5,8 @@ import { normalizarTelefone, linkWhatsApp } from './telefone.js';
 import { ehEnderecoRural } from './endereco.js';
 import { extrairPedidoELote } from './infcpl.js';
 import { decodificarPolyline } from './polyline.js';
+import { aplicarResultadoParada } from './execucao.js';
+import type { ParadaRota } from './tipos.js';
 import type { EnderecoFiscal } from './tipos.js';
 
 test('clienteId é determinístico e ignora formatação do documento', async () => {
@@ -72,6 +74,40 @@ test('decodifica encoded polyline (exemplo canônico do formato)', () => {
     { lat: 43.252, lng: -126.453 },
   ]);
   assert.deepEqual(decodificarPolyline(''), []);
+});
+
+function parada(pedidoId: string, status: ParadaRota['status']): ParadaRota {
+  return {
+    pedidoId,
+    clienteId: 'c',
+    nome: 'X',
+    endereco: 'Rua A, 1',
+    telefone: null,
+    itens: [],
+    volumes: 1,
+    pesoBrutoKg: 1,
+    coordenada: { lat: 0, lng: 0 },
+    etaMin: 10,
+    distanciaKm: 5,
+    status,
+  };
+}
+
+test('resultado de parada: primeira resolução deixa a rota em execução', () => {
+  const r = aplicarResultadoParada([parada('p1', 'em_rota'), parada('p2', 'em_rota')], 'p1', 'entregue');
+  assert.equal(r.statusRota, 'em_execucao');
+  assert.equal(r.paradas[0]!.status, 'entregue');
+  assert.equal(r.paradas[1]!.status, 'em_rota');
+});
+
+test('resultado de parada: todas resolvidas (mesmo com insucesso) concluem a rota', () => {
+  const r = aplicarResultadoParada(
+    [parada('p1', 'entregue'), parada('p2', 'em_rota')],
+    'p2',
+    'insucesso',
+  );
+  assert.equal(r.statusRota, 'concluida');
+  assert.equal(r.paradas[1]!.status, 'insucesso');
 });
 
 test('extração de pedido e lote tolera variações de formato', () => {

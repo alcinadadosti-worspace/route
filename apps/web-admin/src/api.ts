@@ -51,6 +51,12 @@ export async function listarUsuarios(): Promise<Array<{ id: string } & Usuario>>
   return resposta.json();
 }
 
+export async function listarRotas(): Promise<Array<{ id: string } & Rota>> {
+  const resposta = await fetch(`${BASE}/api/rotas`);
+  if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+  return resposta.json();
+}
+
 export async function publicarRota(entrada: {
   pedidoIds: string[];
   cdId: string;

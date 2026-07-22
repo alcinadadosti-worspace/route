@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { CentroDistribuicao, Pedido, PreviaRota, Usuario } from '@rota/shared';
-import { listarCds, listarPedidos, listarUsuarios, previaDeRota, publicarRota } from '../api';
+import type { CentroDistribuicao, Pedido, PreviaRota, Rota, Usuario } from '@rota/shared';
+import {
+  listarCds,
+  listarPedidos,
+  listarRotas,
+  listarUsuarios,
+  previaDeRota,
+  publicarRota,
+} from '../api';
 import { MapaRota } from '../MapaRota';
+
+const ROTULO_ROTA: Record<string, { texto: string; classe: string }> = {
+  rascunho: { texto: 'Rascunho', classe: '' },
+  publicada: { texto: 'Publicada', classe: 'pendente' },
+  em_execucao: { texto: 'Em execução', classe: 'pendente' },
+  concluida: { texto: 'Concluída', classe: 'pronto' },
+};
 
 /**
  * Montagem de rota (RF-11): o operador seleciona os pedidos prontos, escolhe
@@ -21,10 +35,11 @@ export function Rotas() {
   const [motoristaId, setMotoristaId] = useState('');
   const [publicando, setPublicando] = useState(false);
   const [publicada, setPublicada] = useState<string | null>(null);
+  const [rotas, setRotas] = useState<Array<{ id: string } & Rota>>([]);
 
   function carregar() {
-    Promise.all([listarPedidos(), listarCds(), listarUsuarios()])
-      .then(([ps, c, us]) => {
+    Promise.all([listarPedidos(), listarCds(), listarUsuarios(), listarRotas()])
+      .then(([ps, c, us, rs]) => {
         setPedidos(ps);
         setCds(c);
         setCdId((atual) => atual || (Object.keys(c)[0] ?? ''));
@@ -33,11 +48,14 @@ export function Rotas() {
         setMotoristaId(
           (atual) => atual || (ativos.find((u) => u.papel === 'motorista') ?? ativos[0])?.id || '',
         );
+        setRotas(rs);
       })
       .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao carregar'));
   }
 
   useEffect(carregar, []);
+
+  const nomeDoUsuario = (id: string) => usuarios.find((u) => u.id === id)?.nome ?? id.slice(0, 8);
 
   const prontos = useMemo(
     () => pedidos.filter((p) => p.status === 'pronto_para_rota'),
@@ -111,6 +129,51 @@ export function Rotas() {
 
   return (
     <>
+      <section className="cartao">
+        <div className="cabecalho-secao">
+          <h2>Acompanhamento do dia</h2>
+          <button onClick={carregar}>Atualizar</button>
+        </div>
+        {rotas.length === 0 && <div className="vazio">Nenhuma rota publicada ainda.</div>}
+        {rotas.length > 0 && (
+          <table>
+            <thead>
+              <tr>
+                <th>Rota</th>
+                <th>Motorista</th>
+                <th>Partida</th>
+                <th>Progresso</th>
+                <th>Insucessos</th>
+                <th>km</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rotas.map((r) => {
+                const entregues = r.paradas.filter((p) => p.status === 'entregue').length;
+                const insucessos = r.paradas.filter((p) => p.status === 'insucesso').length;
+                const s = ROTULO_ROTA[r.status] ?? { texto: r.status, classe: '' };
+                return (
+                  <tr key={r.id}>
+                    <td className="mono">{r.id}</td>
+                    <td>{nomeDoUsuario(r.motoristaId)}</td>
+                    <td>{r.origemNome}</td>
+                    <td className="mono">
+                      {entregues + insucessos}/{r.paradas.length}
+                    </td>
+                    <td className="mono">{insucessos || '—'}</td>
+                    <td className="mono">{r.distanciaTotalKm}</td>
+                    <td>
+                      <span className={`chip ${s.classe}`}>{s.texto}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
       <section className="cartao">
         <h2>Montagem de rota</h2>
 

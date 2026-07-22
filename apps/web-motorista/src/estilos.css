@@ -254,6 +254,11 @@
   color: var(--laranja-seg);
 }
 
+.estado.insucesso {
+  border-color: var(--vermelho-falha);
+  color: var(--vermelho-falha);
+}
+
 .acoes {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -286,6 +291,26 @@
   color: #121212;
   font-weight: 700;
   min-height: 56px;
+}
+
+.acoes .insucesso-botao {
+  grid-column: 1 / -1;
+  border-color: var(--vermelho-falha);
+  color: var(--vermelho-falha);
+}
+
+.acoes .motivos {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.acoes .motivos button {
+  border-color: var(--vermelho-falha);
+  color: var(--vermelho-falha);
+  font-size: 0.85rem;
+  padding: 0 8px;
 }
 
 .rodape {

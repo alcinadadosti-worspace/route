@@ -27,9 +27,11 @@ export function useRotaDoDia(uid: string | null) {
     return onSnapshot(
       consulta,
       (resposta) => {
+        // Inclui rotas concluídas: ao fim do dia o motorista continua vendo o
+        // resumo do que fez, em vez de a tela "esvaziar" na última entrega.
         const rotas = resposta.docs
           .map((d) => ({ id: d.id, ...(d.data() as Rota) }))
-          .filter((r) => r.status === 'publicada' || r.status === 'em_execucao')
+          .filter((r) => r.status !== 'rascunho')
           .sort((a, b) => (b.publicadaEm ?? '').localeCompare(a.publicadaEm ?? ''));
         setRota(rotas[0] ?? null);
         setCarregando(false);
