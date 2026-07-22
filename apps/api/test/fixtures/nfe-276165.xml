@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe>
+    <infNFe Id="NFe27260314750618000155550010002761651000070282" versao="4.00">
+      <ide>
+        <cUF>27</cUF>
+        <cNF>00007028</cNF>
+        <natOp>VENDA DE MERCADORIA</natOp>
+        <mod>55</mod>
+        <serie>1</serie>
+        <nNF>276165</nNF>
+        <dhEmi>2026-03-11T09:14:00-03:00</dhEmi>
+        <tpNF>1</tpNF>
+        <idDest>1</idDest>
+        <cMunFG>2704302</cMunFG>
+        <tpImp>1</tpImp>
+        <tpEmis>1</tpEmis>
+        <cDV>2</cDV>
+        <tpAmb>1</tpAmb>
+        <finNFe>1</finNFe>
+        <indFinal>1</indFinal>
+        <indPres>2</indPres>
+      </ide>
+      <emit>
+        <CNPJ>14750618000155</CNPJ>
+        <xNome>DISTRIBUIDORA EXEMPLO DE COSMETICOS LTDA</xNome>
+        <enderEmit>
+          <xLgr>AV EXEMPLO</xLgr>
+          <nro>1000</nro>
+          <xBairro>CENTRO</xBairro>
+          <cMun>2704302</cMun>
+          <xMun>MACEIO</xMun>
+          <UF>AL</UF>
+          <CEP>57020000</CEP>
+        </enderEmit>
+        <IE>241000000</IE>
+        <CRT>3</CRT>
+      </emit>
+      <dest>
+        <CPF>10000004782</CPF>
+        <xNome>MARIA JOSE DA SILVA</xNome>
+        <enderDest>
+          <xLgr>POVOADO BREJO DOS BOIS</xLgr>
+          <nro>83</nro>
+          <xCpl>PROX A PISCINA</xCpl>
+          <xBairro>ZONA RURAL</xBairro>
+          <cMun>2703908</cMun>
+          <xMun>JUNQUEIRO</xMun>
+          <UF>AL</UF>
+          <CEP>57270000</CEP>
+          <cPais>1058</cPais>
+          <xPais>BRASIL</xPais>
+          <fone>82999887766</fone>
+        </enderDest>
+        <indIEDest>9</indIEDest>
+        <email>maria.exemplo@gmail.com</email>
+      </dest>
+      <det nItem="1">
+        <prod><cProd>101001</cProd><xProd>COLONIA FLORAL 100ML</xProd><NCM>33030010</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>1.0000</qCom><vUnCom>129.9000</vUnCom><vProd>129.90</vProd></prod>
+      </det>
+      <det nItem="2">
+        <prod><cProd>101002</cProd><xProd>HIDRATANTE CORPORAL 400ML</xProd><NCM>33049990</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>54.9000</vUnCom><vProd>109.80</vProd></prod>
+      </det>
+      <det nItem="3">
+        <prod><cProd>101003</cProd><xProd>SABONETE EM BARRA CX 5UN</xProd><NCM>34011190</NCM><CFOP>5102</CFOP><uCom>CX</uCom><qCom>1.0000</qCom><vUnCom>32.5000</vUnCom><vProd>32.50</vProd></prod>
+      </det>
+      <det nItem="4">
+        <prod><cProd>101004</cProd><xProd>DESODORANTE ROLL-ON 75ML</xProd><NCM>33072010</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>3.0000</qCom><vUnCom>21.9000</vUnCom><vProd>65.70</vProd></prod>
+      </det>
+      <det nItem="5">
+        <prod><cProd>101005</cProd><xProd>SHAMPOO NUTRICAO 300ML</xProd><NCM>33051000</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>36.9000</vUnCom><vProd>73.80</vProd></prod>
+      </det>
+      <det nItem="6">
+        <prod><cProd>101006</cProd><xProd>CONDICIONADOR NUTRICAO 300ML</xProd><NCM>33059000</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>38.9000</vUnCom><vProd>77.80</vProd></prod>
+      </det>
+      <det nItem="7">
+        <prod><cProd>101007</cProd><xProd>BATOM MATTE VERMELHO</xProd><NCM>33041000</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>2.0000</qCom><vUnCom>29.9000</vUnCom><vProd>59.80</vProd></prod>
+      </det>
+      <det nItem="8">
+        <prod><cProd>101008</cProd><xProd>BASE LIQUIDA BEGE MEDIO</xProd><NCM>33049910</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>1.0000</qCom><vUnCom>79.9000</vUnCom><vProd>79.90</vProd></prod>
+      </det>
+      <det nItem="9">
+        <prod><cProd>101009</cProd><xProd>CREME PARA MAOS 75G</xProd><NCM>33049990</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>3.0000</qCom><vUnCom>18.5000</vUnCom><vProd>55.50</vProd></prod>
+      </det>
+      <det nItem="10">
+        <prod><cProd>101010</cProd><xProd>KIT PRESENTE PERFUMARIA</xProd><NCM>33030020</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>1.0000</qCom><vUnCom>75.9900</vUnCom><vProd>75.99</vProd></prod>
+      </det>
+      <total>
+        <ICMSTot>
+          <vBC>0.00</vBC>
+          <vICMS>0.00</vICMS>
+          <vProd>760.69</vProd>
+          <vFrete>0.00</vFrete>
+          <vDesc>0.00</vDesc>
+          <vNF>760.69</vNF>
+        </ICMSTot>
+      </total>
+      <transp>
+        <modFrete>0</modFrete>
+        <vol>
+          <qVol>1</qVol>
+          <pesoL>2.900</pesoL>
+          <pesoB>3.113</pesoB>
+        </vol>
+      </transp>
+      <infAdic>
+        <infCpl>*** PEDIDO: 499450697 *** LOTE: 47097393 *** ENTREGA AO DESTINATARIO ***</infCpl>
+      </infAdic>
+    </infNFe>
+  </NFe>
+  <protNFe versao="4.00">
+    <infProt>
+      <tpAmb>1</tpAmb>
+      <verAplic>SVRS20260301</verAplic>
+      <chNFe>27260314750618000155550010002761651000070282</chNFe>
+      <dhRecbto>2026-03-11T09:14:22-03:00</dhRecbto>
+      <nProt>127260000000001</nProt>
+      <digVal>abc123=</digVal>
+      <cStat>100</cStat>
+      <xMotivo>Autorizado o uso da NF-e</xMotivo>
+    </infProt>
+  </protNFe>
+</nfeProc>

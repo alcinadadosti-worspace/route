@@ -1,0 +1,199 @@
+/* Ergonomia de campo (seção 14.4): alvos >= 48px, ações críticas na metade
+   inferior, estados com cor E ícone — sol lava cor. */
+
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 12px 12px 96px;
+  min-height: 100dvh;
+}
+
+.topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--borda);
+  border-left: 6px solid var(--ambar);
+  background: var(--superficie);
+  border-radius: var(--raio);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.topo h1 {
+  font-family: var(--fonte-titulo);
+  font-size: 1.05rem;
+}
+
+.topo .dia {
+  font-family: var(--fonte-mono);
+  font-size: 0.8rem;
+  color: var(--texto-2);
+}
+
+.tema-botao {
+  min-width: var(--alvo-toque);
+  font-size: 0.85rem;
+  padding: 0 12px;
+}
+
+.faixa-demo {
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.75rem;
+  color: #121212;
+  background: var(--ambar);
+  border-radius: var(--raio);
+  padding: 6px 10px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.resumo {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.resumo .bloco {
+  border: 1px solid var(--borda);
+  background: var(--superficie);
+  border-radius: var(--raio);
+  padding: 10px;
+  text-align: center;
+}
+
+.resumo .num {
+  font-family: var(--fonte-mono);
+  font-size: 1.5rem;
+  color: var(--ambar);
+}
+
+.resumo .rot {
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: var(--texto-2);
+}
+
+.parada {
+  border: 1px solid var(--borda);
+  background: var(--superficie);
+  border-radius: var(--raio);
+  padding: 14px;
+  margin-bottom: 10px;
+}
+
+.parada .ordem {
+  font-family: var(--fonte-mono);
+  color: var(--ambar);
+  font-size: 0.85rem;
+}
+
+.parada h2 {
+  font-size: 1.1rem;
+  margin: 2px 0 4px;
+}
+
+.parada .endereco {
+  color: var(--texto-2);
+  font-size: 0.95rem;
+  margin-bottom: 4px;
+}
+
+.parada .carga {
+  font-family: var(--fonte-mono);
+  font-size: 0.8rem;
+  color: var(--texto-2);
+  margin-bottom: 10px;
+}
+
+.parada .obs {
+  border: 1px dashed var(--borda);
+  border-radius: var(--raio);
+  padding: 6px 10px;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+}
+
+.estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.78rem;
+  padding: 3px 8px;
+  border-radius: var(--raio);
+  border: 1px solid var(--borda);
+}
+
+.estado.pendente {
+  border-color: var(--ambar);
+  color: var(--ambar);
+}
+
+.estado.entregue {
+  border-color: var(--verde-maq);
+  color: var(--verde-maq);
+}
+
+.estado.trilha {
+  border-color: var(--laranja-seg);
+  color: var(--laranja-seg);
+}
+
+.acoes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.acoes a,
+.acoes button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--alvo-toque);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.acoes .confirmar {
+  grid-column: 1 / -1;
+  background: var(--laranja-seg);
+  border-color: var(--laranja-seg);
+  color: #121212;
+  font-weight: 700;
+  min-height: 56px;
+}
+
+.rodape {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--superficie);
+  border-top: 1px solid var(--borda);
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  text-align: center;
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  color: var(--texto-2);
+}

@@ -1,0 +1,102 @@
+/*
+ * Design system "industrial de verdade" — tokens da seção 14.2.
+ * Tema padrão: Galpão (escuro). O app do motorista adiciona o tema Pátio
+ * (claro de alto contraste) via [data-tema="patio"].
+ */
+:root {
+  --carvao: #1c1c1e;
+  --aco: #2e3033;
+  --borda: #4a4d52;
+  --ambar: #ffb020;
+  --laranja-seg: #ff5f1f;
+  --verde-maq: #2ea043;
+  --vermelho-falha: #d64545;
+  --texto: #ececec;
+  --texto-2: #9aa0a6;
+
+  --fundo: var(--carvao);
+  --superficie: var(--aco);
+
+  --raio: 3px;
+  --alvo-toque: 48px;
+
+  --fonte-titulo: 'Archivo Black', 'Barlow Condensed', sans-serif;
+  --fonte-caps: 'Barlow Condensed', sans-serif;
+  --fonte-corpo: 'Barlow', sans-serif;
+  --fonte-mono: 'JetBrains Mono', monospace;
+}
+
+/* Tema Pátio — claro de alto contraste para sol direto (seção 14.2). */
+[data-tema='patio'] {
+  --fundo: #e8e6e1;
+  --superficie: #f4f2ee;
+  --borda: #6b6e73;
+  --texto: #121212;
+  --texto-2: #4a4d52;
+  --verde-maq: #1e7a33;
+  --vermelho-falha: #b73232;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--fonte-corpo);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--fonte-caps);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+code,
+.mono {
+  font-family: var(--fonte-mono);
+}
+
+/* Hazard stripes — estados críticos (seção 14.1). */
+.hazard {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--ambar),
+    var(--ambar) 10px,
+    var(--carvao) 10px,
+    var(--carvao) 20px
+  );
+}
+
+button {
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 1rem;
+  min-height: var(--alvo-toque);
+  padding: 0 20px;
+  border-radius: var(--raio);
+  border: 1px solid var(--borda);
+  background: var(--superficie);
+  color: var(--texto);
+  cursor: pointer;
+}
+
+button.primaria {
+  background: var(--laranja-seg);
+  border-color: var(--laranja-seg);
+  color: #121212;
+  font-weight: 700;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--ambar);
+  outline-offset: 2px;
+}

@@ -1,0 +1,21 @@
+{
+  "name": "rota-grupo-alcina-maria",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Rota Grupo Alcina Maria — roteirização e navegação de entregas (PWA offline-first)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @rota/api",
+    "dev:admin": "npm run dev -w @rota/web-admin",
+    "dev:motorista": "npm run dev -w @rota/web-motorista",
+    "test": "npm run test -ws --if-present",
+    "typecheck": "npm run typecheck -ws --if-present",
+    "build": "npm run build -ws --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
