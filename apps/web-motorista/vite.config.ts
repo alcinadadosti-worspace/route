@@ -24,4 +24,7 @@ export default defineConfig({
     }),
   ],
   server: { port: 5174 },
+  // O worker do maplibre-gl não resolve dentro do cache do otimizador do Vite;
+  // servir o pacote direto corrige o carregamento em dev (o build não é afetado).
+  optimizeDeps: { exclude: ['maplibre-gl'] },
 });

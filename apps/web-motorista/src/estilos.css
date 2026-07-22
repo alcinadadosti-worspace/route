@@ -51,6 +51,24 @@
   text-align: center;
 }
 
+.mapa {
+  height: 300px;
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+
+.mapa-nota {
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.68rem;
+  color: var(--texto-2);
+  text-align: center;
+  margin-bottom: 12px;
+}
+
 .resumo {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

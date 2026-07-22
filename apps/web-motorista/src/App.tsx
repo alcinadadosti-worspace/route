@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { linkLigacao, linkWhatsApp } from '@rota/shared';
+import { linkLigacao, linkWhatsApp, type GeoPonto } from '@rota/shared';
+import { Mapa } from './Mapa';
 
 type Tema = 'galpao' | 'patio';
 
@@ -8,12 +9,15 @@ interface ParadaDemo {
   cliente: string;
   endereco: string;
   telefone: string;
+  coordenada: GeoPonto;
   itens: number;
   volumes: number;
   pesoKg: number;
   status: 'pendente' | 'entregue' | 'trilha';
   observacao?: string;
 }
+
+const CD_DEMO = { nome: 'CD ARAPIRACA', lat: -9.7515, lng: -36.6612 };
 
 /**
  * Dados de demonstração da Fase 0 — na Fase 3 esta tela passa a ler a rota
@@ -25,6 +29,7 @@ const PARADAS_DEMO: ParadaDemo[] = [
     cliente: 'MARIA JOSE DA SILVA',
     endereco: 'POVOADO BREJO DOS BOIS, 83 — ZONA RURAL, JUNQUEIRO/AL',
     telefone: '+5582999887766',
+    coordenada: { lat: -9.956, lng: -36.493 },
     itens: 10,
     volumes: 1,
     pesoKg: 3.113,
@@ -36,6 +41,7 @@ const PARADAS_DEMO: ParadaDemo[] = [
     cliente: 'JOSEFA OLIVEIRA SANTOS',
     endereco: 'RUA DO COMERCIO, 45 — CENTRO, JUNQUEIRO/AL',
     telefone: '+5582988776655',
+    coordenada: { lat: -9.925, lng: -36.477 },
     itens: 4,
     volumes: 1,
     pesoKg: 1.82,
@@ -46,6 +52,7 @@ const PARADAS_DEMO: ParadaDemo[] = [
     cliente: 'ANA LUCIA FERREIRA',
     endereco: 'AV PRINCIPAL, 210 — SAO SEBASTIAO/AL',
     telefone: '+5582977665544',
+    coordenada: { lat: -9.856, lng: -36.556 },
     itens: 7,
     volumes: 2,
     pesoKg: 4.6,
@@ -92,6 +99,19 @@ export function App() {
       </header>
 
       <div className="faixa-demo">Demonstração — rota real chega na Fase 3</div>
+
+      <Mapa
+        cd={CD_DEMO}
+        paradas={PARADAS_DEMO.map((p) => ({
+          ordem: p.ordem,
+          cliente: p.cliente,
+          coordenada: p.coordenada,
+          status: p.status,
+        }))}
+      />
+      <div className="mapa-nota">
+        Basemap online de demonstração — o mapa embarcado (offline) chega na Fase 5
+      </div>
 
       <div className="resumo">
         <div className="bloco">
