@@ -121,9 +121,10 @@ export interface Entrega {
   posicaoConfirmacao: GeoPonto;
 }
 
-/** `config/cds/{cdId}` — centros de distribuição de partida (seção 7.6). */
+/** Doc `config/cds` — centros de distribuição de partida (seção 7.6). */
 export interface CentroDistribuicao {
   nome: string;
+  endereco?: string;
   coordenada: GeoPonto;
 }
 

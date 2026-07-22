@@ -1,4 +1,4 @@
-import type { Cliente, Pedido } from '@rota/shared';
+import type { CentroDistribuicao, Cliente, Pedido } from '@rota/shared';
 
 /**
  * Camada de persistência da API.
@@ -13,6 +13,7 @@ export interface Repositorio {
   salvarPedido(chaveAcesso: string, pedido: Pedido): Promise<void>;
   listarClientes(): Promise<Array<{ id: string } & Cliente>>;
   listarPedidos(): Promise<Array<{ id: string } & Pedido>>;
+  obterCds(): Promise<Record<string, CentroDistribuicao>>;
 }
 
 export class RepositorioMemoria implements Repositorio {
@@ -42,4 +43,20 @@ export class RepositorioMemoria implements Repositorio {
   async listarPedidos(): Promise<Array<{ id: string } & Pedido>> {
     return [...this.pedidos].map(([id, p]) => ({ id, ...p }));
   }
+
+  async obterCds(): Promise<Record<string, CentroDistribuicao>> {
+    return this.cds;
+  }
+
+  /** Espelho local dos CDs reais (config/cds no Firestore) para dev/testes. */
+  cds: Record<string, CentroDistribuicao> = {
+    penedo: {
+      nome: 'CD Penedo',
+      coordenada: { lat: -10.2807606, lng: -36.5594998 },
+    },
+    palmeira: {
+      nome: 'CD Palmeira dos Índios',
+      coordenada: { lat: -9.4182497, lng: -36.6352813 },
+    },
+  };
 }

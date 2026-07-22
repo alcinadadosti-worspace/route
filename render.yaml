@@ -21,6 +21,17 @@ services:
       - key: NODE_VERSION
         value: "22"
 
+  # Roteirizador OSRM — extrato de Alagoas, usado apenas pela API.
+  # autoDeploy desligado: o rebuild (pesado) só deve rodar na atualização
+  # mensal do mapa, via Manual Deploy.
+  - type: web
+    name: rota-osrm
+    runtime: docker
+    plan: free
+    dockerfilePath: infra/osrm/Dockerfile
+    dockerContext: infra/osrm
+    autoDeploy: false
+
   # Painel do escritório (PWA estático)
   - type: web
     name: rota-admin
