@@ -1,0 +1,47 @@
+# Blueprint do Render — deploy por push (seção 15 da especificação).
+# No dashboard: New → Blueprint → conectar este repositório → Apply.
+#
+# Após o primeiro deploy, confira a URL real do serviço rota-api (o Render
+# acrescenta um sufixo se o nome já estiver em uso) e ajuste VITE_API_URL
+# do site rota-admin se necessário — o valor é lido no build.
+#
+# O serviço OSRM (private service) entra na Fase 2, junto com o job mensal
+# de build do extrato de Alagoas.
+
+services:
+  # API — parse de NF-e, importação, futura orquestração OSRM
+  - type: web
+    name: rota-api
+    runtime: node
+    plan: free # subir para starter quando entrar em operação (sem spin-down)
+    buildCommand: npm ci
+    startCommand: npm start -w @rota/api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+
+  # Painel do escritório (PWA estático)
+  - type: web
+    name: rota-admin
+    runtime: static
+    buildCommand: npm ci && npm run build -w @rota/web-admin
+    staticPublishPath: apps/web-admin/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://rota-api.onrender.com
+
+  # App do motorista (PWA estático)
+  - type: web
+    name: rota-motorista
+    runtime: static
+    buildCommand: npm ci && npm run build -w @rota/web-motorista
+    staticPublishPath: apps/web-motorista/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
