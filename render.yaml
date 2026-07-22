@@ -33,7 +33,7 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        value: https://rota-api.onrender.com
+        value: https://rota-api-npz8.onrender.com
 
   # App do motorista (PWA estático)
   - type: web
