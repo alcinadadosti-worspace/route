@@ -1,4 +1,4 @@
-import type { CentroDistribuicao, GeoPonto } from '@rota/shared';
+import type { ParadaPrevia, PreviaRota } from '@rota/shared';
 import type { Repositorio } from '../db/repositorio.js';
 import type { ClienteOsrm } from './osrm.js';
 
@@ -15,28 +15,8 @@ export interface EntradaPrevia {
   retornaAoCd?: boolean;
 }
 
-export interface ParadaPrevia {
-  posicao: number;
-  pedidoId: string;
-  clienteId: string;
-  nome: string;
-  endereco: string;
-  coordenada: GeoPonto;
-  volumes: number;
-  pesoBrutoKg: number;
-}
-
-export interface RespostaPrevia {
-  cd: { id: string } & CentroDistribuicao;
-  retornaAoCd: boolean;
-  paradas: ParadaPrevia[];
-  polyline: string;
-  distanciaTotalKm: number;
-  duracaoTotalMin: number;
-}
-
 export type ResultadoPrevia =
-  | { ok: true; previa: RespostaPrevia }
+  | { ok: true; previa: PreviaRota }
   | { ok: false; status: number; erro: string; pendentes?: Array<{ pedidoId: string; nome: string }> };
 
 export async function previaDeRota(

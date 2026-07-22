@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { Importacao } from './telas/Importacao';
 import { Pedidos } from './telas/Pedidos';
 import { Clientes } from './telas/Clientes';
+import { Rotas } from './telas/Rotas';
 import { Login } from './telas/Login';
 import { useAutenticacao } from './useAutenticacao';
 
-type Aba = 'importacao' | 'pedidos' | 'clientes';
+type Aba = 'importacao' | 'rotas' | 'pedidos' | 'clientes';
 
 const ABAS: Array<{ id: Aba; rotulo: string }> = [
   { id: 'importacao', rotulo: 'Importação' },
+  { id: 'rotas', rotulo: 'Rotas' },
   { id: 'pedidos', rotulo: 'Pedidos' },
   { id: 'clientes', rotulo: 'Clientes' },
 ];
@@ -52,6 +54,7 @@ export function App() {
       </nav>
 
       {aba === 'importacao' && <Importacao />}
+      {aba === 'rotas' && <Rotas />}
       {aba === 'pedidos' && <Pedidos />}
       {aba === 'clientes' && <Clientes />}
     </div>

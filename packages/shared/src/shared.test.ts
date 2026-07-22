@@ -4,6 +4,7 @@ import { clienteIdDeDocumento, mascararDocumento } from './documento.js';
 import { normalizarTelefone, linkWhatsApp } from './telefone.js';
 import { ehEnderecoRural } from './endereco.js';
 import { extrairPedidoELote } from './infcpl.js';
+import { decodificarPolyline } from './polyline.js';
 import type { EnderecoFiscal } from './tipos.js';
 
 test('clienteId é determinístico e ignora formatação do documento', async () => {
@@ -61,6 +62,16 @@ test('heurística rural: prefixos de logradouro', () => {
 
 test('endereço urbano plausível não é rural', () => {
   assert.equal(ehEnderecoRural(endereco({})), false);
+});
+
+test('decodifica encoded polyline (exemplo canônico do formato)', () => {
+  const pontos = decodificarPolyline('_p~iF~ps|U_ulLnnqC_mqNvxq`@');
+  assert.deepEqual(pontos, [
+    { lat: 38.5, lng: -120.2 },
+    { lat: 40.7, lng: -120.95 },
+    { lat: 43.252, lng: -126.453 },
+  ]);
+  assert.deepEqual(decodificarPolyline(''), []);
 });
 
 test('extração de pedido e lote tolera variações de formato', () => {

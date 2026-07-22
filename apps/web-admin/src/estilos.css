@@ -225,3 +225,71 @@ td {
   text-align: center;
   padding: 32px;
 }
+
+.config-rota {
+  display: flex;
+  gap: 24px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.config-rota fieldset {
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  display: flex;
+  gap: 16px;
+  padding: 10px 14px;
+}
+
+.config-rota legend {
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: var(--texto-2);
+  padding: 0 6px;
+}
+
+.opcao {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--alvo-toque);
+  cursor: pointer;
+}
+
+.opcao input,
+td input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--ambar);
+}
+
+.acoes-rota {
+  margin-top: 16px;
+}
+
+.mapa-rota {
+  height: 380px;
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  overflow: hidden;
+  margin: 16px 0;
+}
+
+.marcador-parada {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--laranja-seg);
+  border: 2px solid #121212;
+  color: #121212;
+  font-family: var(--fonte-mono);
+  font-weight: 700;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}

@@ -128,6 +128,28 @@ export interface CentroDistribuicao {
   coordenada: GeoPonto;
 }
 
+/** Parada da prévia de rota — contrato de `POST /api/rotas/previa` (RF-11). */
+export interface ParadaPrevia {
+  posicao: number;
+  pedidoId: string;
+  clienteId: string;
+  nome: string;
+  endereco: string;
+  coordenada: GeoPonto;
+  volumes: number;
+  pesoBrutoKg: number;
+}
+
+/** Prévia de rota otimizada — resposta de `POST /api/rotas/previa`. */
+export interface PreviaRota {
+  cd: { id: string } & CentroDistribuicao;
+  retornaAoCd: boolean;
+  paradas: ParadaPrevia[];
+  polyline: string;
+  distanciaTotalKm: number;
+  duracaoTotalMin: number;
+}
+
 /** Relatório de importação (RF-04) — contrato de `POST /api/importacoes`. */
 export interface RelatorioImportacao {
   total: number;
