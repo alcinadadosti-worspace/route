@@ -6,3 +6,7 @@ dev-dist/
 *.local
 .DS_Store
 Thumbs.db
+
+# Credenciais — NUNCA commitar
+*firebase-adminsdk*.json
+*service-account*.json
