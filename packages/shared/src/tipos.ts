@@ -135,6 +135,8 @@ export interface RelatorioImportacao {
   rejeitados: Array<{ arquivo: string; motivo: string }>;
   prontosParaRota: number;
   pendentesDeMapeamento: number;
+  /** Destinos urbanos resolvidos pela geocodificação automática (seção 9). */
+  geocodificados: number;
   /** Seção 8.3: endereço fiscal mudou em cliente já mapeado — o pin continua válido? */
   alertas: Array<{ clienteId: string; nome: string; mensagem: string }>;
 }

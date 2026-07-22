@@ -3,12 +3,14 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import { importarXmls, type ArquivoXml } from './importacao/servico.js';
 import type { Repositorio } from './db/repositorio.js';
+import type { Geocodificador } from './geocodificacao/google.js';
 
 export interface OpcoesApp {
   repo: Repositorio;
+  geocodificador?: Geocodificador | null;
 }
 
-export async function criarApp({ repo }: OpcoesApp): Promise<FastifyInstance> {
+export async function criarApp({ repo, geocodificador = null }: OpcoesApp): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
 
   await app.register(cors, { origin: true });
@@ -28,7 +30,7 @@ export async function criarApp({ repo }: OpcoesApp): Promise<FastifyInstance> {
     if (arquivos.length === 0) {
       return reply.code(400).send({ erro: 'Nenhum arquivo XML enviado' });
     }
-    return importarXmls(arquivos, repo);
+    return importarXmls(arquivos, repo, geocodificador);
   });
 
   app.get('/api/pedidos', async () => repo.listarPedidos());

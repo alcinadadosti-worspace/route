@@ -7,6 +7,7 @@ import {
 } from '@rota/shared';
 import { parseNfe, type NotaImportada } from '../nfe/parser.js';
 import type { Repositorio } from '../db/repositorio.js';
+import type { Geocodificador } from '../geocodificacao/google.js';
 
 /**
  * Fluxo 1 — Importação do dia (seção 3): valida cada XML, deduplica pela chave
@@ -24,6 +25,7 @@ export type { RelatorioImportacao };
 export async function importarXmls(
   arquivos: ArquivoXml[],
   repo: Repositorio,
+  geocodificador: Geocodificador | null = null,
 ): Promise<RelatorioImportacao> {
   const relatorio: RelatorioImportacao = {
     total: arquivos.length,
@@ -32,6 +34,7 @@ export async function importarXmls(
     rejeitados: [],
     prontosParaRota: 0,
     pendentesDeMapeamento: 0,
+    geocodificados: 0,
     alertas: [],
   };
 
@@ -50,7 +53,13 @@ export async function importarXmls(
     }
 
     const cliente = await upsertCliente(nota, repo, relatorio);
-    const status = statusInicial(cliente);
+    const status = await classificarDestino(
+      nota.destinatario.clienteId,
+      cliente,
+      repo,
+      geocodificador,
+      relatorio,
+    );
     if (status === 'pronto_para_rota') relatorio.prontosParaRota += 1;
     else relatorio.pendentesDeMapeamento += 1;
 
@@ -77,14 +86,35 @@ export async function importarXmls(
 }
 
 /**
- * Seção 9 — classificação de destino na importação:
- * 1. cliente já tem coordenada confirmada → pronto_para_rota;
- * 2. heurística rural → pendente_de_mapeamento (sem gastar geocodificação);
- * 3. urbano plausível → geocodificação automática (Fase 2; até lá, pendente).
+ * Seção 9 — classificação de destino na importação, nesta ordem:
+ * 1. match por cliente (coordenada já conhecida) → pronto_para_rota;
+ * 2. heurística rural → pendente_de_mapeamento, sem gastar geocodificação;
+ * 3. urbano plausível → Google Geocoding; resultado preciso e no município
+ *    esperado vira coordenada do cliente (`geocodificado`, confiança média —
+ *    o pin é confirmado na primeira entrega); impreciso → pendente;
+ * 4. sem geocodificador configurado → pendente (resolve-se no painel ou em campo).
  */
-function statusInicial(cliente: Cliente): StatusPedido {
+async function classificarDestino(
+  clienteId: string,
+  cliente: Cliente,
+  repo: Repositorio,
+  geocodificador: Geocodificador | null,
+  relatorio: RelatorioImportacao,
+): Promise<StatusPedido> {
   if (cliente.coordenada) return 'pronto_para_rota';
-  return 'pendente_de_mapeamento';
+  if (ehEnderecoRural(cliente.enderecoFiscal)) return 'pendente_de_mapeamento';
+  if (!geocodificador) return 'pendente_de_mapeamento';
+
+  const resultado = await geocodificador.geocodificar(cliente.enderecoFiscal).catch(() => null);
+  if (!resultado?.precisa) return 'pendente_de_mapeamento';
+
+  await repo.salvarCliente(clienteId, {
+    ...cliente,
+    coordenada: resultado.coordenada,
+    statusMapeamento: 'geocodificado',
+  });
+  relatorio.geocodificados += 1;
+  return 'pronto_para_rota';
 }
 
 /**

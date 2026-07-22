@@ -106,6 +106,72 @@ test('mudança de endereço fiscal em cliente mapeado gera alerta, não descarta
   assert.equal(cliente.enderecoFiscal.logradouro, 'POVOADO BREJO DOS BOIS');
 });
 
+function xmlUrbano(): string {
+  return xml
+    .replace('POVOADO BREJO DOS BOIS', 'RUA DO COMERCIO')
+    .replace('ZONA RURAL', 'CENTRO')
+    .replace('57270000', '57200010');
+}
+
+test('endereço urbano com geocodificação precisa vira pronto_para_rota', async () => {
+  const repo = new RepositorioMemoria();
+  let chamadas = 0;
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: xmlUrbano() }], repo, {
+    async geocodificar() {
+      chamadas += 1;
+      return { coordenada: { lat: -10.29, lng: -36.58 }, precisa: true };
+    },
+  });
+
+  assert.equal(chamadas, 1);
+  assert.equal(relatorio.geocodificados, 1);
+  assert.equal(relatorio.prontosParaRota, 1);
+  const cliente = (await repo.listarClientes())[0]!;
+  assert.equal(cliente.statusMapeamento, 'geocodificado');
+  assert.deepEqual(cliente.coordenada, { lat: -10.29, lng: -36.58 });
+  assert.equal((await repo.listarPedidos())[0]!.status, 'pronto_para_rota');
+});
+
+test('endereço rural NÃO consome geocodificação (curto-circuito da seção 9)', async () => {
+  const repo = new RepositorioMemoria();
+  let chamadas = 0;
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo, {
+    async geocodificar() {
+      chamadas += 1;
+      return { coordenada: { lat: 0, lng: 0 }, precisa: true };
+    },
+  });
+
+  assert.equal(chamadas, 0);
+  assert.equal(relatorio.geocodificados, 0);
+  assert.equal(relatorio.pendentesDeMapeamento, 1);
+});
+
+test('geocodificação imprecisa (nível cidade / fora do município) fica pendente', async () => {
+  const repo = new RepositorioMemoria();
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: xmlUrbano() }], repo, {
+    async geocodificar() {
+      return { coordenada: { lat: -10.3, lng: -36.6 }, precisa: false };
+    },
+  });
+
+  assert.equal(relatorio.geocodificados, 0);
+  assert.equal(relatorio.pendentesDeMapeamento, 1);
+  assert.equal((await repo.listarClientes())[0]!.coordenada, null);
+});
+
+test('erro do geocodificador não derruba a importação', async () => {
+  const repo = new RepositorioMemoria();
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: xmlUrbano() }], repo, {
+    async geocodificar() {
+      throw new Error('quota exceeded');
+    },
+  });
+
+  assert.equal(relatorio.importados, 1);
+  assert.equal(relatorio.pendentesDeMapeamento, 1);
+});
+
 test('rejeitados aparecem no relatório com o motivo', async () => {
   const repo = new RepositorioMemoria();
   const relatorio = await importarXmls(

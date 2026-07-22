@@ -70,6 +70,7 @@ export function Importacao() {
             <Metrica valor={relatorio.importados} rotulo="Importados" />
             <Metrica valor={relatorio.duplicados} rotulo="Duplicados" />
             <Metrica valor={relatorio.prontosParaRota} rotulo="Prontos p/ rota" />
+            <Metrica valor={relatorio.geocodificados} rotulo="Geocodificados" />
             <Metrica valor={relatorio.pendentesDeMapeamento} rotulo="Pendentes de mapeamento" />
             <Metrica valor={relatorio.rejeitados.length} rotulo="Rejeitados" />
           </div>
