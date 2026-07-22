@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { linkLigacao, linkWhatsApp, type GeoPonto } from '@rota/shared';
 import { Mapa } from './Mapa';
+import { Login } from './Login';
+import { useAutenticacao } from './useAutenticacao';
 
 type Tema = 'galpao' | 'patio';
 
@@ -74,6 +76,7 @@ const TEXTO_STATUS: Record<ParadaDemo['status'], string> = {
 
 export function App() {
   const [tema, setTema] = useState<Tema>('galpao');
+  const { usuario, carregando, entrar, sair } = useAutenticacao();
 
   // Alternância Galpão/Pátio em um toque no topo da tela (seção 14.2).
   useEffect(() => {
@@ -82,6 +85,14 @@ export function App() {
 
   const entregues = PARADAS_DEMO.filter((p) => p.status === 'entregue').length;
 
+  if (carregando) {
+    return <div className="tela-login"><div className="sub-login">CARREGANDO…</div></div>;
+  }
+
+  if (!usuario) {
+    return <Login entrar={entrar} />;
+  }
+
   return (
     <div className="app">
       <header className="topo">
@@ -89,13 +100,18 @@ export function App() {
           <h1>Rota do dia</h1>
           <div className="dia">TER 22/07 · CD ARAPIRACA</div>
         </div>
-        <button
-          className="tema-botao"
-          onClick={() => setTema(tema === 'galpao' ? 'patio' : 'galpao')}
-          aria-label="Alternar tema claro/escuro"
-        >
-          {tema === 'galpao' ? '☀ PÁTIO' : '● GALPÃO'}
-        </button>
+        <div className="topo-acoes">
+          <button
+            className="tema-botao"
+            onClick={() => setTema(tema === 'galpao' ? 'patio' : 'galpao')}
+            aria-label="Alternar tema claro/escuro"
+          >
+            {tema === 'galpao' ? '☀ PÁTIO' : '● GALPÃO'}
+          </button>
+          <button className="tema-botao" onClick={() => void sair()} aria-label="Sair da conta">
+            SAIR
+          </button>
+        </div>
       </header>
 
       <div className="faixa-demo">Demonstração — rota real chega na Fase 3</div>

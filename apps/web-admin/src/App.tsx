@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Importacao } from './telas/Importacao';
 import { Pedidos } from './telas/Pedidos';
 import { Clientes } from './telas/Clientes';
+import { Login } from './telas/Login';
+import { useAutenticacao } from './useAutenticacao';
 
 type Aba = 'importacao' | 'pedidos' | 'clientes';
 
@@ -13,6 +15,15 @@ const ABAS: Array<{ id: Aba; rotulo: string }> = [
 
 export function App() {
   const [aba, setAba] = useState<Aba>('importacao');
+  const { usuario, carregando, entrar, sair } = useAutenticacao();
+
+  if (carregando) {
+    return <div className="tela-login"><div className="sub">CARREGANDO…</div></div>;
+  }
+
+  if (!usuario) {
+    return <Login entrar={entrar} />;
+  }
 
   return (
     <div className="painel">
@@ -21,7 +32,10 @@ export function App() {
           <h1>Rota · Grupo Alcina Maria</h1>
           <div className="sub">Painel do escritório — importação e rotas</div>
         </div>
-        <div className="sub mono">v0.1 · Fase 1</div>
+        <div className="topo-direita">
+          <span className="sub mono">{usuario.email}</span>
+          <button onClick={() => void sair()}>Sair</button>
+        </div>
       </header>
 
       <nav className="abas" role="tablist">

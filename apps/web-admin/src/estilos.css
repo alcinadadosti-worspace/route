@@ -1,3 +1,68 @@
+.tela-login {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.cartao-login {
+  width: 100%;
+  max-width: 400px;
+  border: 1px solid var(--borda);
+  border-top: 6px solid var(--ambar);
+  background: var(--superficie);
+  border-radius: var(--raio);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cartao-login h1 {
+  font-family: var(--fonte-titulo);
+  font-size: 1.2rem;
+}
+
+.cartao-login label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  color: var(--texto-2);
+}
+
+.cartao-login input {
+  min-height: var(--alvo-toque);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--fonte-corpo);
+  font-size: 1rem;
+  padding: 0 12px;
+}
+
+.cartao-login input:focus-visible {
+  outline: 2px solid var(--ambar);
+  outline-offset: 1px;
+}
+
+.cartao-login .nota {
+  font-size: 0.85rem;
+  color: var(--texto-2);
+  text-align: center;
+}
+
+.topo-direita {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .painel {
   max-width: 1100px;
   margin: 0 auto;

@@ -38,6 +38,81 @@
   padding: 0 12px;
 }
 
+.topo-acoes {
+  display: flex;
+  gap: 8px;
+}
+
+.tela-login {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.cartao-login {
+  width: 100%;
+  max-width: 380px;
+  border: 1px solid var(--borda);
+  border-top: 6px solid var(--ambar);
+  background: var(--superficie);
+  border-radius: var(--raio);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cartao-login h1 {
+  font-family: var(--fonte-titulo);
+  font-size: 1.4rem;
+}
+
+.sub-login {
+  color: var(--texto-2);
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+}
+
+.cartao-login label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  color: var(--texto-2);
+}
+
+.cartao-login input {
+  min-height: var(--alvo-toque);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--fonte-corpo);
+  font-size: 1.05rem;
+  padding: 0 12px;
+}
+
+.cartao-login input:focus-visible {
+  outline: 2px solid var(--ambar);
+  outline-offset: 1px;
+}
+
+.erro-login {
+  border: 1px solid var(--vermelho-falha);
+  border-left-width: 6px;
+  border-radius: var(--raio);
+  padding: 10px 14px;
+  color: var(--vermelho-falha);
+  font-size: 0.95rem;
+}
+
 .faixa-demo {
   font-family: var(--fonte-caps);
   text-transform: uppercase;
