@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { CentroDistribuicao, Pedido, PreviaRota } from '@rota/shared';
-import { listarCds, listarPedidos, previaDeRota } from '../api';
+import type { CentroDistribuicao, Pedido, PreviaRota, Usuario } from '@rota/shared';
+import { listarCds, listarPedidos, listarUsuarios, previaDeRota, publicarRota } from '../api';
 import { MapaRota } from '../MapaRota';
 
 /**
@@ -17,16 +17,27 @@ export function Rotas() {
   const [previa, setPrevia] = useState<PreviaRota | null>(null);
   const [otimizando, setOtimizando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [usuarios, setUsuarios] = useState<Array<{ id: string } & Usuario>>([]);
+  const [motoristaId, setMotoristaId] = useState('');
+  const [publicando, setPublicando] = useState(false);
+  const [publicada, setPublicada] = useState<string | null>(null);
 
-  useEffect(() => {
-    Promise.all([listarPedidos(), listarCds()])
-      .then(([ps, c]) => {
+  function carregar() {
+    Promise.all([listarPedidos(), listarCds(), listarUsuarios()])
+      .then(([ps, c, us]) => {
         setPedidos(ps);
         setCds(c);
-        setCdId(Object.keys(c)[0] ?? '');
+        setCdId((atual) => atual || (Object.keys(c)[0] ?? ''));
+        const ativos = us.filter((u) => u.ativo);
+        setUsuarios(ativos);
+        setMotoristaId(
+          (atual) => atual || (ativos.find((u) => u.papel === 'motorista') ?? ativos[0])?.id || '',
+        );
       })
       .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao carregar'));
-  }, []);
+  }
+
+  useEffect(carregar, []);
 
   const prontos = useMemo(
     () => pedidos.filter((p) => p.status === 'pronto_para_rota'),
@@ -48,12 +59,53 @@ export function Rotas() {
   async function otimizar() {
     setOtimizando(true);
     setErro(null);
+    setPublicada(null);
     try {
       setPrevia(await previaDeRota({ pedidoIds: [...selecionados], cdId, retornaAoCd }));
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha na otimização');
     } finally {
       setOtimizando(false);
+    }
+  }
+
+  // RF-12: o operador ajusta a ordem; o traçado é recalculado com a sequência fixa.
+  async function mover(indice: number, delta: number) {
+    if (!previa) return;
+    const ids = previa.paradas.map((p) => p.pedidoId);
+    const destino = indice + delta;
+    if (destino < 0 || destino >= ids.length) return;
+    [ids[indice], ids[destino]] = [ids[destino]!, ids[indice]!];
+    setOtimizando(true);
+    setErro(null);
+    try {
+      setPrevia(await previaDeRota({ pedidoIds: ids, cdId, retornaAoCd, ordemManual: true }));
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha ao reordenar');
+    } finally {
+      setOtimizando(false);
+    }
+  }
+
+  async function publicar() {
+    if (!previa || !motoristaId) return;
+    setPublicando(true);
+    setErro(null);
+    try {
+      const resultado = await publicarRota({
+        pedidoIds: previa.paradas.map((p) => p.pedidoId),
+        cdId,
+        retornaAoCd,
+        motoristaId,
+      });
+      setPublicada(resultado.rotaId);
+      setPrevia(null);
+      setSelecionados(new Set());
+      carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha na publicação');
+    } finally {
+      setPublicando(false);
     }
   }
 
@@ -151,6 +203,12 @@ export function Rotas() {
         </div>
 
         {erro && <div className="erro">{erro}</div>}
+        {publicada && (
+          <div className="sucesso">
+            Rota <span className="mono">{publicada}</span> publicada — já visível no app do
+            motorista.
+          </div>
+        )}
       </section>
 
       {previa && (
@@ -186,10 +244,11 @@ export function Rotas() {
                 <th>Cliente</th>
                 <th>Endereço</th>
                 <th>Vol · Peso</th>
+                <th>Ordem</th>
               </tr>
             </thead>
             <tbody>
-              {previa.paradas.map((p) => (
+              {previa.paradas.map((p, i) => (
                 <tr key={p.pedidoId}>
                   <td className="mono">{String(p.posicao).padStart(2, '0')}</td>
                   <td>{p.nome}</td>
@@ -197,10 +256,48 @@ export function Rotas() {
                   <td>
                     {p.volumes} vol · {p.pesoBrutoKg.toFixed(3)} kg
                   </td>
+                  <td>
+                    <div className="reordenar">
+                      <button
+                        aria-label={`Subir ${p.nome}`}
+                        disabled={i === 0 || otimizando}
+                        onClick={() => void mover(i, -1)}
+                      >
+                        ▲
+                      </button>
+                      <button
+                        aria-label={`Descer ${p.nome}`}
+                        disabled={i === previa.paradas.length - 1 || otimizando}
+                        onClick={() => void mover(i, 1)}
+                      >
+                        ▼
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+
+          <div className="publicacao">
+            <label className="opcao">
+              Motorista:
+              <select value={motoristaId} onChange={(e) => setMotoristaId(e.target.value)}>
+                {usuarios.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nome} ({u.papel})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="primaria"
+              disabled={publicando || !motoristaId}
+              onClick={() => void publicar()}
+            >
+              {publicando ? 'PUBLICANDO…' : 'PUBLICAR ROTA'}
+            </button>
+          </div>
         </section>
       )}
     </>

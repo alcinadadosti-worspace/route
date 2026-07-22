@@ -113,6 +113,19 @@
   font-size: 0.95rem;
 }
 
+.faixa-rota {
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.75rem;
+  color: #fff;
+  background: var(--verde-maq);
+  border-radius: var(--raio);
+  padding: 6px 10px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
 .faixa-demo {
   font-family: var(--fonte-caps);
   text-transform: uppercase;

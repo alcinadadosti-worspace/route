@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import { importarXmls, type ArquivoXml } from './importacao/servico.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
+import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
 import type { Repositorio } from './db/repositorio.js';
 import type { Geocodificador } from './geocodificacao/google.js';
 import type { ClienteOsrm } from './rotas/osrm.js';
@@ -45,6 +46,24 @@ export async function criarApp({
   app.get('/api/clientes', async () => repo.listarClientes());
 
   app.get('/api/cds', async () => repo.obterCds());
+
+  app.get('/api/usuarios', async () => repo.listarUsuarios());
+
+  app.get('/api/rotas', async () => repo.listarRotas());
+
+  // RF-13: publicação da rota na ordem final, movendo os pedidos para em_rota.
+  app.post('/api/rotas', async (req, reply) => {
+    if (!osrm) {
+      return reply.code(503).send({ erro: 'Roteirizador indisponível (OSRM_URL não configurada)' });
+    }
+    const resultado = await publicarRota(req.body as EntradaPublicacao, repo, osrm);
+    if (!resultado.ok) {
+      return reply
+        .code(resultado.status)
+        .send({ erro: resultado.erro, pendentes: resultado.pendentes });
+    }
+    return { rotaId: resultado.rotaId, rota: resultado.rota };
+  });
 
   // RF-11: prévia de rota — ordem otimizada, traçado e estimativas via OSRM.
   app.post('/api/rotas/previa', async (req, reply) => {

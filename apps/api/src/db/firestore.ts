@@ -1,6 +1,6 @@
 import { initializeApp, cert, applicationDefault, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
-import type { CentroDistribuicao, Cliente, Pedido } from '@rota/shared';
+import type { CentroDistribuicao, Cliente, Pedido, Rota, Usuario } from '@rota/shared';
 import type { Repositorio } from './repositorio.js';
 
 /**
@@ -69,5 +69,19 @@ class RepositorioFirestore implements Repositorio {
   async obterCds(): Promise<Record<string, CentroDistribuicao>> {
     const doc = await this.db.collection('config').doc('cds').get();
     return (doc.data() as Record<string, CentroDistribuicao>) ?? {};
+  }
+
+  async listarUsuarios(): Promise<Array<{ id: string } & Usuario>> {
+    const resposta = await this.db.collection('usuarios').get();
+    return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Usuario) }));
+  }
+
+  async salvarRota(rotaId: string, rota: Rota): Promise<void> {
+    await this.db.collection('rotas').doc(rotaId).set(rota);
+  }
+
+  async listarRotas(): Promise<Array<{ id: string } & Rota>> {
+    const resposta = await this.db.collection('rotas').orderBy('publicadaEm', 'desc').get();
+    return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Rota) }));
   }
 }

@@ -278,6 +278,48 @@ td input[type='checkbox'] {
   margin: 16px 0;
 }
 
+.sucesso {
+  border: 1px solid var(--verde-maq);
+  border-left-width: 6px;
+  border-radius: var(--raio);
+  padding: 10px 14px;
+  margin-top: 10px;
+  color: var(--verde-maq);
+}
+
+.reordenar {
+  display: flex;
+  gap: 4px;
+}
+
+.reordenar button {
+  min-height: 36px;
+  min-width: 36px;
+  padding: 0;
+  font-size: 0.8rem;
+}
+
+.publicacao {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  border-top: 1px solid var(--borda);
+  padding-top: 16px;
+}
+
+.publicacao select {
+  min-height: var(--alvo-toque);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--fonte-corpo);
+  font-size: 1rem;
+  padding: 0 12px;
+}
+
 .marcador-parada {
   width: 28px;
   height: 28px;

@@ -4,6 +4,8 @@ import type {
   Pedido,
   PreviaRota,
   RelatorioImportacao,
+  Rota,
+  Usuario,
 } from '@rota/shared';
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
@@ -38,18 +40,38 @@ export async function previaDeRota(entrada: {
   pedidoIds: string[];
   cdId: string;
   retornaAoCd: boolean;
+  ordemManual?: boolean;
 }): Promise<PreviaRota> {
-  const resposta = await fetch(`${BASE}/api/rotas/previa`, {
+  return post(`${BASE}/api/rotas/previa`, entrada);
+}
+
+export async function listarUsuarios(): Promise<Array<{ id: string } & Usuario>> {
+  const resposta = await fetch(`${BASE}/api/usuarios`);
+  if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+  return resposta.json();
+}
+
+export async function publicarRota(entrada: {
+  pedidoIds: string[];
+  cdId: string;
+  retornaAoCd: boolean;
+  motoristaId: string;
+}): Promise<{ rotaId: string; rota: Rota }> {
+  return post(`${BASE}/api/rotas`, entrada);
+}
+
+async function post<T>(url: string, corpo: unknown): Promise<T> {
+  const resposta = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(entrada),
+    body: JSON.stringify(corpo),
   });
-  const corpo = await resposta.json();
+  const dados = await resposta.json();
   if (!resposta.ok) {
-    const pendentes = corpo?.pendentes?.length
-      ? ` — pendentes: ${corpo.pendentes.map((p: { nome: string }) => p.nome).join(', ')}`
+    const pendentes = dados?.pendentes?.length
+      ? ` — pendentes: ${dados.pendentes.map((p: { nome: string }) => p.nome).join(', ')}`
       : '';
-    throw new Error(`${corpo?.erro ?? `HTTP ${resposta.status}`}${pendentes}`);
+    throw new Error(`${dados?.erro ?? `HTTP ${resposta.status}`}${pendentes}`);
   }
-  return corpo;
+  return dados;
 }

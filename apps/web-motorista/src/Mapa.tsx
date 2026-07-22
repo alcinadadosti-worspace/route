@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { LngLatBounds, Map as MapaLibre, Marker, Popup } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { GeoPonto } from '@rota/shared';
+import { decodificarPolyline, type GeoPonto } from '@rota/shared';
 
 export interface PontoMapa {
   ordem: number;
@@ -21,16 +21,28 @@ const COR_STATUS: Record<PontoMapa['status'], string> = {
  * embarcado (PMTiles em OPFS, seção 12 camada 3) substitui esta fonte na Fase 5
  * sem mudar o componente: MapLibre é o mesmo, troca-se apenas o source.
  */
-export function Mapa({ cd, paradas }: { cd: GeoPonto & { nome: string }; paradas: PontoMapa[] }) {
+export function Mapa({
+  cd,
+  paradas,
+  polyline,
+}: {
+  cd: GeoPonto & { nome: string };
+  paradas: PontoMapa[];
+  /** Traçado planejado (encoded polyline). Sem ele, liga os pontos em linha reta. */
+  polyline?: string;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const coordenadas: Array<[number, number]> = [
-      [cd.lng, cd.lat],
-      ...paradas.map((p): [number, number] => [p.coordenada.lng, p.coordenada.lat]),
-    ];
+    const tracado = polyline ? decodificarPolyline(polyline) : null;
+    const coordenadas: Array<[number, number]> = tracado
+      ? tracado.map((p): [number, number] => [p.lng, p.lat])
+      : [
+          [cd.lng, cd.lat],
+          ...paradas.map((p): [number, number] => [p.coordenada.lng, p.coordenada.lat]),
+        ];
     const limites = coordenadas.reduce(
       (b, c) => b.extend(c),
       new LngLatBounds(coordenadas[0], coordenadas[0]),
@@ -67,7 +79,9 @@ export function Mapa({ cd, paradas }: { cd: GeoPonto & { nome: string }; paradas
         id: 'tracado',
         type: 'line',
         source: 'tracado',
-        paint: { 'line-color': '#ff5f1f', 'line-width': 4, 'line-dasharray': [2, 1.5] },
+        paint: tracado
+          ? { 'line-color': '#ff5f1f', 'line-width': 4 }
+          : { 'line-color': '#ff5f1f', 'line-width': 4, 'line-dasharray': [2, 1.5] },
       });
     });
 
@@ -88,9 +102,7 @@ export function Mapa({ cd, paradas }: { cd: GeoPonto & { nome: string }; paradas
     }
 
     return () => mapa.remove();
-    // Dados demo são estáticos; o mapa é criado uma vez.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cd, paradas, polyline]);
 
   return <div ref={containerRef} className="mapa" />;
 }

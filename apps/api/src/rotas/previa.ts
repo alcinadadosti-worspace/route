@@ -1,11 +1,11 @@
-import type { ParadaPrevia, PreviaRota } from '@rota/shared';
+import type { ItemPedido, GeoPonto, ParadaPrevia, PreviaRota } from '@rota/shared';
 import type { Repositorio } from '../db/repositorio.js';
 import type { ClienteOsrm } from './osrm.js';
 
 /**
- * Prévia de rota (RF-11): seleção de pedidos + CD de partida → ordem otimizada
- * das paradas via OSRM /trip, traçado e estimativas. É o insumo da montagem no
- * painel; a publicação (RF-13) grava a rota e dispara a pré-carga do motorista.
+ * Prévia de rota (RF-11/RF-12): seleção de pedidos + CD de partida → ordem das
+ * paradas (otimizada via /trip, ou fixa via /route quando o operador ajustou
+ * manualmente), traçado e estimativas. A publicação (RF-13) usa a mesma coleta.
  */
 
 export interface EntradaPrevia {
@@ -13,11 +13,78 @@ export interface EntradaPrevia {
   cdId: string;
   /** Retorno ao CD de origem por padrão (seção 18, decisão 1). */
   retornaAoCd?: boolean;
+  /** true = respeitar a ordem de pedidoIds (ajuste manual do operador, RF-12). */
+  ordemManual?: boolean;
 }
 
-export type ResultadoPrevia =
-  | { ok: true; previa: PreviaRota }
-  | { ok: false; status: number; erro: string; pendentes?: Array<{ pedidoId: string; nome: string }> };
+/** Parada candidata com tudo que a publicação denormaliza (seção 13). */
+export interface CandidataParada {
+  pedidoId: string;
+  clienteId: string;
+  nome: string;
+  endereco: string;
+  telefone: string | null;
+  itens: ItemPedido[];
+  volumes: number;
+  pesoBrutoKg: number;
+  coordenada: GeoPonto;
+}
+
+export type FalhaColeta = {
+  ok: false;
+  status: number;
+  erro: string;
+  pendentes?: Array<{ pedidoId: string; nome: string }>;
+};
+
+export type ResultadoPrevia = { ok: true; previa: PreviaRota } | FalhaColeta;
+
+export async function coletarParadas(
+  pedidoIds: string[],
+  repo: Repositorio,
+): Promise<{ ok: true; candidatas: CandidataParada[] } | FalhaColeta> {
+  const candidatas: CandidataParada[] = [];
+  const pendentes: Array<{ pedidoId: string; nome: string }> = [];
+
+  for (const pedidoId of pedidoIds) {
+    const pedido = await repo.obterPedido(pedidoId);
+    if (!pedido) return { ok: false, status: 404, erro: `Pedido ${pedidoId} não encontrado` };
+
+    const cliente = await repo.obterCliente(pedido.clienteId);
+    if (!cliente) {
+      return { ok: false, status: 404, erro: `Cliente do pedido ${pedidoId} não encontrado` };
+    }
+
+    if (!cliente.coordenada) {
+      pendentes.push({ pedidoId, nome: cliente.nome });
+      continue;
+    }
+
+    const e = cliente.enderecoFiscal;
+    candidatas.push({
+      pedidoId,
+      clienteId: pedido.clienteId,
+      nome: cliente.nome,
+      endereco: `${e.logradouro}, ${e.numero} — ${e.bairro}, ${e.municipio}/${e.uf}`,
+      telefone: cliente.telefone,
+      itens: pedido.itens,
+      volumes: pedido.volumes,
+      pesoBrutoKg: pedido.pesoBrutoKg,
+      coordenada: cliente.coordenada,
+    });
+  }
+
+  if (pendentes.length > 0) {
+    return {
+      ok: false,
+      status: 422,
+      erro: 'Há pedidos com destino sem coordenada — resolva o mapeamento antes de montar a rota',
+      pendentes,
+    };
+  }
+
+  return { ok: true, candidatas };
+}
 
 export async function previaDeRota(
   entrada: EntradaPrevia,
@@ -35,51 +102,45 @@ export async function previaDeRota(
   }
   const retornaAoCd = entrada.retornaAoCd ?? true;
 
-  const candidatas: Array<Omit<ParadaPrevia, 'posicao'>> = [];
-  const pendentes: Array<{ pedidoId: string; nome: string }> = [];
+  const coleta = await coletarParadas(entrada.pedidoIds, repo);
+  if (!coleta.ok) return coleta;
+  const candidatas = coleta.candidatas;
 
-  for (const pedidoId of entrada.pedidoIds) {
-    const pedido = await repo.obterPedido(pedidoId);
-    if (!pedido) return { ok: false, status: 404, erro: `Pedido ${pedidoId} não encontrado` };
+  let ordenadas: CandidataParada[];
+  let polyline: string;
+  let distanciaTotalKm: number;
+  let duracaoTotalMin: number;
 
-    const cliente = await repo.obterCliente(pedido.clienteId);
-    if (!cliente) return { ok: false, status: 404, erro: `Cliente do pedido ${pedidoId} não encontrado` };
-
-    if (!cliente.coordenada) {
-      pendentes.push({ pedidoId, nome: cliente.nome });
-      continue;
-    }
-
-    const e = cliente.enderecoFiscal;
-    candidatas.push({
-      pedidoId,
-      clienteId: pedido.clienteId,
-      nome: cliente.nome,
-      endereco: `${e.logradouro}, ${e.numero} — ${e.bairro}, ${e.municipio}/${e.uf}`,
-      coordenada: cliente.coordenada,
-      volumes: pedido.volumes,
-      pesoBrutoKg: pedido.pesoBrutoKg,
-    });
+  if (entrada.ordemManual) {
+    // RF-12: o operador conhece restrições que o algoritmo não conhece.
+    const pontos = [cd.coordenada, ...candidatas.map((c) => c.coordenada)];
+    if (retornaAoCd) pontos.push(cd.coordenada);
+    const resultado = await osrm.route(pontos);
+    ordenadas = candidatas;
+    polyline = resultado.polyline;
+    distanciaTotalKm = resultado.distanciaKm;
+    duracaoTotalMin = resultado.duracaoMin;
+  } else {
+    const resultado = await osrm.trip(
+      cd.coordenada,
+      candidatas.map((c) => c.coordenada),
+      retornaAoCd,
+    );
+    ordenadas = resultado.ordem.map((indice) => candidatas[indice]!);
+    polyline = resultado.polyline;
+    distanciaTotalKm = resultado.distanciaKm;
+    duracaoTotalMin = resultado.duracaoMin;
   }
 
-  if (pendentes.length > 0) {
-    return {
-      ok: false,
-      status: 422,
-      erro: 'Há pedidos com destino sem coordenada — resolva o mapeamento antes de montar a rota',
-      pendentes,
-    };
-  }
-
-  const resultado = await osrm.trip(
-    cd.coordenada,
-    candidatas.map((p) => p.coordenada),
-    retornaAoCd,
-  );
-
-  const paradas: ParadaPrevia[] = resultado.ordem.map((indice, posicao) => ({
-    posicao: posicao + 1,
-    ...candidatas[indice]!,
+  const paradas: ParadaPrevia[] = ordenadas.map((c, i) => ({
+    posicao: i + 1,
+    pedidoId: c.pedidoId,
+    clienteId: c.clienteId,
+    nome: c.nome,
+    endereco: c.endereco,
+    coordenada: c.coordenada,
+    volumes: c.volumes,
+    pesoBrutoKg: c.pesoBrutoKg,
   }));
 
   return {
@@ -88,9 +149,9 @@ export async function previaDeRota(
       cd: { id: entrada.cdId, ...cd },
       retornaAoCd,
       paradas,
-      polyline: resultado.polyline,
-      distanciaTotalKm: resultado.distanciaKm,
-      duracaoTotalMin: resultado.duracaoMin,
+      polyline,
+      distanciaTotalKm,
+      duracaoTotalMin,
     },
   };
 }

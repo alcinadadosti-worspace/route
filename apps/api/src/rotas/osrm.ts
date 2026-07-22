@@ -15,8 +15,18 @@ export interface ResultadoTrip {
   duracaoMin: number;
 }
 
+export interface ResultadoRoute {
+  polyline: string;
+  distanciaKm: number;
+  duracaoMin: number;
+  /** Uma perna por trecho entre pontos consecutivos, na ordem dada. */
+  pernas: Array<{ distanciaKm: number; duracaoMin: number }>;
+}
+
 export interface ClienteOsrm {
   trip(cd: GeoPonto, paradas: GeoPonto[], roundtrip: boolean): Promise<ResultadoTrip>;
+  /** `/route`: traçado e estimativas para uma sequência FIXA de pontos (RF-12/RF-13). */
+  route(pontos: GeoPonto[]): Promise<ResultadoRoute>;
 }
 
 export function criarClienteOsrm(
@@ -54,6 +64,29 @@ export function criarClienteOsrm(
         polyline: String(viagem.geometry ?? ''),
         distanciaKm: Math.round((viagem.distance / 1000) * 10) / 10,
         duracaoMin: Math.round(viagem.duration / 60),
+      };
+    },
+
+    async route(pontos) {
+      const coordenadas = pontos.map((p) => `${p.lng},${p.lat}`).join(';');
+      const url = `${raiz}/route/v1/driving/${coordenadas}?geometries=polyline&overview=full`;
+
+      const resposta = await fetchFn(url);
+      if (!resposta.ok) throw new Error(`OSRM respondeu HTTP ${resposta.status}`);
+      const corpo: any = await resposta.json();
+      const rota = corpo?.routes?.[0];
+      if (corpo?.code !== 'Ok' || !rota) {
+        throw new Error(`OSRM não encontrou rota (${corpo?.code ?? 'sem resposta'})`);
+      }
+
+      return {
+        polyline: String(rota.geometry ?? ''),
+        distanciaKm: Math.round((rota.distance / 1000) * 10) / 10,
+        duracaoMin: Math.round(rota.duration / 60),
+        pernas: (rota.legs ?? []).map((l: any) => ({
+          distanciaKm: Math.round((l.distance / 1000) * 10) / 10,
+          duracaoMin: Math.round(l.duration / 60),
+        })),
       };
     },
   };

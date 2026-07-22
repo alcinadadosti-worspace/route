@@ -74,9 +74,21 @@ export interface Pedido {
   xmlStoragePath: string | null;
 }
 
+/**
+ * Parada publicada. Denormaliza o que o motorista precisa para entregar
+ * (nome, endereço, contato, itens, volumes) — o app dele lê só `rotas` e
+ * `clientes`; a coleção `pedidos`, com os valores da nota, fica restrita ao
+ * escritório pelas security rules (seção 13).
+ */
 export interface ParadaRota {
   pedidoId: string;
   clienteId: string;
+  nome: string;
+  endereco: string;
+  telefone: string | null;
+  itens: ItemPedido[];
+  volumes: number;
+  pesoBrutoKg: number;
   coordenada: GeoPonto;
   etaMin: number;
   distanciaKm: number;
@@ -88,6 +100,8 @@ export interface Rota {
   data: string;
   motoristaId: string;
   origemCdId: string;
+  origemNome: string;
+  origemCoordenada: GeoPonto;
   retornaAoCd: boolean;
   paradas: ParadaRota[];
   polylinePlanejada: string;
@@ -96,6 +110,13 @@ export interface Rota {
   status: StatusRota;
   publicadaEm: string | null;
   concluidaEm: string | null;
+}
+
+/** `usuarios/{uid}` — espelho de perfil para listagens (seção 7.6). */
+export interface Usuario {
+  nome: string;
+  papel: Papel;
+  ativo: boolean;
 }
 
 /** `trilhas/{trilhaId}` — trecho fora da malha OSM (seção 7.4). */
