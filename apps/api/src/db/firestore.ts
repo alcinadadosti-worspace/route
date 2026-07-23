@@ -137,4 +137,22 @@ class RepositorioFirestore implements Repositorio {
     const resposta = await this.db.collection('trilhas').get();
     return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Trilha) }));
   }
+
+  async aplicarProcessamentoDeTrilha(dados: {
+    trilhaAnteriorId: string | null;
+    trilhaId: string;
+    trilha: Trilha;
+    clienteId: string;
+    trilhaBrutaId: string;
+    brutaCampos: Partial<TrilhaBruta>;
+  }): Promise<void> {
+    const lote = this.db.batch();
+    if (dados.trilhaAnteriorId) {
+      lote.update(this.db.collection('trilhas').doc(dados.trilhaAnteriorId), { ativa: false });
+    }
+    lote.set(this.db.collection('trilhas').doc(dados.trilhaId), dados.trilha);
+    lote.update(this.clientes.doc(dados.clienteId), { trilhaAtivaId: dados.trilhaId });
+    lote.update(this.db.collection('trilhasBrutas').doc(dados.trilhaBrutaId), dados.brutaCampos);
+    await lote.commit();
+  }
 }

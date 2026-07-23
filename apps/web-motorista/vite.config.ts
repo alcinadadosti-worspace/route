@@ -8,6 +8,21 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
+      workbox: {
+        // Fotos de referência (RF-21) vistas com rede ficam no cache do SW e
+        // aparecem offline — na zona rural sem sinal é onde mais importam.
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\/.*/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'fotos-referencia',
+              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 24 * 60 * 60 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
+      },
       manifest: {
         name: 'Rota Grupo Alcina Maria — Motorista',
         short_name: 'Rota',

@@ -39,12 +39,28 @@ service cloud.firestore {
     match /clientes/{clienteId} {
       allow read: if logado();
       allow update: if logado() && (
+        // Pin (RF-07): coordenada tem que ser lat/lng numéricos plausíveis —
+        // os limites de faixa também barram NaN (toda comparação com NaN é
+        // falsa). Coordenada corrompida quebraria a publicação de rotas.
         (request.resource.data.diff(resource.data).affectedKeys()
            .hasOnly(['coordenada', 'statusMapeamento', 'mapeadoPor', 'mapeadoEm'])
          && request.resource.data.statusMapeamento == 'mapeado'
-         && request.resource.data.mapeadoPor == request.auth.uid)
-        || request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['fotoReferenciaPath', 'observacoes'])
+         && request.resource.data.mapeadoPor == request.auth.uid
+         && request.resource.data.mapeadoEm is string
+         && request.resource.data.coordenada.lat is number
+         && request.resource.data.coordenada.lat >= -90
+         && request.resource.data.coordenada.lat <= 90
+         && request.resource.data.coordenada.lng is number
+         && request.resource.data.coordenada.lng >= -180
+         && request.resource.data.coordenada.lng <= 180)
+        // Dossiê (RF-21): texto curto e caminho de foto — com tipo e tamanho.
+        || (request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['fotoReferenciaPath', 'observacoes'])
+            && request.resource.data.observacoes is string
+            && request.resource.data.observacoes.size() < 2000
+            && (request.resource.data.fotoReferenciaPath == null
+                || (request.resource.data.fotoReferenciaPath is string
+                    && request.resource.data.fotoReferenciaPath.size() < 500)))
       );
       allow create, delete: if false;
     }
@@ -57,7 +73,14 @@ service cloud.firestore {
         && request.resource.data.gravadaPor == request.auth.uid
         && request.resource.data.status == 'pendente'
         && request.resource.data.keys().hasAll(
-             ['clienteId', 'pontos', 'gravadaPor', 'iniciadaEm', 'finalizadaEm', 'status']);
+             ['clienteId', 'pontos', 'gravadaPor', 'iniciadaEm', 'finalizadaEm', 'status'])
+        // Shape mínimo: rastro é lista com ≥2 pontos, para um cliente que
+        // existe. (Validar cada elemento não é viável em rules — o backend
+        // filtra ponto a ponto no pós-processamento.)
+        && request.resource.data.pontos is list
+        && request.resource.data.pontos.size() >= 2
+        && request.resource.data.clienteId is string
+        && exists(/databases/$(database)/documents/clientes/$(request.resource.data.clienteId));
       allow update, delete: if false;
     }
 

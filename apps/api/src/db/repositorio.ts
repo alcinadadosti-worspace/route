@@ -33,6 +33,20 @@ export interface Repositorio {
   atualizarTrilha(trilhaId: string, campos: Partial<Trilha>): Promise<void>;
   obterTrilhaAtiva(clienteId: string): Promise<({ id: string } & Trilha) | null>;
   listarTrilhas(): Promise<Array<{ id: string } & Trilha>>;
+  /**
+   * Resultado do pós-processamento numa escrita só (atômica no Firestore):
+   * desativa a trilha anterior, grava a nova, aponta o cliente para ela e
+   * marca a bruta como processada. Sem isso, um crash no meio deixaria
+   * trilha órfã ativa ou cliente apontando para trilha desativada.
+   */
+  aplicarProcessamentoDeTrilha(dados: {
+    trilhaAnteriorId: string | null;
+    trilhaId: string;
+    trilha: Trilha;
+    clienteId: string;
+    trilhaBrutaId: string;
+    brutaCampos: Partial<TrilhaBruta>;
+  }): Promise<void>;
 }
 
 export class RepositorioMemoria implements Repositorio {
@@ -122,6 +136,20 @@ export class RepositorioMemoria implements Repositorio {
 
   async listarTrilhas(): Promise<Array<{ id: string } & Trilha>> {
     return [...this.trilhas].map(([id, t]) => ({ id, ...t }));
+  }
+
+  async aplicarProcessamentoDeTrilha(dados: {
+    trilhaAnteriorId: string | null;
+    trilhaId: string;
+    trilha: Trilha;
+    clienteId: string;
+    trilhaBrutaId: string;
+    brutaCampos: Partial<TrilhaBruta>;
+  }): Promise<void> {
+    if (dados.trilhaAnteriorId) await this.atualizarTrilha(dados.trilhaAnteriorId, { ativa: false });
+    await this.salvarTrilha(dados.trilhaId, dados.trilha);
+    await this.atualizarCliente(dados.clienteId, { trilhaAtivaId: dados.trilhaId });
+    await this.atualizarTrilhaBruta(dados.trilhaBrutaId, dados.brutaCampos);
   }
 
   /** Espelho local dos CDs reais (config/cds no Firestore) para dev/testes. */

@@ -18,7 +18,11 @@ export function useRotaDoDia(uid: string | null) {
       setCarregando(false);
       return;
     }
-    const hoje = new Intl.DateTimeFormat('en-CA').format(new Date());
+    // Mesmo fuso da publicação (hojeEmAlagoas na API): aparelho com fuso
+    // trocado não pode "perder" a rota do dia.
+    const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Maceio' }).format(
+      new Date(),
+    );
     const consulta = query(
       collection(db, 'rotas'),
       where('motoristaId', '==', uid),

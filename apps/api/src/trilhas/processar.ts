@@ -74,11 +74,23 @@ async function processarUma(
 ): Promise<ItemProcessamento> {
   const parametros = PARAMETROS_TRILHA_PADRAO;
 
-  if (bruta.pontos.length < 2) {
-    return descartar(bruta, repo, 'gravação sem deslocamento suficiente');
+  // Ponto malformado não pode virar pílula envenenada: sem este filtro, um
+  // NaN chegaria ao /match, o erro deixaria a bruta pendente e ela seria
+  // retentada para sempre.
+  const pontos = (bruta.pontos ?? []).filter(
+    (p) => Number.isFinite(p?.lat) && Number.isFinite(p?.lng) && Number.isFinite(p?.precisaoM),
+  );
+  if (pontos.length < 2) {
+    return descartar(bruta, repo, 'gravação sem deslocamento suficiente (menos de 2 pontos válidos)');
   }
 
-  const simplificados = simplificarTrilha(bruta.pontos, parametros.toleranciaSimplificacaoM);
+  // Cliente inexistente descarta em vez de envenenar: o `update` do Firestore
+  // lançaria NOT_FOUND e a bruta ficaria pendente em retry eterno.
+  if (!(await repo.obterCliente(bruta.clienteId))) {
+    return descartar(bruta, repo, `cliente '${bruta.clienteId}' não existe`);
+  }
+
+  const simplificados = simplificarTrilha(pontos, parametros.toleranciaSimplificacaoM);
   const casamento = await osrm.match(simplificados);
 
   // O trecho órfão que interessa é o do FIM do rastro: do último ponto que a
@@ -94,9 +106,11 @@ async function processarUma(
   const trechoOrfao: GeoPonto[] = simplificados
     .slice(ultimoCasado + 1)
     .map((p) => ({ lat: p.lat, lng: p.lng }));
+  // Sem nenhum ponto casado, a entrada É o primeiro ponto do trecho —
+  // prefixá-lo de novo duplicaria o vértice inicial da polyline.
   const pontoEntrada: GeoPonto =
     ultimoCasado >= 0 ? casamento.pontos[ultimoCasado]! : { ...trechoOrfao[0]! };
-  const caminho = [pontoEntrada, ...trechoOrfao];
+  const caminho = ultimoCasado >= 0 ? [pontoEntrada, ...trechoOrfao] : trechoOrfao;
 
   let distanciaM = 0;
   for (let i = 1; i < caminho.length; i++) {
@@ -126,13 +140,17 @@ async function processarUma(
   };
   const trilhaId = randomUUID();
 
-  if (anterior) await repo.atualizarTrilha(anterior.id, { ativa: false });
-  await repo.salvarTrilha(trilhaId, trilha);
-  await repo.atualizarCliente(bruta.clienteId, { trilhaAtivaId: trilhaId });
-  await repo.atualizarTrilhaBruta(bruta.id, {
-    status: 'processada',
-    processadaEm: new Date().toISOString(),
-    trilhaGerada: trilhaId,
+  await repo.aplicarProcessamentoDeTrilha({
+    trilhaAnteriorId: anterior?.id ?? null,
+    trilhaId,
+    trilha,
+    clienteId: bruta.clienteId,
+    trilhaBrutaId: bruta.id,
+    brutaCampos: {
+      status: 'processada',
+      processadaEm: new Date().toISOString(),
+      trilhaGerada: trilhaId,
+    },
   });
 
   return {

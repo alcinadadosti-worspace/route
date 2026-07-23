@@ -14,13 +14,24 @@ export function DossieLocal({ cliente }: { cliente: { id: string } & Cliente }) 
   const [observacoes, setObservacoes] = useState(cliente.observacoes);
   const [fotoNaFila, setFotoNaFila] = useState(false);
 
+  const [erroFoto, setErroFoto] = useState(false);
+
   async function aoEscolherFoto(evento: ChangeEvent<HTMLInputElement>) {
     const arquivo = evento.target.files?.[0];
+    // Limpa o input: escolher o mesmo arquivo de novo deve disparar o change.
+    evento.target.value = '';
     if (!arquivo) return;
-    const reduzida = await redimensionarFoto(arquivo);
-    await enfileirarFoto(cliente.id, reduzida);
-    setFotoNaFila(true);
-    navigator.vibrate?.(80);
+    setErroFoto(false);
+    try {
+      const reduzida = await redimensionarFoto(arquivo);
+      await enfileirarFoto(cliente.id, reduzida);
+      setFotoNaFila(true);
+      navigator.vibrate?.(80);
+    } catch (erro) {
+      // Aparelho sem OPFS/canvas: melhor avisar do que perder a foto calado.
+      console.error('Falha ao guardar a foto', erro);
+      setErroFoto(true);
+    }
   }
 
   function salvarObservacoes() {
@@ -40,6 +51,9 @@ export function DossieLocal({ cliente }: { cliente: { id: string } & Cliente }) 
       )}
       {fotoNaFila && !cliente.fotoReferenciaPath && (
         <div className="dossie-fila">📷 Foto guardada — sobe quando houver rede</div>
+      )}
+      {erroFoto && (
+        <div className="dossie-fila">⚠ Não deu para guardar a foto neste aparelho — tente de novo</div>
       )}
       <label className="foto-botao">
         📷 {temFoto ? 'Trocar foto de referência' : 'Fotografar referência do local'}
@@ -61,19 +75,28 @@ export function DossieLocal({ cliente }: { cliente: { id: string } & Cliente }) 
   );
 }
 
-/** Miniatura da foto de referência — resolve a URL do Storage quando online. */
+/**
+ * Miniatura da foto de referência. A resolução da URL passa pelo service
+ * worker (cache do Storage), então funciona offline depois da primeira
+ * visualização; se falhar sem rede, tenta de novo quando ela voltar.
+ */
 export function FotoReferencia({ caminho, alt }: { caminho: string; alt: string }) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let ativo = true;
-    getDownloadURL(ref(storage, caminho))
-      .then((u) => {
-        if (ativo) setUrl(u);
-      })
-      .catch(() => {});
+    const resolver = () => {
+      getDownloadURL(ref(storage, caminho))
+        .then((u) => {
+          if (ativo) setUrl(u);
+        })
+        .catch(() => {});
+    };
+    resolver();
+    window.addEventListener('online', resolver);
     return () => {
       ativo = false;
+      window.removeEventListener('online', resolver);
     };
   }, [caminho]);
 

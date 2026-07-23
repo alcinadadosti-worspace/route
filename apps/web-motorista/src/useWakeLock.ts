@@ -14,6 +14,8 @@ export function useWakeLock(ativo: boolean): void {
     let cancelado = false;
 
     async function obter() {
+      // Lock ainda vigente: pedir outro por cima vazaria o anterior.
+      if (sentinela && !sentinela.released) return;
       try {
         sentinela = await navigator.wakeLock.request('screen');
         if (cancelado) await sentinela.release();

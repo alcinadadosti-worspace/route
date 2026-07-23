@@ -12,11 +12,15 @@ import type { LeituraGps } from './usePosicao';
  * celular intermediário não é lugar de algoritmo pesado.
  */
 export class GravadorTrilha {
+  /** ~60 km a 12 m/ponto — mantém o doc de trilha bruta longe do 1 MiB do Firestore. */
+  private static readonly MAXIMO_DE_PONTOS = 5000;
+
   private pontos: PontoTrilha[] = [];
   readonly iniciadaEm = new Date().toISOString();
 
   /** Aplica os filtros da seção 11.1; retorna true se a leitura foi gravada. */
   registrar(leitura: LeituraGps): boolean {
+    if (this.pontos.length >= GravadorTrilha.MAXIMO_DE_PONTOS) return false;
     if (leitura.precisaoM > PARAMETROS_TRILHA_PADRAO.precisaoMaximaM) return false;
     const anterior = this.pontos[this.pontos.length - 1];
     if (anterior && distanciaEmMetros(anterior, leitura) < PARAMETROS_TRILHA_PADRAO.distanciaMinimaM) {

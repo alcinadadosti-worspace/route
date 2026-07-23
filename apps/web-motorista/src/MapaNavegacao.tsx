@@ -34,6 +34,8 @@ export function MapaNavegacao({
   const marcadorPinRef = useRef<Marker | null>(null);
   const marcadorPosicaoRef = useRef<Marker | null>(null);
   const veiculoNoMapaRef = useRef(false);
+  /** Gesto do motorista pausa o follow — a câmera não pode brigar com o dedo. */
+  const seguirAPartirDeRef = useRef(0);
   const [pronto, setPronto] = useState(false);
 
   useEffect(() => {
@@ -88,6 +90,13 @@ export function MapaNavegacao({
     elementoVeiculo.className = 'veiculo-marcador';
     marcadorPosicaoRef.current = new Marker({ element: elementoVeiculo });
 
+    // `originalEvent` distingue gesto do usuário de movimento do easeTo.
+    const aoInteragir = (evento: { originalEvent?: unknown }) => {
+      if (evento.originalEvent) seguirAPartirDeRef.current = Date.now() + 10_000;
+    };
+    mapa.on('dragstart', aoInteragir);
+    mapa.on('zoomstart', aoInteragir);
+
     if (import.meta.env.DEV) {
       (window as unknown as { __mapaNavegacao?: unknown }).__mapaNavegacao = mapa;
     }
@@ -140,7 +149,7 @@ export function MapaNavegacao({
       marcador.addTo(mapa);
       veiculoNoMapaRef.current = true;
     }
-    if (!ajustandoPin) {
+    if (!ajustandoPin && Date.now() >= seguirAPartirDeRef.current) {
       mapa.easeTo({ center: [posicao.lng, posicao.lat], duration: 800 });
     }
   }, [posicao, ajustandoPin]);

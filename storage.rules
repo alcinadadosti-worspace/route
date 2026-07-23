@@ -7,7 +7,9 @@ rules_version = '2';
 // restrita a admin.
 service firebase.storage {
   match /b/{bucket}/o {
-    match /clientes/{clienteId}/{arquivo} {
+    // Nome fixo: uma foto de referência por cliente, sem espaço para lixo
+    // acumulando em nomes arbitrários.
+    match /clientes/{clienteId}/referencia.jpg {
       allow read: if request.auth != null;
       allow write: if request.auth != null
         && request.resource.size < 5 * 1024 * 1024

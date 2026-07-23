@@ -118,9 +118,12 @@ export function App() {
   }, [usuario]);
 
   // Rota publicada para o motorista logado; sem rota, dados de demonstração.
+  // Identidade presa ao id da rota: cada snapshot renova o objeto `rota`, e um
+  // `cd` novo a cada confirmação recriaria o mapa da visão geral.
   const cd = useMemo(
     () => (rota ? { nome: rota.origemNome, ...rota.origemCoordenada } : CD_DEMO),
-    [rota],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rota?.id],
   );
   const paradas: ParadaDemo[] = useMemo(
     () =>
@@ -158,11 +161,18 @@ export function App() {
   function resolver(pedidoId: string | undefined, resultado: ResultadoEntrega) {
     if (!rota || !pedidoId) return;
     const parada = rota.paradas.find((p) => p.pedidoId === pedidoId);
-    if (!parada) return;
+    // Parada já resolvida não gera segunda entrega (proteção contra toque duplo).
+    if (!parada || parada.status === 'entregue' || parada.status === 'insucesso') return;
     registrarResultado(rota, parada, resultado);
     setInsucessoAberto(null);
   }
 
+  // O componente Mapa recria o MapLibre quando as props mudam de identidade;
+  // os snapshots de dossiê renovam `paradas` a cada chegada, então os pontos
+  // só devem trocar de identidade quando algo visível no mapa mudar de fato.
+  const chavePontos = paradas
+    .map((p) => `${p.ordem}:${p.status}:${p.coordenada.lat},${p.coordenada.lng}`)
+    .join('|');
   const pontosMapa = useMemo(
     () =>
       paradas.map((p) => ({
@@ -171,7 +181,8 @@ export function App() {
         coordenada: p.coordenada,
         status: p.status,
       })),
-    [paradas],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [chavePontos],
   );
 
   const entregues = paradas.filter((p) => p.status === 'entregue').length;

@@ -59,7 +59,7 @@ export function Navegacao({
   const precisaMapear = cliente != null && cliente.statusMapeamento !== 'mapeado';
 
   useWakeLock(true);
-  const leitura = usePosicao(true);
+  const { leitura, erro: erroGps } = usePosicao(true);
   const bussola = useBussola();
 
   // Gravação (seção 11.1): automática quando falta o pin; manual no botão.
@@ -131,9 +131,14 @@ export function Navegacao({
   const [pinAjustado, setPinAjustado] = useState<GeoPonto | null>(null);
   const [pinConfirmado, setPinConfirmado] = useState(false);
   const ajustandoPin = chegou && precisaMapear && !pinConfirmado;
-  const pinNoMapa = ajustandoPin
-    ? (pinAjustado ?? (leitura ? { lat: leitura.lat, lng: leitura.lng } : pinDoCliente))
-    : pinDoCliente;
+  // Sugestão congelada na primeira leitura do ajuste — o marcador não pode
+  // ficar perseguindo o jitter do GPS enquanto o motorista mira o portão.
+  useEffect(() => {
+    if (ajustandoPin && !pinAjustado && leitura) {
+      setPinAjustado({ lat: leitura.lat, lng: leitura.lng });
+    }
+  }, [ajustandoPin, pinAjustado, leitura]);
+  const pinNoMapa = ajustandoPin ? (pinAjustado ?? pinDoCliente) : pinDoCliente;
 
   const [perguntaReaprendizado, setPerguntaReaprendizado] = useState(false);
   useEffect(() => {
@@ -163,6 +168,24 @@ export function Navegacao({
     aoFechar();
   }
 
+  // Fechar no meio de uma gravação descarta o rastro — nunca em silêncio.
+  function fechar() {
+    if (
+      gravando &&
+      pontosGravados > 0 &&
+      !window.confirm('A gravação do caminho será descartada. Fechar mesmo assim?')
+    ) {
+      return;
+    }
+    aoFechar();
+  }
+
+  // A seta gira sempre pelo arco curto: interpolar 359°→1° pelo caminho
+  // longo faria o ponteiro dar uma volta inteira a cada cruzamento do norte.
+  const anguloSetaRef = useRef(0);
+  const alvoSeta = rumoAoPin != null && rumoAparelho != null ? rumoAoPin - rumoAparelho : 0;
+  anguloSetaRef.current += ((((alvoSeta - anguloSetaRef.current) % 360) + 540) % 360) - 180;
+
   const rotuloModo = chegou
     ? 'VOCÊ CHEGOU'
     : modoTrilha
@@ -178,7 +201,7 @@ export function Navegacao({
           <div className="ordem">NAVEGANDO ATÉ</div>
           <h2>{parada.nome}</h2>
         </div>
-        <button className="tema-botao" onClick={aoFechar} aria-label="Voltar à lista">
+        <button className="tema-botao" onClick={fechar} aria-label="Voltar à lista">
           ✕ FECHAR
         </button>
       </header>
@@ -200,12 +223,11 @@ export function Navegacao({
       />
 
       <div className="nav-painel">
+        {erroGps && !leitura && <div className="nav-gps-erro">⚠ {erroGps}</div>}
         <div className="nav-direcao">
           <div
             className="nav-seta"
-            style={{
-              transform: `rotate(${rumoAoPin != null && rumoAparelho != null ? rumoAoPin - rumoAparelho : 0}deg)`,
-            }}
+            style={{ transform: `rotate(${anguloSetaRef.current}deg)` }}
             aria-hidden
           >
             ➤

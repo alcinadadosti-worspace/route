@@ -579,3 +579,15 @@
   font-weight: 700;
   cursor: pointer;
 }
+
+.nav-gps-erro {
+  background: var(--vermelho-falha);
+  color: #fff;
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 6px 10px;
+  border-radius: var(--raio);
+}

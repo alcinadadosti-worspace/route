@@ -4,7 +4,7 @@ import multipart from '@fastify/multipart';
 import { importarXmls, type ArquivoXml } from './importacao/servico.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
-import { processarTrilhasBrutas } from './trilhas/processar.js';
+import { processarTrilhasBrutas, type RelatorioProcessamento } from './trilhas/processar.js';
 import type { Repositorio } from './db/repositorio.js';
 import type { Geocodificador } from './geocodificacao/google.js';
 import type { ClienteOsrm } from './rotas/osrm.js';
@@ -71,11 +71,20 @@ export async function criarApp({
   // RF-08 (seção 11.2): pós-processa as trilhas brutas que o campo sincronizou.
   // Idempotente e barato quando não há pendências — o app do motorista chama
   // ao religar a rede e o painel pode chamar quando quiser.
+  //
+  // Chamadas simultâneas compartilham a MESMA execução: o evento `online` do
+  // app e o `.then` do sync da bruta disparam juntos, e duas execuções
+  // concorrentes processariam a mesma bruta duas vezes (duas trilhas ativas
+  // para o mesmo cliente). Vale para uma instância — o plano atual do Render.
+  let processamentoEmAndamento: Promise<RelatorioProcessamento> | null = null;
   app.post('/api/trilhas/processar', async (req, reply) => {
     if (!osrm) {
       return reply.code(503).send({ erro: 'Roteirizador indisponível (OSRM_URL não configurada)' });
     }
-    return processarTrilhasBrutas(repo, osrm);
+    processamentoEmAndamento ??= processarTrilhasBrutas(repo, osrm).finally(() => {
+      processamentoEmAndamento = null;
+    });
+    return processamentoEmAndamento;
   });
 
   // RF-11: prévia de rota — ordem otimizada, traçado e estimativas via OSRM.

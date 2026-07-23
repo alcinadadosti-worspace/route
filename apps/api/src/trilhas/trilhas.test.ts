@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Cliente, PontoTrilha, TrilhaBruta } from '@rota/shared';
+import { decodificarPolyline, type Cliente, type PontoTrilha, type TrilhaBruta } from '@rota/shared';
 import { criarClienteOsrm, type ClienteOsrm, type ResultadoMatch } from '../rotas/osrm.js';
 import { simplificarTrilha } from './simplificar.js';
 import { processarTrilhasBrutas } from './processar.js';
@@ -17,7 +17,17 @@ test('simplificação colapsa pontos colineares nos extremos', () => {
     ponto(-9.949, -36.49),
     ponto(-9.9485, -36.49),
   ];
-  assert.deepEqual(simplificarTrilha(reta, 10), [reta[0], reta[3]]);
+  assert.deepEqual(simplificarTrilha(reta, 10, Infinity), [reta[0], reta[3]]);
+});
+
+test('simplificação mantém espaçamento máximo para o /match casar retas longas', () => {
+  // Reta de ~890 m com pontos a ~55,6 m: o DP puro deixaria só os extremos e
+  // o OSRM não casaria; o espaçamento de 100 m preserva pontos intermediários.
+  const reta = Array.from({ length: 17 }, (_, i) => ponto(-9.95 + i * 0.0005, -36.49));
+  const resultado = simplificarTrilha(reta, 10);
+  assert.ok(resultado.length >= 8, `esperava ≥8 pontos, veio ${resultado.length}`);
+  assert.deepEqual(resultado[0], reta[0]);
+  assert.deepEqual(resultado[resultado.length - 1], reta[reta.length - 1]);
 });
 
 test('simplificação preserva curva acima da tolerância', () => {
@@ -240,6 +250,31 @@ test('gravação sem deslocamento é descartada sem chamar o OSRM', async () => 
 
   assert.equal(relatorio.descartadas, 1);
   assert.match(relatorio.itens[0]?.motivo ?? '', /deslocamento/);
+});
+
+test('rastro inteiro fora da malha vira trilha sem vértice duplicado no início', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('c1', clienteTeste());
+  await repo.salvarTrilhaBruta('b1', brutaTeste());
+
+  const relatorio = await processarTrilhasBrutas(repo, osrmQueCasa(0));
+
+  assert.equal(relatorio.criadas, 1);
+  const trilha = (await repo.listarTrilhas())[0]!;
+  assert.deepEqual(trilha.pontoEntrada, { lat: RASTRO[0]!.lat, lng: RASTRO[0]!.lng });
+  const decodificada = decodificarPolyline(trilha.polyline);
+  assert.equal(decodificada.length, RASTRO.length); // 6 vértices, sem duplicar o primeiro
+});
+
+test('bruta de cliente inexistente é descartada, não retentada para sempre', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarTrilhaBruta('b1', brutaTeste({ clienteId: 'fantasma' }));
+
+  const relatorio = await processarTrilhasBrutas(repo, osrmQueCasa(3));
+
+  assert.equal(relatorio.descartadas, 1);
+  assert.match(relatorio.itens[0]?.motivo ?? '', /não existe/);
+  assert.equal((await repo.listarTrilhasBrutasPendentes()).length, 0);
 });
 
 test('erro no OSRM deixa a bruta pendente para a próxima tentativa', async () => {
