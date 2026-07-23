@@ -1,6 +1,14 @@
 import { initializeApp, cert, applicationDefault, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
-import type { CentroDistribuicao, Cliente, Pedido, Rota, Usuario } from '@rota/shared';
+import type {
+  CentroDistribuicao,
+  Cliente,
+  Pedido,
+  Rota,
+  Trilha,
+  TrilhaBruta,
+  Usuario,
+} from '@rota/shared';
 import type { Repositorio } from './repositorio.js';
 
 /**
@@ -83,5 +91,50 @@ class RepositorioFirestore implements Repositorio {
   async listarRotas(): Promise<Array<{ id: string } & Rota>> {
     const resposta = await this.db.collection('rotas').orderBy('publicadaEm', 'desc').get();
     return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Rota) }));
+  }
+
+  async atualizarCliente(clienteId: string, campos: Partial<Cliente>): Promise<void> {
+    await this.clientes.doc(clienteId).update(campos);
+  }
+
+  async salvarTrilhaBruta(id: string, bruta: TrilhaBruta): Promise<void> {
+    await this.db.collection('trilhasBrutas').doc(id).set(bruta);
+  }
+
+  async listarTrilhasBrutasPendentes(): Promise<Array<{ id: string } & TrilhaBruta>> {
+    const resposta = await this.db
+      .collection('trilhasBrutas')
+      .where('status', '==', 'pendente')
+      .get();
+    return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as TrilhaBruta) }));
+  }
+
+  async atualizarTrilhaBruta(id: string, campos: Partial<TrilhaBruta>): Promise<void> {
+    await this.db.collection('trilhasBrutas').doc(id).update(campos);
+  }
+
+  async salvarTrilha(trilhaId: string, trilha: Trilha): Promise<void> {
+    await this.db.collection('trilhas').doc(trilhaId).set(trilha);
+  }
+
+  async atualizarTrilha(trilhaId: string, campos: Partial<Trilha>): Promise<void> {
+    await this.db.collection('trilhas').doc(trilhaId).update(campos);
+  }
+
+  async obterTrilhaAtiva(clienteId: string): Promise<({ id: string } & Trilha) | null> {
+    // Duas igualdades: atendida pelos índices automáticos de campo único.
+    const resposta = await this.db
+      .collection('trilhas')
+      .where('clienteId', '==', clienteId)
+      .where('ativa', '==', true)
+      .limit(1)
+      .get();
+    const doc = resposta.docs[0];
+    return doc ? { id: doc.id, ...(doc.data() as Trilha) } : null;
+  }
+
+  async listarTrilhas(): Promise<Array<{ id: string } & Trilha>> {
+    const resposta = await this.db.collection('trilhas').get();
+    return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Trilha) }));
   }
 }

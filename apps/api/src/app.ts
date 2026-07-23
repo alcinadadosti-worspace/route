@@ -4,6 +4,7 @@ import multipart from '@fastify/multipart';
 import { importarXmls, type ArquivoXml } from './importacao/servico.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
+import { processarTrilhasBrutas } from './trilhas/processar.js';
 import type { Repositorio } from './db/repositorio.js';
 import type { Geocodificador } from './geocodificacao/google.js';
 import type { ClienteOsrm } from './rotas/osrm.js';
@@ -63,6 +64,18 @@ export async function criarApp({
         .send({ erro: resultado.erro, pendentes: resultado.pendentes });
     }
     return { rotaId: resultado.rotaId, rota: resultado.rota };
+  });
+
+  app.get('/api/trilhas', async () => repo.listarTrilhas());
+
+  // RF-08 (seção 11.2): pós-processa as trilhas brutas que o campo sincronizou.
+  // Idempotente e barato quando não há pendências — o app do motorista chama
+  // ao religar a rede e o painel pode chamar quando quiser.
+  app.post('/api/trilhas/processar', async (req, reply) => {
+    if (!osrm) {
+      return reply.code(503).send({ erro: 'Roteirizador indisponível (OSRM_URL não configurada)' });
+    }
+    return processarTrilhasBrutas(repo, osrm);
   });
 
   // RF-11: prévia de rota — ordem otimizada, traçado e estimativas via OSRM.

@@ -132,6 +132,35 @@ export interface Trilha {
   versao: number;
 }
 
+/** Leitura de GPS aceita pelos filtros da gravação (seção 11.1). `t` em epoch ms. */
+export interface PontoTrilha {
+  lat: number;
+  lng: number;
+  precisaoM: number;
+  t: number;
+}
+
+export type StatusTrilhaBruta = 'pendente' | 'processada' | 'descartada';
+
+/**
+ * `trilhasBrutas/{id}` — rastro cru gravado em campo, na fila offline do
+ * Firestore até sincronizar; o backend pós-processa (seção 11.2) e o resultado
+ * vira um documento em `trilhas`. Nada é processado no aparelho.
+ */
+export interface TrilhaBruta {
+  clienteId: string;
+  rotaId: string | null;
+  pontos: PontoTrilha[];
+  gravadaPor: string;
+  iniciadaEm: string;
+  finalizadaEm: string;
+  status: StatusTrilhaBruta;
+  processadaEm: string | null;
+  motivoDescarte: string | null;
+  /** ID do doc em `trilhas` quando o processamento gera trilha. */
+  trilhaGerada: string | null;
+}
+
 /** `entregas/{entregaId}` — seção 7.5. Posição null quando o GPS falhar no toque. */
 export interface Entrega {
   pedidoId: string;

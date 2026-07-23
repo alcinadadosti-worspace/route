@@ -1,4 +1,12 @@
-import type { CentroDistribuicao, Cliente, Pedido, Rota, Usuario } from '@rota/shared';
+import type {
+  CentroDistribuicao,
+  Cliente,
+  Pedido,
+  Rota,
+  Trilha,
+  TrilhaBruta,
+  Usuario,
+} from '@rota/shared';
 
 /**
  * Camada de persistência da API.
@@ -17,6 +25,14 @@ export interface Repositorio {
   listarUsuarios(): Promise<Array<{ id: string } & Usuario>>;
   salvarRota(rotaId: string, rota: Rota): Promise<void>;
   listarRotas(): Promise<Array<{ id: string } & Rota>>;
+  atualizarCliente(clienteId: string, campos: Partial<Cliente>): Promise<void>;
+  salvarTrilhaBruta(id: string, bruta: TrilhaBruta): Promise<void>;
+  listarTrilhasBrutasPendentes(): Promise<Array<{ id: string } & TrilhaBruta>>;
+  atualizarTrilhaBruta(id: string, campos: Partial<TrilhaBruta>): Promise<void>;
+  salvarTrilha(trilhaId: string, trilha: Trilha): Promise<void>;
+  atualizarTrilha(trilhaId: string, campos: Partial<Trilha>): Promise<void>;
+  obterTrilhaAtiva(clienteId: string): Promise<({ id: string } & Trilha) | null>;
+  listarTrilhas(): Promise<Array<{ id: string } & Trilha>>;
 }
 
 export class RepositorioMemoria implements Repositorio {
@@ -63,6 +79,49 @@ export class RepositorioMemoria implements Repositorio {
 
   async listarRotas(): Promise<Array<{ id: string } & Rota>> {
     return [...this.rotas].map(([id, r]) => ({ id, ...r }));
+  }
+
+  private trilhasBrutas = new Map<string, TrilhaBruta>();
+  private trilhas = new Map<string, Trilha>();
+
+  async atualizarCliente(clienteId: string, campos: Partial<Cliente>): Promise<void> {
+    const atual = this.clientes.get(clienteId);
+    if (atual) this.clientes.set(clienteId, { ...atual, ...campos });
+  }
+
+  async salvarTrilhaBruta(id: string, bruta: TrilhaBruta): Promise<void> {
+    this.trilhasBrutas.set(id, bruta);
+  }
+
+  async listarTrilhasBrutasPendentes(): Promise<Array<{ id: string } & TrilhaBruta>> {
+    return [...this.trilhasBrutas]
+      .filter(([, b]) => b.status === 'pendente')
+      .map(([id, b]) => ({ id, ...b }));
+  }
+
+  async atualizarTrilhaBruta(id: string, campos: Partial<TrilhaBruta>): Promise<void> {
+    const atual = this.trilhasBrutas.get(id);
+    if (atual) this.trilhasBrutas.set(id, { ...atual, ...campos });
+  }
+
+  async salvarTrilha(trilhaId: string, trilha: Trilha): Promise<void> {
+    this.trilhas.set(trilhaId, trilha);
+  }
+
+  async atualizarTrilha(trilhaId: string, campos: Partial<Trilha>): Promise<void> {
+    const atual = this.trilhas.get(trilhaId);
+    if (atual) this.trilhas.set(trilhaId, { ...atual, ...campos });
+  }
+
+  async obterTrilhaAtiva(clienteId: string): Promise<({ id: string } & Trilha) | null> {
+    for (const [id, t] of this.trilhas) {
+      if (t.clienteId === clienteId && t.ativa) return { id, ...t };
+    }
+    return null;
+  }
+
+  async listarTrilhas(): Promise<Array<{ id: string } & Trilha>> {
+    return [...this.trilhas].map(([id, t]) => ({ id, ...t }));
   }
 
   /** Espelho local dos CDs reais (config/cds no Firestore) para dev/testes. */

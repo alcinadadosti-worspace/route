@@ -4,7 +4,8 @@ import { clienteIdDeDocumento, mascararDocumento } from './documento.js';
 import { normalizarTelefone, linkWhatsApp } from './telefone.js';
 import { ehEnderecoRural } from './endereco.js';
 import { extrairPedidoELote } from './infcpl.js';
-import { decodificarPolyline } from './polyline.js';
+import { codificarPolyline, decodificarPolyline } from './polyline.js';
+import { distanciaEmMetros, rumoEmGraus } from './geo.js';
 import { aplicarResultadoParada } from './execucao.js';
 import type { ParadaRota } from './tipos.js';
 import type { EnderecoFiscal } from './tipos.js';
@@ -74,6 +75,39 @@ test('decodifica encoded polyline (exemplo canônico do formato)', () => {
     { lat: 43.252, lng: -126.453 },
   ]);
   assert.deepEqual(decodificarPolyline(''), []);
+});
+
+test('codifica encoded polyline (inverso do exemplo canônico)', () => {
+  const pontos = [
+    { lat: 38.5, lng: -120.2 },
+    { lat: 40.7, lng: -120.95 },
+    { lat: 43.252, lng: -126.453 },
+  ];
+  assert.equal(codificarPolyline(pontos), '_p~iF~ps|U_ulLnnqC_mqNvxq`@');
+  assert.equal(codificarPolyline([]), '');
+});
+
+test('codificar e decodificar polyline são inversos (ida e volta de trilha real)', () => {
+  const trilha = [
+    { lat: -9.95601, lng: -36.49302 },
+    { lat: -9.95644, lng: -36.49188 },
+    { lat: -9.9571, lng: -36.49075 },
+  ];
+  assert.deepEqual(decodificarPolyline(codificarPolyline(trilha)), trilha);
+});
+
+test('distância haversine bate com valores conhecidos', () => {
+  const origem = { lat: -9.95, lng: -36.49 };
+  // 0.001° de latitude ≈ 111,2 m em qualquer longitude.
+  const aoNorte = { lat: -9.949, lng: -36.49 };
+  assert.ok(Math.abs(distanciaEmMetros(origem, aoNorte) - 111.2) < 1);
+  assert.equal(distanciaEmMetros(origem, origem), 0);
+});
+
+test('rumo: norte é 0°, leste é 90°', () => {
+  const origem = { lat: -9.95, lng: -36.49 };
+  assert.ok(Math.abs(rumoEmGraus(origem, { lat: -9.94, lng: -36.49 }) - 0) < 0.5);
+  assert.ok(Math.abs(rumoEmGraus(origem, { lat: -9.95, lng: -36.48 }) - 90) < 0.5);
 });
 
 function parada(pedidoId: string, status: ParadaRota['status']): ParadaRota {
