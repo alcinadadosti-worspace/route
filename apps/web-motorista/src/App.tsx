@@ -3,11 +3,13 @@ import { linkLigacao, linkWhatsApp, type GeoPonto, type ResultadoEntrega } from 
 import { Mapa } from './Mapa';
 import { Login } from './Login';
 import { Navegacao } from './Navegacao';
+import { FotoReferencia } from './DossieLocal';
 import { useAutenticacao } from './useAutenticacao';
 import { useRotaDoDia } from './useRotaDoDia';
 import { useClientesDaRota } from './useClientesDaRota';
 import { registrarResultado } from './servicoEntrega';
 import { dispararProcessamento } from './servicoMapeamento';
+import { processarFilaFotos } from './servicoFotos';
 
 type Tema = 'galpao' | 'patio';
 
@@ -22,6 +24,7 @@ interface ParadaDemo {
   pesoKg: number;
   status: 'pendente' | 'entregue' | 'trilha' | 'insucesso';
   observacao?: string;
+  fotoPath?: string;
   /** Presente apenas nas paradas de rota real (não demo). */
   pedidoId?: string;
 }
@@ -100,10 +103,18 @@ export function App() {
     document.documentElement.dataset.tema = tema;
   }, [tema]);
 
-  // Trilhas gravadas offline podem ter sincronizado depois que o app fechou:
-  // toda abertura logada cutuca o pós-processamento (idempotente e barato).
+  // O que ficou pendente offline (trilhas por processar, fotos na fila) é
+  // retomado em toda abertura logada e sempre que a rede volta.
   useEffect(() => {
-    if (usuario) dispararProcessamento();
+    if (!usuario) return;
+    dispararProcessamento();
+    void processarFilaFotos();
+    const aoVoltarRede = () => {
+      dispararProcessamento();
+      void processarFilaFotos();
+    };
+    window.addEventListener('online', aoVoltarRede);
+    return () => window.removeEventListener('online', aoVoltarRede);
   }, [usuario]);
 
   // Rota publicada para o motorista logado; sem rota, dados de demonstração.
@@ -134,6 +145,7 @@ export function App() {
                       ? ('trilha' as const)
                       : ('pendente' as const),
               observacao: cliente?.observacoes || undefined,
+              fotoPath: cliente?.fotoReferenciaPath ?? undefined,
               pedidoId: p.pedidoId,
             };
           })
@@ -245,6 +257,7 @@ export function App() {
           <div className="carga">
             {p.itens} itens · {p.volumes} vol · {p.pesoKg.toFixed(3)} kg
           </div>
+          {p.fotoPath && <FotoReferencia caminho={p.fotoPath} alt={`Referência de ${p.cliente}`} />}
           {p.observacao && <div className="obs">📌 {p.observacao}</div>}
           <span className={`estado ${p.status}`}>
             {ICONE_STATUS[p.status]} {TEXTO_STATUS[p.status]}

@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// Storage guarda somente as fotos de referência do local (RF-21): qualquer
+// usuário logado vê (motorista precisa em campo), qualquer logado envia —
+// só imagem, até 5 MB, no caminho do cliente. Todo o resto é negado;
+// os XMLs originais de NF-e (seção 13) entram depois com regra própria
+// restrita a admin.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /clientes/{clienteId}/{arquivo} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+    match /{restante=**} {
+      allow read, write: if false;
+    }
+  }
+}

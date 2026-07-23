@@ -9,6 +9,7 @@ import {
   type Rota,
 } from '@rota/shared';
 import { MapaNavegacao } from './MapaNavegacao';
+import { DossieLocal } from './DossieLocal';
 import { useWakeLock } from './useWakeLock';
 import { usePosicao } from './usePosicao';
 import { useBussola } from './useBussola';
@@ -255,6 +256,7 @@ export function Navegacao({
 
         {chegou && !ajustandoPin && !perguntaReaprendizado && (
           <div className="nav-chegada">
+            {cliente && <DossieLocal cliente={cliente} />}
             <div className="nav-acoes">
               <button className="confirmar" onClick={() => resolver('entregue')}>
                 ✔ Confirmar entrega
