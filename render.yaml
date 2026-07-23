@@ -56,3 +56,6 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://rota-api-npz8.onrender.com

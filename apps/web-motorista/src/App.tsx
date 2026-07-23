@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { linkLigacao, linkWhatsApp, type GeoPonto, type ResultadoEntrega } from '@rota/shared';
 import { Mapa } from './Mapa';
 import { Login } from './Login';
+import { Navegacao } from './Navegacao';
 import { useAutenticacao } from './useAutenticacao';
 import { useRotaDoDia } from './useRotaDoDia';
+import { useClientesDaRota } from './useClientesDaRota';
 import { registrarResultado } from './servicoEntrega';
+import { dispararProcessamento } from './servicoMapeamento';
 
 type Tema = 'galpao' | 'patio';
 
@@ -90,11 +93,18 @@ export function App() {
   const [tema, setTema] = useState<Tema>('galpao');
   const { usuario, carregando, entrar, sair } = useAutenticacao();
   const { rota } = useRotaDoDia(usuario?.uid ?? null);
+  const dossies = useClientesDaRota(rota);
 
   // Alternância Galpão/Pátio em um toque no topo da tela (seção 14.2).
   useEffect(() => {
     document.documentElement.dataset.tema = tema;
   }, [tema]);
+
+  // Trilhas gravadas offline podem ter sincronizado depois que o app fechou:
+  // toda abertura logada cutuca o pós-processamento (idempotente e barato).
+  useEffect(() => {
+    if (usuario) dispararProcessamento();
+  }, [usuario]);
 
   // Rota publicada para o motorista logado; sem rota, dados de demonstração.
   const cd = useMemo(
@@ -104,27 +114,34 @@ export function App() {
   const paradas: ParadaDemo[] = useMemo(
     () =>
       rota
-        ? rota.paradas.map((p, i) => ({
-            ordem: i + 1,
-            cliente: p.nome,
-            endereco: p.endereco,
-            telefone: p.telefone ?? '',
-            coordenada: p.coordenada,
-            itens: p.itens.length,
-            volumes: p.volumes,
-            pesoKg: p.pesoBrutoKg,
-            status:
-              p.status === 'entregue'
-                ? 'entregue'
-                : p.status === 'insucesso'
-                  ? 'insucesso'
-                  : 'pendente',
-            pedidoId: p.pedidoId,
-          }))
+        ? rota.paradas.map((p, i) => {
+            const cliente = dossies[p.clienteId]?.cliente ?? null;
+            return {
+              ordem: i + 1,
+              cliente: p.nome,
+              endereco: p.endereco,
+              telefone: p.telefone ?? '',
+              coordenada: p.coordenada,
+              itens: p.itens.length,
+              volumes: p.volumes,
+              pesoKg: p.pesoBrutoKg,
+              status:
+                p.status === 'entregue'
+                  ? ('entregue' as const)
+                  : p.status === 'insucesso'
+                    ? ('insucesso' as const)
+                    : cliente && cliente.statusMapeamento !== 'mapeado'
+                      ? ('trilha' as const)
+                      : ('pendente' as const),
+              observacao: cliente?.observacoes || undefined,
+              pedidoId: p.pedidoId,
+            };
+          })
         : PARADAS_DEMO,
-    [rota],
+    [rota, dossies],
   );
   const [insucessoAberto, setInsucessoAberto] = useState<string | null>(null);
+  const [navegandoPara, setNavegandoPara] = useState<string | null>(null);
 
   function resolver(pedidoId: string | undefined, resultado: ResultadoEntrega) {
     if (!rota || !pedidoId) return;
@@ -153,6 +170,22 @@ export function App() {
 
   if (!usuario) {
     return <Login entrar={entrar} />;
+  }
+
+  const paradaNavegando =
+    rota && navegandoPara ? (rota.paradas.find((p) => p.pedidoId === navegandoPara) ?? null) : null;
+
+  if (rota && paradaNavegando) {
+    return (
+      <Navegacao
+        rota={rota}
+        parada={paradaNavegando}
+        dossie={dossies[paradaNavegando.clienteId] ?? null}
+        uid={usuario.uid}
+        aoResolver={(pedidoId, resultado) => resolver(pedidoId, resultado)}
+        aoFechar={() => setNavegandoPara(null)}
+      />
+    );
   }
 
   return (
@@ -229,6 +262,12 @@ export function App() {
               )}
               {rota ? (
                 <>
+                  <button
+                    className="navegar"
+                    onClick={() => setNavegandoPara(p.pedidoId ?? null)}
+                  >
+                    🧭 Navegar{p.status === 'trilha' ? ' e mapear' : ''}
+                  </button>
                   <button className="confirmar" onClick={() => resolver(p.pedidoId, 'entregue')}>
                     ✔ Confirmar entrega
                   </button>

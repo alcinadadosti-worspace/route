@@ -1,10 +1,11 @@
 rules_version = '2';
 
 // Security rules por papel (seções 2 e 13). Papel vem do custom claim
-// aplicado pelo script criar-usuario. Toda escrita de dados é da API
-// (Admin SDK, que não passa por estas regras); os apps só leem — as
-// escritas de campo do motorista (confirmações, pins) chegam na Fase 4
-// com regras próprias por campo.
+// aplicado pelo script criar-usuario. Toda escrita de dados de escritório é
+// da API (Admin SDK, que não passa por estas regras); os apps escrevem só o
+// que nasce em campo, cada escrita limitada aos seus campos: confirmações
+// (rotas/pedidos/entregas), pin + dossiê do local (clientes) e o rastro
+// bruto da gravação (trilhasBrutas).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -33,9 +34,31 @@ service cloud.firestore {
 
     // Clientes: sem CPF em claro por desenho (hash + máscara); o motorista
     // precisa de nome, contato, endereço, coordenada e observações do local.
+    // Em campo ele escreve duas coisas, cada uma restrita aos seus campos:
+    // o pin confirmado (RF-07, com autoria dele) e o dossiê do local (RF-21).
     match /clientes/{clienteId} {
       allow read: if logado();
-      allow write: if false;
+      allow update: if logado() && (
+        (request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['coordenada', 'statusMapeamento', 'mapeadoPor', 'mapeadoEm'])
+         && request.resource.data.statusMapeamento == 'mapeado'
+         && request.resource.data.mapeadoPor == request.auth.uid)
+        || request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['fotoReferenciaPath', 'observacoes'])
+      );
+      allow create, delete: if false;
+    }
+
+    // Rastro cru da gravação de trilha (seção 11.1): criado em campo pelo
+    // autor, imutável no aparelho — quem o consome e atualiza é a API.
+    match /trilhasBrutas/{trilhaBrutaId} {
+      allow read: if escritorio();
+      allow create: if logado()
+        && request.resource.data.gravadaPor == request.auth.uid
+        && request.resource.data.status == 'pendente'
+        && request.resource.data.keys().hasAll(
+             ['clienteId', 'pontos', 'gravadaPor', 'iniciadaEm', 'finalizadaEm', 'status']);
+      allow update, delete: if false;
     }
 
     // Pedidos guardam os valores da nota: leitura restrita ao escritório

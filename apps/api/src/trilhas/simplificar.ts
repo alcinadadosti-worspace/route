@@ -9,7 +9,7 @@ import type { PontoTrilha } from '@rota/shared';
 export function simplificarTrilha(pontos: PontoTrilha[], toleranciaM = 10): PontoTrilha[] {
   if (pontos.length <= 2) return [...pontos];
 
-  const latMediaRad = (pontos[0].lat * Math.PI) / 180;
+  const latMediaRad = (pontos[0]!.lat * Math.PI) / 180;
   const mPorGrauLat = 111_320;
   const mPorGrauLng = 111_320 * Math.cos(latMediaRad);
   const x = (p: PontoTrilha) => p.lng * mPorGrauLng;
@@ -26,12 +26,12 @@ export function simplificarTrilha(pontos: PontoTrilha[], toleranciaM = 10): Pont
 
     for (let i = inicio + 1; i < fim; i++) {
       const d = distanciaAoSegmento(
-        x(pontos[i]),
-        y(pontos[i]),
-        x(pontos[inicio]),
-        y(pontos[inicio]),
-        x(pontos[fim]),
-        y(pontos[fim]),
+        x(pontos[i]!),
+        y(pontos[i]!),
+        x(pontos[inicio]!),
+        y(pontos[inicio]!),
+        x(pontos[fim]!),
+        y(pontos[fim]!),
       );
       if (d > maiorDistancia) {
         maiorDistancia = d;

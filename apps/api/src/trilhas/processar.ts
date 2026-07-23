@@ -95,12 +95,12 @@ async function processarUma(
     .slice(ultimoCasado + 1)
     .map((p) => ({ lat: p.lat, lng: p.lng }));
   const pontoEntrada: GeoPonto =
-    ultimoCasado >= 0 ? casamento.pontos[ultimoCasado]! : { ...trechoOrfao[0] };
+    ultimoCasado >= 0 ? casamento.pontos[ultimoCasado]! : { ...trechoOrfao[0]! };
   const caminho = [pontoEntrada, ...trechoOrfao];
 
   let distanciaM = 0;
   for (let i = 1; i < caminho.length; i++) {
-    distanciaM += distanciaEmMetros(caminho[i - 1], caminho[i]);
+    distanciaM += distanciaEmMetros(caminho[i - 1]!, caminho[i]!);
   }
   distanciaM = Math.round(distanciaM);
 

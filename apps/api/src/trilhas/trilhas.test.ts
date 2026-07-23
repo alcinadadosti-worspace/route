@@ -46,8 +46,8 @@ test('match monta a URL com raios da precisão e mapeia tracepoints', async () =
     { lat: -9.9495, lng: -36.4903, precisaoM: 18.2 },
   ]);
 
-  assert.match(urls[0], /\/match\/v1\/driving\//);
-  assert.match(urls[0], /radiuses=10;19/); // mínimo 10 m; 18,2 arredonda para cima
+  assert.match(urls[0]!, /\/match\/v1\/driving\//);
+  assert.match(urls[0]!, /radiuses=10;19/); // mínimo 10 m; 18,2 arredonda para cima
   assert.deepEqual(resultado.pontos, [{ lat: -9.9501, lng: -36.4901 }, null]);
 });
 
@@ -69,7 +69,7 @@ test('match trata NoMatch como rastro inteiro fora da malha, não como erro', as
 test('match divide rastros longos em lotes de 100 com 1 ponto de sobreposição', async () => {
   const chamadas: number[] = [];
   const fetchFalso = (async (url: string) => {
-    const coordenadas = String(url).match(/driving\/([^?]+)/)![1].split(';');
+    const coordenadas = String(url).match(/driving\/([^?]+)/)![1]!.split(';');
     chamadas.push(coordenadas.length);
     return {
       ok: true,
@@ -179,7 +179,7 @@ test('processamento extrai o trecho órfão do fim como trilha aprendida', async
   assert.equal(relatorio.criadas, 1);
   const trilhas = await repo.listarTrilhas();
   assert.equal(trilhas.length, 1);
-  const trilha = trilhas[0];
+  const trilha = trilhas[0]!;
 
   // Entrada = último ponto casado; o caminho segue por todos os órfãos.
   assert.deepEqual(trilha.pontoEntrada, { lat: -9.949, lng: -36.49 });
@@ -190,7 +190,7 @@ test('processamento extrai o trecho órfão do fim como trilha aprendida', async
   assert.equal(trilha.precisaoMediaM, 20); // média de 20, 22, 18
 
   const cliente = await repo.obterCliente('c1');
-  assert.equal(cliente?.trilhaAtivaId, trilhas[0].id);
+  assert.equal(cliente?.trilhaAtivaId, trilha.id);
   assert.equal((await repo.listarTrilhasBrutasPendentes()).length, 0);
 });
 
@@ -221,7 +221,7 @@ test('rastro todo na malha conhecida é descartado — nada a aprender', async (
   const relatorio = await processarTrilhasBrutas(repo, osrmQueCasa(RASTRO.length));
 
   assert.equal(relatorio.descartadas, 1);
-  assert.match(relatorio.itens[0].motivo ?? '', /malha conhecida/);
+  assert.match(relatorio.itens[0]?.motivo ?? '', /malha conhecida/);
   assert.equal((await repo.listarTrilhas()).length, 0);
   assert.equal((await repo.listarTrilhasBrutasPendentes()).length, 0);
 });
@@ -229,7 +229,7 @@ test('rastro todo na malha conhecida é descartado — nada a aprender', async (
 test('gravação sem deslocamento é descartada sem chamar o OSRM', async () => {
   const repo = new RepositorioMemoria();
   await repo.salvarCliente('c1', clienteTeste());
-  await repo.salvarTrilhaBruta('b1', brutaTeste({ pontos: [RASTRO[0]] }));
+  await repo.salvarTrilhaBruta('b1', brutaTeste({ pontos: [RASTRO[0]!] }));
 
   const osrm: ClienteOsrm = {
     trip: () => Promise.reject(new Error('não usado')),
@@ -239,7 +239,7 @@ test('gravação sem deslocamento é descartada sem chamar o OSRM', async () => 
   const relatorio = await processarTrilhasBrutas(repo, osrm);
 
   assert.equal(relatorio.descartadas, 1);
-  assert.match(relatorio.itens[0].motivo ?? '', /deslocamento/);
+  assert.match(relatorio.itens[0]?.motivo ?? '', /deslocamento/);
 });
 
 test('erro no OSRM deixa a bruta pendente para a próxima tentativa', async () => {
@@ -255,6 +255,6 @@ test('erro no OSRM deixa a bruta pendente para a próxima tentativa', async () =
   const relatorio = await processarTrilhasBrutas(repo, osrm);
 
   assert.equal(relatorio.erros, 1);
-  assert.match(relatorio.itens[0].motivo ?? '', /cold start/);
+  assert.match(relatorio.itens[0]?.motivo ?? '', /cold start/);
   assert.equal((await repo.listarTrilhasBrutasPendentes()).length, 1);
 });
