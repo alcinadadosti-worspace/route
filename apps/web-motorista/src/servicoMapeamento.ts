@@ -1,6 +1,6 @@
 import { addDoc, collection, doc, updateDoc } from 'firebase/firestore';
 import type { GeoPonto, PontoTrilha, TrilhaBruta } from '@rota/shared';
-import { db } from './firebase';
+import { auth, db } from './firebase';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
@@ -51,8 +51,16 @@ export function salvarTrilhaBruta(dados: {
 /**
  * Cutuca o pós-processamento na API — melhor esforço: se estiver offline
  * agora, a próxima abertura do app com rede tenta de novo (o endpoint é
- * idempotente e barato sem pendências).
+ * idempotente e barato sem pendências). Vai com o ID token do Firebase, que
+ * a API exige; sem usuário logado, simplesmente não dispara.
  */
 export function dispararProcessamento(): void {
-  fetch(`${API}/api/trilhas/processar`, { method: 'POST' }).catch(() => {});
+  void (async () => {
+    const token = await auth.currentUser?.getIdToken().catch(() => null);
+    if (!token) return;
+    fetch(`${API}/api/trilhas/processar`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {});
+  })();
 }

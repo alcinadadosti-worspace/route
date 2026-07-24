@@ -3,6 +3,7 @@ import { RepositorioMemoria } from './db/repositorio.js';
 import { criarRepositorioFirestore } from './db/firestore.js';
 import { criarGeocodificadorGoogle } from './geocodificacao/google.js';
 import { criarClienteOsrm } from './rotas/osrm.js';
+import { criarAutenticador } from './auth/autenticador.js';
 
 /**
  * Entrada da API (Render web service — seção 15).
@@ -14,10 +15,21 @@ const porta = Number(process.env.PORT ?? 3000);
 const firestore = criarRepositorioFirestore();
 const geocodificador = criarGeocodificadorGoogle();
 const osrm = criarClienteOsrm();
-const app = await criarApp({ repo: firestore ?? new RepositorioMemoria(), geocodificador, osrm });
+const autenticador = criarAutenticador();
+const app = await criarApp({
+  repo: firestore ?? new RepositorioMemoria(),
+  geocodificador,
+  osrm,
+  autenticador,
+});
 app.log.info(firestore ? 'Persistência: Firestore' : 'Persistência: memória (sem credenciais Firebase)');
 app.log.info(geocodificador ? 'Geocodificação: Google' : 'Geocodificação: desativada (sem GOOGLE_MAPS_API_KEY)');
 app.log.info(osrm ? 'Roteirizador: OSRM configurado' : 'Roteirizador: desativado (sem OSRM_URL)');
+app.log.warn(
+  autenticador
+    ? 'Auth: exigindo ID token do Firebase em /api/*'
+    : 'Auth: DESATIVADA (sem credenciais) — /api/* aberto, use só em dev',
+);
 
 app.listen({ port: porta, host: '0.0.0.0' }).catch((erro) => {
   app.log.error(erro);

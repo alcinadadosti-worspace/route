@@ -1,4 +1,3 @@
-import { initializeApp, cert, applicationDefault, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import type {
   CentroDistribuicao,
@@ -10,24 +9,17 @@ import type {
   Usuario,
 } from '@rota/shared';
 import type { Repositorio } from './repositorio.js';
+import { appFirebase } from '../firebase.js';
 
 /**
  * Persistência real no Firestore (Admin SDK — seção 6 da especificação).
- * Credenciais, em ordem de preferência:
- *   1. FIREBASE_SERVICE_ACCOUNT — conteúdo JSON da service account
- *      (variável de ambiente no Render);
- *   2. GOOGLE_APPLICATION_CREDENTIALS — caminho do arquivo .json
- *      (desenvolvimento local).
- * Sem nenhuma das duas, retorna null e a API cai no repositório em memória.
+ * Sem credenciais Firebase, retorna null e a API cai no repositório em
+ * memória (o App admin é compartilhado com a autenticação — ver firebase.ts).
  */
 export function criarRepositorioFirestore(): Repositorio | null {
-  const conteudo = process.env.FIREBASE_SERVICE_ACCOUNT;
-  const caminho = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  if (!conteudo && !caminho) return null;
+  const app = appFirebase();
+  if (!app) return null;
 
-  const app: App = initializeApp({
-    credential: conteudo ? cert(JSON.parse(conteudo)) : applicationDefault(),
-  });
   const db = getFirestore(app);
   // Campos opcionais ausentes (ex.: enderecoFiscal.complemento) viram undefined
   // no modelo; o Firestore rejeitaria o documento sem esta opção.
