@@ -56,8 +56,11 @@ function endereco(parcial: Partial<EnderecoFiscal>): EnderecoFiscal {
   };
 }
 
-test('heurística rural: CEP genérico terminado em 000', () => {
-  assert.equal(ehEnderecoRural(endereco({ cep: '57270-000' })), true);
+test('CEP genérico da cidade (termina em 000) NÃO é sinal de rural por si só', () => {
+  // Cidades menores (Penedo/Coruripe) usam o CEP genérico para ruas urbanas;
+  // marcar rural pelo CEP deixava rua urbana sem coordenada. Quem decide o
+  // ponto agora é o geocodificador (filtro de precisão).
+  assert.equal(ehEnderecoRural(endereco({ cep: '57200-000', logradouro: 'Rua Santo Antônio', numero: '222' })), false);
 });
 
 test('heurística rural: bairro zona rural (com ou sem acento/caixa)', () => {
