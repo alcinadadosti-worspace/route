@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Map as MapaLibre, Marker, type GeoJSONSource, type LngLatLike } from 'maplibre-gl';
+import {
+  Map as MapaLibre,
+  Marker,
+  type GeoJSONSource,
+  type LngLatLike,
+  type StyleSpecification,
+} from 'maplibre-gl';
 import type { Feature, LineString } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { decodificarPolyline, type GeoPonto, type Trilha } from '@rota/shared';
@@ -19,6 +25,7 @@ export function MapaNavegacao({
   posicao,
   ajustandoPin,
   aoAjustarPin,
+  estilo,
 }: {
   pin: GeoPonto;
   polylinePlanejada?: string;
@@ -28,6 +35,8 @@ export function MapaNavegacao({
   /** Pin arrastável (RF-07) — a câmera para de seguir o veículo. */
   ajustandoPin: boolean;
   aoAjustarPin: (p: GeoPonto) => void;
+  /** Definido na montagem (o tema não muda durante a navegação). */
+  estilo: StyleSpecification;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapaRef = useRef<MapaLibre | null>(null);
@@ -42,18 +51,7 @@ export function MapaNavegacao({
     if (!containerRef.current) return;
     const mapa = new MapaLibre({
       container: containerRef.current,
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '© OpenStreetMap',
-          },
-        },
-        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-      },
+      style: estilo,
       center: [pin.lng, pin.lat] as LngLatLike,
       zoom: 14,
     });

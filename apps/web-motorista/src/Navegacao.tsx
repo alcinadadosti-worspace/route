@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { StyleSpecification } from 'maplibre-gl';
 import {
   distanciaEmMetros,
   PARAMETROS_TRILHA_PADRAO,
@@ -40,6 +41,7 @@ export function Navegacao({
   parada,
   dossie,
   uid,
+  estilo,
   aoResolver,
   aoFechar,
 }: {
@@ -47,6 +49,7 @@ export function Navegacao({
   parada: ParadaRota;
   dossie: DossieCliente | null;
   uid: string;
+  estilo: StyleSpecification;
   aoResolver: (pedidoId: string, resultado: ResultadoEntrega) => void;
   aoFechar: () => void;
 }) {
@@ -213,6 +216,7 @@ export function Navegacao({
       )}
 
       <MapaNavegacao
+        estilo={estilo}
         pin={pinNoMapa}
         polylinePlanejada={rota.polylinePlanejada}
         trilha={trilha}

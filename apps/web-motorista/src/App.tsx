@@ -7,11 +7,13 @@ import { FotoReferencia } from './DossieLocal';
 import { useAutenticacao } from './useAutenticacao';
 import { useRotaDoDia } from './useRotaDoDia';
 import { useClientesDaRota } from './useClientesDaRota';
+import { useConfigGeral } from './useConfigGeral';
+import { useMapaOffline } from './useMapaOffline';
+import { estiloMapa, type Tema } from './estiloMapa';
+import { tipoDeRede, URL_FONTE_PMTILES } from './mapaOffline';
 import { registrarResultado } from './servicoEntrega';
 import { dispararProcessamento } from './servicoMapeamento';
 import { processarFilaFotos } from './servicoFotos';
-
-type Tema = 'galpao' | 'patio';
 
 interface ParadaDemo {
   ordem: number;
@@ -92,11 +94,22 @@ const MOTIVOS_INSUCESSO: Array<{ resultado: ResultadoEntrega; rotulo: string }> 
   { resultado: 'recusa', rotulo: 'Recusa' },
 ];
 
+/** `20260723` → `23/07/2026` — a versão do mapa é a data do extrato OSM. */
+function versaoLegivel(versao: string): string {
+  return `${versao.slice(6, 8)}/${versao.slice(4, 6)}/${versao.slice(0, 4)}`;
+}
+
 export function App() {
   const [tema, setTema] = useState<Tema>('galpao');
   const { usuario, carregando, entrar, sair } = useAutenticacao();
   const { rota } = useRotaDoDia(usuario?.uid ?? null);
   const dossies = useClientesDaRota(rota);
+  const config = useConfigGeral(usuario?.uid ?? null);
+  const mapaOffline = useMapaOffline(config);
+  const estilo = useMemo(
+    () => estiloMapa(tema, mapaOffline.versaoInstalada != null ? URL_FONTE_PMTILES : null),
+    [tema, mapaOffline.versaoInstalada],
+  );
 
   // Alternância Galpão/Pátio em um toque no topo da tela (seção 14.2).
   useEffect(() => {
@@ -205,10 +218,26 @@ export function App() {
         parada={paradaNavegando}
         dossie={dossies[paradaNavegando.clienteId] ?? null}
         uid={usuario.uid}
+        estilo={estilo}
         aoResolver={(pedidoId, resultado) => resolver(pedidoId, resultado)}
         aoFechar={() => setNavegandoPara(null)}
       />
     );
+  }
+
+  // Guarda de egresso (seção 12): download só em Wi-Fi; rede indetectável
+  // pede confirmação em vez de bloquear.
+  function baixarMapaComGuarda() {
+    const mb = Math.round((mapaOffline.atualizacao?.tamanhoBytes ?? 0) / 1e6);
+    const rede = tipoDeRede();
+    if (rede === 'celular') {
+      window.alert(`Download de ~${mb} MB — conecte ao Wi-Fi da base para baixar.`);
+      return;
+    }
+    if (rede === 'desconhecida' && !window.confirm(`Não deu para confirmar o Wi-Fi. Baixar ~${mb} MB agora?`)) {
+      return;
+    }
+    mapaOffline.baixar();
   }
 
   return (
@@ -240,9 +269,51 @@ export function App() {
         <div className="faixa-demo">Demonstração — aguardando rota publicada para você</div>
       )}
 
-      <Mapa cd={cd} paradas={pontosMapa} polyline={rota?.polylinePlanejada} />
+      {(mapaOffline.baixando != null || mapaOffline.atualizacao) && (
+        <section className="mapa-offline">
+          <div className="mapa-offline-info">
+            <div className="mapa-offline-titulo">Mapa offline</div>
+            {mapaOffline.baixando != null ? (
+              <>
+                <div className="mapa-offline-texto">
+                  Baixando… {Math.round(mapaOffline.baixando * 100)}%
+                </div>
+                <div className="progresso">
+                  <div
+                    className="progresso-preenchido"
+                    style={{ width: `${Math.round(mapaOffline.baixando * 100)}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="mapa-offline-texto">
+                {mapaOffline.erro
+                  ? `Falha no download — ${mapaOffline.erro}`
+                  : `${
+                      mapaOffline.versaoInstalada
+                        ? `Nova versão de ${versaoLegivel(mapaOffline.atualizacao!.versao)}`
+                        : 'Mapa de Alagoas para navegar sem sinal'
+                    } · ${Math.round(mapaOffline.atualizacao!.tamanhoBytes / 1e6)} MB — baixe no Wi-Fi da base`}
+              </div>
+            )}
+          </div>
+          {mapaOffline.baixando == null && (
+            <button className="mapa-offline-botao" onClick={baixarMapaComGuarda}>
+              {mapaOffline.erro ? '↻ Tentar de novo' : mapaOffline.versaoInstalada ? '⬇ Atualizar' : '⬇ Baixar'}
+            </button>
+          )}
+        </section>
+      )}
+
+      {mapaOffline.pronto ? (
+        <Mapa cd={cd} paradas={pontosMapa} polyline={rota?.polylinePlanejada} estilo={estilo} />
+      ) : (
+        <div className="mapa" />
+      )}
       <div className="mapa-nota">
-        Basemap online de demonstração — o mapa embarcado (offline) chega na Fase 5
+        {mapaOffline.versaoInstalada
+          ? `Mapa embarcado de ${versaoLegivel(mapaOffline.versaoInstalada)} — navega sem sinal`
+          : 'Basemap online — baixe o mapa offline para navegar sem sinal'}
       </div>
 
       <div className="resumo">

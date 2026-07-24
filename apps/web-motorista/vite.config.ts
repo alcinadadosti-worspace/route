@@ -9,11 +9,19 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       workbox: {
+        // App shell completo offline (seção 12, camada 1): além de js/css/html,
+        // as fontes do bundle e os assets do basemap embarcado (glyphs pbf e
+        // sprites) — nenhuma dependência de CDN em campo.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,json,woff,woff2,pbf}'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         // Fotos de referência (RF-21) vistas com rede ficam no cache do SW e
         // aparecem offline — na zona rural sem sinal é onde mais importam.
+        // Só o caminho clientes/: o PMTiles (dezenas de MB) também vem do
+        // Storage e tem armazenamento próprio no OPFS — cacheá-lo aqui
+        // duplicaria o arquivo inteiro no Cache Storage.
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\/.*/,
+            urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/clientes%2F.*/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'fotos-referencia',

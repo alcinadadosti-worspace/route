@@ -15,6 +15,13 @@ service firebase.storage {
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }
+    // Basemap PMTiles (seção 12, camada 3): o app baixa o mapa embarcado
+    // daqui, apenas em Wi-Fi. Escrita só pelo pipeline mensal (Admin SDK,
+    // que não passa por estas regras).
+    match /mapas/{arquivo} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
     match /{restante=**} {
       allow read, write: if false;
     }

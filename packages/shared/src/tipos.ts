@@ -171,6 +171,26 @@ export interface Entrega {
   posicaoConfirmacao: GeoPonto | null;
 }
 
+/**
+ * Bloco `mapa` do doc `config/geral` (seção 7.6): versão corrente do basemap
+ * PMTiles no Storage (seção 12, camada 3). O app compara `versao` com a
+ * instalada no OPFS e propõe o download quando o motorista está na base.
+ */
+export interface MapaOffline {
+  /** Caminho no Storage (ex.: `mapas/alagoas-20260724.pmtiles`). */
+  path: string;
+  /** Data do extrato OSM no formato AAAAMMDD — comparável como string. */
+  versao: string;
+  /** Tamanho do arquivo — mostrado antes do download (egress é custo). */
+  tamanhoBytes: number;
+  atualizadoEm: string;
+}
+
+/** Doc `config/geral` — parâmetros operacionais (seção 7.6). */
+export interface ConfigGeral {
+  mapa?: MapaOffline;
+}
+
 /** Doc `config/cds` — centros de distribuição de partida (seção 7.6). */
 export interface CentroDistribuicao {
   nome: string;

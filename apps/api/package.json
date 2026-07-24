@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "criar-usuario": "node --import tsx scripts/criar-usuario.ts",
     "cadastrar-cd": "node --import tsx scripts/cadastrar-cd.ts",
-    "publicar-rules": "node --import tsx scripts/publicar-rules.ts"
+    "publicar-rules": "node --import tsx scripts/publicar-rules.ts",
+    "publicar-mapa": "node --import tsx scripts/publicar-mapa.ts",
+    "configurar-cors": "node --import tsx scripts/configurar-cors-storage.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

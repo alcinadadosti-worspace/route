@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { LngLatBounds, Map as MapaLibre, Marker, Popup } from 'maplibre-gl';
+import { LngLatBounds, Map as MapaLibre, Marker, Popup, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { decodificarPolyline, type GeoPonto } from '@rota/shared';
 
@@ -18,19 +18,21 @@ const COR_STATUS: Record<PontoMapa['status'], string> = {
 };
 
 /**
- * Mapa da rota do dia. Nesta fase o basemap vem de tiles OSM online — o mapa
- * embarcado (PMTiles em OPFS, seção 12 camada 3) substitui esta fonte na Fase 5
- * sem mudar o componente: MapLibre é o mesmo, troca-se apenas o source.
+ * Mapa da rota do dia. O basemap vem do estilo recebido — mapa embarcado
+ * (PMTiles em OPFS, seção 12 camada 3) quando instalado, tiles OSM online
+ * como fallback.
  */
 export function Mapa({
   cd,
   paradas,
   polyline,
+  estilo,
 }: {
   cd: GeoPonto & { nome: string };
   paradas: PontoMapa[];
   /** Traçado planejado (encoded polyline). Sem ele, liga os pontos em linha reta. */
   polyline?: string;
+  estilo: StyleSpecification;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -51,25 +53,16 @@ export function Mapa({
 
     const mapa = new MapaLibre({
       container: containerRef.current,
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '© OpenStreetMap',
-          },
-        },
-        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-      },
+      style: estilo,
       bounds: limites,
       fitBoundsOptions: { padding: 48, maxZoom: 13 },
     });
 
-    if (import.meta.env.DEV) {
-      (window as unknown as { __mapa?: unknown }).__mapa = mapa;
-    }
+    // Exposto também no build: os E2E (RNF-01) inspecionam o estado do mapa.
+    (window as unknown as { __mapa?: unknown }).__mapa = mapa;
+    // Sem handler, erros de tile/estilo somem em produção — em campo o log
+    // é o único jeito de diagnosticar mapa em branco.
+    mapa.on('error', (evento) => console.error('[mapa]', evento.error));
 
     mapa.on('load', () => {
       mapa.addSource('tracado', {
@@ -103,7 +96,7 @@ export function Mapa({
     }
 
     return () => mapa.remove();
-  }, [cd, paradas, polyline]);
+  }, [cd, paradas, polyline, estilo]);
 
   return <div ref={containerRef} className="mapa" />;
 }

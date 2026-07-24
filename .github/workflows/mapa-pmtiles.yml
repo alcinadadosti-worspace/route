@@ -1,0 +1,82 @@
+# Job mensal do basemap (seção 15): Geofabrik → osmium → Planetiler
+# (profile protomaps/basemaps) → PMTiles → Storage + config/geral.
+#
+# Mesma fonte e mesma bbox do roteirizador (infra/osrm/Dockerfile) — uma
+# fonte OSM, dois artefatos, mapa e OSRM nunca divergem. Na atualização
+# mensal, rodar este workflow E o Manual Deploy do rota-osrm no mesmo dia.
+#
+# Requer o secret FIREBASE_SERVICE_ACCOUNT (Settings → Secrets → Actions):
+# o mesmo JSON de service account usado nas env vars do rota-api no Render.
+# Sem o secret, o job gera o arquivo e o deixa como artifact do run — dá
+# para publicar manualmente com: npm run publicar-mapa -w @rota/api.
+
+name: mapa-pmtiles
+
+on:
+  schedule:
+    - cron: '0 6 1 * *' # dia 1 de cada mês, 03:00 em Maceió
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/mapa-pmtiles.yml']
+
+jobs:
+  gerar-e-publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar osmium
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends osmium-tool
+
+      - name: Baixar extrato Geofabrik (mesma fonte do OSRM)
+        run: curl -fL --retry 3 -o nordeste.osm.pbf https://download.geofabrik.de/south-america/brazil/nordeste-latest.osm.pbf
+
+      - name: Recortar Alagoas com folga (mesma bbox do infra/osrm/Dockerfile)
+        run: osmium extract -b -38.45,-10.75,-35.05,-8.60 nordeste.osm.pbf -o alagoas.osm.pbf
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Pinado por SHA (o repo não etiqueta os releases do npm): schema das
+      # tiles compatível com o pacote @protomaps/basemaps 5.7.2 do app. Ao
+      # atualizar o pacote no app, avançar este SHA junto.
+      - name: Compilar profile protomaps/basemaps
+        run: |
+          git init profile
+          cd profile
+          git remote add origin https://github.com/protomaps/basemaps.git
+          git fetch --depth 1 origin 2697f293a5554e5789500eb5cd2ddd3b0f688dda
+          git checkout FETCH_HEAD
+          cd tiles && mvn -q -DskipTests package
+
+      - name: Gerar PMTiles
+        run: |
+          java -Xmx4g -jar $(ls profile/tiles/target/*-with-deps.jar) \
+            --osm_path=alagoas.osm.pbf \
+            --bounds=-38.45,-10.75,-35.05,-8.60 \
+            --output=alagoas.pmtiles --force
+          ls -lh alagoas.pmtiles
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alagoas-pmtiles
+          path: alagoas.pmtiles
+          retention-days: 30
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Publicar no Storage + config/geral
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::warning::Secret FIREBASE_SERVICE_ACCOUNT ausente — arquivo ficou como artifact do run, publique manualmente."
+            exit 0
+          fi
+          npm ci
+          npm run publicar-mapa -w @rota/api -- alagoas.pmtiles "$(date -u +%Y%m%d)"

@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import './mapaWorker';
 import '@fontsource/archivo-black';
 import '@fontsource/barlow-condensed/500.css';
 import '@fontsource/barlow-condensed/700.css';
