@@ -35,7 +35,9 @@ export function MapaNavegacao({
   /** Pin arrastável (RF-07) — a câmera para de seguir o veículo. */
   ajustandoPin: boolean;
   aoAjustarPin: (p: GeoPonto) => void;
-  /** Definido na montagem (o tema não muda durante a navegação). */
+  /** Capturado na montagem. Se o estilo mudar (instalação do mapa offline no
+   * meio da navegação), o pai remonta este componente via `key`, então não é
+   * preciso reagir à prop aqui. */
   estilo: StyleSpecification;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,6 +58,9 @@ export function MapaNavegacao({
       zoom: 14,
     });
     mapaRef.current = mapa;
+    // Mapa em branco na navegação é cego sem isto: em campo o console é o
+    // único diagnóstico (tile do PMTiles, glyph, sprite que falhou).
+    mapa.on('error', (evento) => console.error('[mapa-navegacao]', evento.error));
 
     mapa.on('load', () => {
       mapa.addSource('planejada', { type: 'geojson', data: linhaVazia() });

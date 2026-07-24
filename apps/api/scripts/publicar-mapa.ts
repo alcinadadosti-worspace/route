@@ -13,9 +13,10 @@ import type { MapaOffline } from '@rota/shared';
  * nova. Arquivos antigos são removidos, preservando o anterior ainda
  * referenciado por aparelhos que não atualizaram.
  *
- * Uso:
+ * Uso (o caminho é relativo ao CWD do `npm -w`, que é apps/api — passe
+ * ABSOLUTO para não depender disso):
  *   FIREBASE_SERVICE_ACCOUNT=... (ou GOOGLE_APPLICATION_CREDENTIALS=caminho.json)
- *   npm run publicar-mapa -w @rota/api -- <arquivo.pmtiles> <versao AAAAMMDD>
+ *   npm run publicar-mapa -w @rota/api -- /caminho/absoluto/arquivo.pmtiles <versao AAAAMMDD>
  */
 
 const [arquivo, versao] = process.argv.slice(2);
@@ -50,7 +51,6 @@ await bucket.upload(arquivo, {
 });
 
 const docConfig = db.collection('config').doc('geral');
-const anterior = ((await docConfig.get()).data()?.mapa ?? null) as MapaOffline | null;
 
 const mapa: MapaOffline = {
   path: destino,
@@ -61,10 +61,18 @@ const mapa: MapaOffline = {
 await docConfig.set({ mapa }, { merge: true });
 console.log(`config/geral.mapa → versão ${versao} (${destino}).`);
 
-// Limpeza: mantém a versão nova e a imediatamente anterior (aparelhos que
-// ainda não atualizaram continuam conseguindo baixar pelo path antigo).
+// Limpeza: mantém as DUAS versões mais recentes por data (a nova e a
+// anterior) — aparelhos que ainda não atualizaram continuam baixando pela
+// anterior. Ordenar por nome basta: `alagoas-AAAAMMDD.pmtiles` é cronológico.
+// Derivar do próprio Storage (e não da config, que já aponta para a nova)
+// deixa a limpeza correta mesmo se o script rodar duas vezes no mesmo dia.
 const [arquivos] = await bucket.getFiles({ prefix: 'mapas/' });
-const manter = new Set([destino, anterior?.path].filter(Boolean));
+const manter = new Set(
+  arquivos
+    .map((f) => f.name)
+    .sort()
+    .slice(-2),
+);
 for (const f of arquivos) {
   if (!manter.has(f.name)) {
     await f.delete();

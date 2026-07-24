@@ -41,6 +41,7 @@ export function MapaRota({ previa }: { previa: PreviaRota }) {
       bounds: limites,
       fitBoundsOptions: { padding: 56 },
     });
+    mapa.on('error', (evento) => console.error('[mapa-rota]', evento.error));
 
     mapa.on('load', () => {
       mapa.addSource('tracado', {

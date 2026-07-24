@@ -12,12 +12,14 @@
 
 name: mapa-pmtiles
 
+# Sem gatilho `push`: este pipeline baixa ~300 MB, roda Planetiler por
+# ~20 min e PUBLICA um mapa novo (todo motorista passa a ver nova versão e a
+# oferecer re-download). Não pode disparar por edição do YAML — só no cron
+# mensal ou sob demanda (Actions → Run workflow).
 on:
   schedule:
     - cron: '0 6 1 * *' # dia 1 de cada mês, 03:00 em Maceió
   workflow_dispatch:
-  push:
-    paths: ['.github/workflows/mapa-pmtiles.yml']
 
 jobs:
   gerar-e-publicar:
@@ -79,4 +81,6 @@ jobs:
             exit 0
           fi
           npm ci
-          npm run publicar-mapa -w @rota/api -- alagoas.pmtiles "$(date -u +%Y%m%d)"
+          # Caminho ABSOLUTO: `npm run -w` executa o script com CWD em
+          # apps/api, então um caminho relativo não acharia o pmtiles da raiz.
+          npm run publicar-mapa -w @rota/api -- "$GITHUB_WORKSPACE/alagoas.pmtiles" "$(date -u +%Y%m%d)"

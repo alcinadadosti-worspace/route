@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ConfigGeral, MapaOffline } from '@rota/shared';
-import { ativarMapaOffline, baixarMapa } from './mapaOffline';
+import { ativarMapaOffline, baixarMapa, mapaConfigValido } from './mapaOffline';
 
 export interface EstadoMapaOffline {
   /**
-   * A verificação do OPFS na abertura terminou. Antes disso o mapa não deve
-   * montar: montaria com o fallback online e piscaria ao trocar de estilo —
-   * offline, ainda pediria tiles OSM à toa.
+   * A verificação do OPFS na abertura terminou. Antes disso nada de mapa deve
+   * ser mostrado nem oferecido para download: sem saber o que está instalado,
+   * o app ofereceria "baixar" um mapa que já existe (re-download de dezenas
+   * de MB) e montaria o basemap online à toa.
    */
   pronto: boolean;
   /** Versão ativa no OPFS — null enquanto não houver mapa embarcado íntegro. */
   versaoInstalada: string | null;
+  /** URL de fonte pmtiles da versão instalada — null quando não há mapa. */
+  urlFonte: string | null;
   /** Versão publicada em config/geral quando difere da instalada. */
   atualizacao: MapaOffline | null;
   /** Fração 0–1 durante o download; null fora dele. */
@@ -26,19 +29,29 @@ export interface EstadoMapaOffline {
 export function useMapaOffline(config: ConfigGeral | null): EstadoMapaOffline {
   const [pronto, setPronto] = useState(false);
   const [versaoInstalada, setVersaoInstalada] = useState<string | null>(null);
+  const [urlFonte, setUrlFonte] = useState<string | null>(null);
   const [baixando, setBaixando] = useState<number | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const baixandoRef = useRef(false);
 
   useEffect(() => {
-    void ativarMapaOffline().then((versao) => {
-      setVersaoInstalada(versao);
+    void ativarMapaOffline().then((instalado) => {
+      setVersaoInstalada(instalado?.versao ?? null);
+      setUrlFonte(instalado?.urlFonte ?? null);
       setPronto(true);
     });
   }, []);
 
-  const publicado = config?.mapa ?? null;
+  // Só oferece o que a publicação traz com forma válida (tamanho > 0 etc.):
+  // config corrompida não deve virar "NaN MB" nem um download que sempre falha.
+  const publicado = mapaConfigValido(config?.mapa) ? config!.mapa! : null;
   const atualizacao = publicado && publicado.versao !== versaoInstalada ? publicado : null;
+
+  // Erro pertence à última tentativa; quando a versão publicada muda, ele
+  // deixa de ser relevante (era de outra versão) e é limpo.
+  useEffect(() => {
+    setErro(null);
+  }, [publicado?.versao]);
 
   function baixar() {
     if (!atualizacao || baixandoRef.current) return;
@@ -54,7 +67,10 @@ export function useMapaOffline(config: ConfigGeral | null): EstadoMapaOffline {
       }
     })
       .then(() => ativarMapaOffline())
-      .then((versao) => setVersaoInstalada(versao))
+      .then((instalado) => {
+        setVersaoInstalada(instalado?.versao ?? null);
+        setUrlFonte(instalado?.urlFonte ?? null);
+      })
       .catch((causa: unknown) => {
         setErro(causa instanceof Error ? causa.message : 'Falha no download');
       })
@@ -64,5 +80,5 @@ export function useMapaOffline(config: ConfigGeral | null): EstadoMapaOffline {
       });
   }
 
-  return { pronto, versaoInstalada, atualizacao, baixando, erro, baixar };
+  return { pronto, versaoInstalada, urlFonte, atualizacao, baixando, erro, baixar };
 }

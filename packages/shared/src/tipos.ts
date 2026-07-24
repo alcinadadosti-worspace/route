@@ -4,6 +4,8 @@
  * neutro (lat/lng e ISO 8601) para servir a API, os apps e os testes.
  */
 
+import type { ParametrosTrilha } from './trilha.js';
+
 export type Papel = 'admin' | 'operador' | 'motorista';
 
 export type StatusMapeamento = 'nao_mapeado' | 'geocodificado' | 'mapeado';
@@ -186,9 +188,14 @@ export interface MapaOffline {
   atualizadoEm: string;
 }
 
-/** Doc `config/geral` — parâmetros operacionais (seção 7.6). */
+/**
+ * Doc `config/geral` — parâmetros operacionais (seção 7.6). Além do mapa,
+ * carrega overrides de `ParametrosTrilha` que apps e API mesclam sobre
+ * `PARAMETROS_TRILHA_PADRAO`; ambos os blocos são opcionais.
+ */
 export interface ConfigGeral {
   mapa?: MapaOffline;
+  trilha?: Partial<ParametrosTrilha>;
 }
 
 /** Doc `config/cds` — centros de distribuição de partida (seção 7.6). */

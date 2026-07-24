@@ -95,7 +95,11 @@ export function Mapa({
         .addTo(mapa);
     }
 
-    return () => mapa.remove();
+    return () => {
+      const global = window as unknown as { __mapa?: unknown };
+      if (global.__mapa === mapa) delete global.__mapa;
+      mapa.remove();
+    };
   }, [cd, paradas, polyline, estilo]);
 
   return <div ref={containerRef} className="mapa" />;

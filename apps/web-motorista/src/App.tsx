@@ -10,7 +10,7 @@ import { useClientesDaRota } from './useClientesDaRota';
 import { useConfigGeral } from './useConfigGeral';
 import { useMapaOffline } from './useMapaOffline';
 import { estiloMapa, type Tema } from './estiloMapa';
-import { tipoDeRede, URL_FONTE_PMTILES } from './mapaOffline';
+import { tipoDeRede } from './mapaOffline';
 import { registrarResultado } from './servicoEntrega';
 import { dispararProcessamento } from './servicoMapeamento';
 import { processarFilaFotos } from './servicoFotos';
@@ -107,8 +107,8 @@ export function App() {
   const config = useConfigGeral(usuario?.uid ?? null);
   const mapaOffline = useMapaOffline(config);
   const estilo = useMemo(
-    () => estiloMapa(tema, mapaOffline.versaoInstalada != null ? URL_FONTE_PMTILES : null),
-    [tema, mapaOffline.versaoInstalada],
+    () => estiloMapa(tema, mapaOffline.urlFonte),
+    [tema, mapaOffline.urlFonte],
   );
 
   // Alternância Galpão/Pátio em um toque no topo da tela (seção 14.2).
@@ -219,6 +219,7 @@ export function App() {
         dossie={dossies[paradaNavegando.clienteId] ?? null}
         uid={usuario.uid}
         estilo={estilo}
+        estiloKey={mapaOffline.urlFonte ?? 'online'}
         aoResolver={(pedidoId, resultado) => resolver(pedidoId, resultado)}
         aoFechar={() => setNavegandoPara(null)}
       />
@@ -269,7 +270,7 @@ export function App() {
         <div className="faixa-demo">Demonstração — aguardando rota publicada para você</div>
       )}
 
-      {(mapaOffline.baixando != null || mapaOffline.atualizacao) && (
+      {mapaOffline.pronto && (mapaOffline.baixando != null || mapaOffline.atualizacao) && (
         <section className="mapa-offline">
           <div className="mapa-offline-info">
             <div className="mapa-offline-titulo">Mapa offline</div>

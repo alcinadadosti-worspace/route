@@ -42,6 +42,7 @@ export function Navegacao({
   dossie,
   uid,
   estilo,
+  estiloKey,
   aoResolver,
   aoFechar,
 }: {
@@ -50,6 +51,10 @@ export function Navegacao({
   dossie: DossieCliente | null;
   uid: string;
   estilo: StyleSpecification;
+  /** Identidade do estilo. Muda só se o mapa embarcado for instalado no meio
+   * da navegação (raro): força o MapaNavegacao a remontar com o mapa offline
+   * em vez de ficar preso no basemap online que falha ao sair do sinal. */
+  estiloKey: string;
   aoResolver: (pedidoId: string, resultado: ResultadoEntrega) => void;
   aoFechar: () => void;
 }) {
@@ -216,6 +221,7 @@ export function Navegacao({
       )}
 
       <MapaNavegacao
+        key={estiloKey}
         estilo={estilo}
         pin={pinNoMapa}
         polylinePlanejada={rota.polylinePlanejada}
