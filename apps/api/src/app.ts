@@ -23,6 +23,9 @@ interface ConfigRota {
   papeis?: string[];
 }
 const ESCRITORIO = ['admin', 'operador'];
+const TODOS = ['admin', 'operador', 'motorista'];
+/** Rotas públicas (sem token). O resto é deny-by-default. */
+const ROTAS_PUBLICAS = new Set(['/health']);
 
 function extrairBearer(cabecalho: string | undefined): string | null {
   if (!cabecalho) return null;
@@ -40,19 +43,24 @@ export async function criarApp({
 
   await app.register(cors, { origin: true });
   await app.register(multipart, {
-    limits: { fileSize: 5 * 1024 * 1024, files: 200 },
+    // Uma remessa de importação é dezenas de notas, não centenas; teto menor
+    // reduz o pico de memória de um upload malicioso na instância pequena.
+    limits: { fileSize: 5 * 1024 * 1024, files: 60 },
   });
 
-  // Autenticação (seção 13): protege /api/* verificando o ID token do Firebase.
-  // /health fica público (health check do Render); OPTIONS passa (preflight
-  // CORS não leva Authorization). Sem autenticador, a API segue aberta — só
-  // acontece em dev/CI sem credenciais, e é registrado no log da subida.
+  // Autenticação (seção 13): verifica o ID token do Firebase. Deny-by-default
+  // — só as ROTAS_PUBLICAS dispensam token; todo o resto exige. A decisão é
+  // pela ROTA CASADA (`routeOptions.url`, já normalizada pelo find-my-way), e
+  // NÃO por `req.url` cru: um alvo em forma absoluta (`GET http://host/api/x`,
+  // válido em HTTP/1.1) deixa `req.url` sem começar por `/api/` e furaria um
+  // gate por prefixo, embora case o handler — seria bypass total da auth.
+  // OPTIONS passa (preflight CORS não leva Authorization). Sem autenticador a
+  // API segue aberta — só em dev/CI sem credenciais, avisado no log da subida.
   if (autenticador) {
     app.addHook('onRequest', async (req, reply) => {
       if (req.method === 'OPTIONS') return;
-      // req.url começa pelo caminho (a querystring vem depois), então
-      // startsWith basta para separar /api/* de /health.
-      if (!req.url.startsWith('/api/')) return;
+      const rota = req.routeOptions?.url;
+      if (rota && ROTAS_PUBLICAS.has(rota)) return;
       const token = extrairBearer(req.headers.authorization);
       if (!token) return reply.code(401).send({ erro: 'Autenticação necessária' });
       const usuario = await autenticador.verificar(token);
@@ -67,16 +75,20 @@ export async function criarApp({
   app.get('/health', async () => ({ ok: true, servico: 'rota-api' }));
 
   // RF-01: upload múltiplo de XMLs procNFe, com relatório de importação (RF-04).
+  // Streaming: lê e parseia uma nota por vez (pico de memória ~1 arquivo, não
+  // a remessa toda), passando um gerador para o serviço.
   app.post('/api/importacoes', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
-    const arquivos: ArquivoXml[] = [];
-    for await (const parte of req.files()) {
-      const buffer = await parte.toBuffer();
-      arquivos.push({ nome: parte.filename, conteudo: buffer.toString('utf8') });
+    async function* lerArquivos(): AsyncIterable<ArquivoXml> {
+      for await (const parte of req.files()) {
+        const buffer = await parte.toBuffer();
+        yield { nome: parte.filename, conteudo: buffer.toString('utf8') };
+      }
     }
-    if (arquivos.length === 0) {
+    const relatorio = await importarXmls(lerArquivos(), repo, geocodificador);
+    if (relatorio.total === 0) {
       return reply.code(400).send({ erro: 'Nenhum arquivo XML enviado' });
     }
-    return importarXmls(arquivos, repo, geocodificador);
+    return relatorio;
   });
 
   app.get('/api/pedidos', { config: { papeis: ESCRITORIO } }, async () => repo.listarPedidos());
@@ -113,10 +125,11 @@ export async function criarApp({
   // app e o `.then` do sync da bruta disparam juntos, e duas execuções
   // concorrentes processariam a mesma bruta duas vezes (duas trilhas ativas
   // para o mesmo cliente). Vale para uma instância — o plano atual do Render.
-  // Qualquer usuário logado (o motorista dispara ao religar a rede); sem
-  // `papeis`, basta um ID token válido.
+  // Qualquer usuário PROVISIONADO (o motorista dispara ao religar a rede).
+  // Exige um papel conhecido — barra token sem papel (ex.: conta de signup
+  // avulso, caso o projeto Firebase permita), que não deveria existir.
   let processamentoEmAndamento: Promise<RelatorioProcessamento> | null = null;
-  app.post('/api/trilhas/processar', async (req, reply) => {
+  app.post('/api/trilhas/processar', { config: { papeis: TODOS } }, async (req, reply) => {
     if (!osrm) {
       return reply.code(503).send({ erro: 'Roteirizador indisponível (OSRM_URL não configurada)' });
     }

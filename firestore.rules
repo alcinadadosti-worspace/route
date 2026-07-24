@@ -18,6 +18,14 @@ service cloud.firestore {
     function escritorio() {
       return papel() == 'admin' || papel() == 'operador';
     }
+    // A escrita de campo (entrega, status do pedido) tem que pertencer a uma
+    // rota do próprio motorista — senão qualquer logado adultera pedido/rota
+    // alheia só sabendo o id. Um get() prova posse.
+    function donoDaRota(rotaId) {
+      return rotaId is string
+        && exists(/databases/$(database)/documents/rotas/$(rotaId))
+        && get(/databases/$(database)/documents/rotas/$(rotaId)).data.motoristaId == request.auth.uid;
+    }
 
     // Motorista lê apenas as próprias rotas; escritório lê todas.
     // Em campo (RF-18), o dono da rota atualiza o status das paradas e a
@@ -37,7 +45,12 @@ service cloud.firestore {
     // Em campo ele escreve duas coisas, cada uma restrita aos seus campos:
     // o pin confirmado (RF-07, com autoria dele) e o dossiê do local (RF-21).
     match /clientes/{clienteId} {
-      allow read: if logado();
+      // `get` (por id) liberado ao motorista — ele só lê os clientes das
+      // paradas da rota dele; `list` (enumerar a coleção) é só escritório,
+      // senão qualquer motorista baixa a base inteira de clientes (PII) e,
+      // com o id = SHA-256 do CPF, recupera CPFs por força bruta.
+      allow get: if logado();
+      allow list: if escritorio();
       allow update: if logado() && (
         // Pin (RF-07): coordenada tem que ser lat/lng numéricos plausíveis —
         // os limites de faixa também barram NaN (toda comparação com NaN é
@@ -47,20 +60,23 @@ service cloud.firestore {
          && request.resource.data.statusMapeamento == 'mapeado'
          && request.resource.data.mapeadoPor == request.auth.uid
          && request.resource.data.mapeadoEm is string
+         // hasOnly nas chaves de topo não impede campos aninhados: fixa a forma.
+         && request.resource.data.coordenada.keys().hasOnly(['lat', 'lng'])
          && request.resource.data.coordenada.lat is number
          && request.resource.data.coordenada.lat >= -90
          && request.resource.data.coordenada.lat <= 90
          && request.resource.data.coordenada.lng is number
          && request.resource.data.coordenada.lng >= -180
          && request.resource.data.coordenada.lng <= 180)
-        // Dossiê (RF-21): texto curto e caminho de foto — com tipo e tamanho.
+        // Dossiê (RF-21): texto curto e o caminho da PRÓPRIA foto do cliente
+        // (não um path arbitrário nem o de outro cliente).
         || (request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['fotoReferenciaPath', 'observacoes'])
             && request.resource.data.observacoes is string
             && request.resource.data.observacoes.size() < 2000
             && (request.resource.data.fotoReferenciaPath == null
-                || (request.resource.data.fotoReferenciaPath is string
-                    && request.resource.data.fotoReferenciaPath.size() < 500)))
+                || request.resource.data.fotoReferenciaPath
+                     == 'clientes/' + clienteId + '/referencia.jpg'))
       );
       allow create, delete: if false;
     }
@@ -72,13 +88,16 @@ service cloud.firestore {
       allow create: if logado()
         && request.resource.data.gravadaPor == request.auth.uid
         && request.resource.data.status == 'pendente'
-        && request.resource.data.keys().hasAll(
-             ['clienteId', 'pontos', 'gravadaPor', 'iniciadaEm', 'finalizadaEm', 'status'])
-        // Shape mínimo: rastro é lista com ≥2 pontos, para um cliente que
-        // existe. (Validar cada elemento não é viável em rules — o backend
-        // filtra ponto a ponto no pós-processamento.)
+        // hasOnly (não hasAll): sem campos extras injetados no doc.
+        && request.resource.data.keys().hasOnly(
+             ['clienteId', 'rotaId', 'pontos', 'gravadaPor', 'iniciadaEm',
+              'finalizadaEm', 'status', 'processadaEm', 'motivoDescarte', 'trilhaGerada'])
+        // Shape mínimo: rastro é lista com ≥2 pontos (e teto contra spam de
+        // doc gigante), para um cliente que existe. (Validar cada elemento não
+        // é viável em rules — o backend filtra ponto a ponto no pós-proc.)
         && request.resource.data.pontos is list
         && request.resource.data.pontos.size() >= 2
+        && request.resource.data.pontos.size() <= 50000
         && request.resource.data.clienteId is string
         && exists(/databases/$(database)/documents/clientes/$(request.resource.data.clienteId));
       allow update, delete: if false;
@@ -89,9 +108,14 @@ service cloud.firestore {
     // permissão de leitura, o motorista nunca vê o documento.
     match /pedidos/{pedidoId} {
       allow read: if escritorio();
+      // Só o dono da rota do pedido, e só a partir de 'em_rota' (máquina de
+      // estados): sem isso, qualquer logado que saiba o id vira o status de
+      // qualquer pedido, ou reverte um já resolvido.
       allow update: if logado()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-        && request.resource.data.status in ['entregue', 'insucesso'];
+        && request.resource.data.status in ['entregue', 'insucesso']
+        && resource.data.status == 'em_rota'
+        && donoDaRota(resource.data.rotaId);
       allow create, delete: if false;
     }
 
@@ -106,17 +130,30 @@ service cloud.firestore {
     }
 
     match /trilhas/{trilhaId} {
-      allow read: if logado();
+      // Como clientes: `get` por id ao motorista (segue a trilha ativa da
+      // parada), `list` só escritório — senão vaza a coordenada do caminho de
+      // acesso de todo cliente.
+      allow get: if logado();
+      allow list: if escritorio();
       allow write: if false;
     }
 
     // Registro de entrega/insucesso (seção 7.5): criado em campo, imutável.
+    // Amarrado ao autor e a uma rota do próprio motorista, com forma validada
+    // — senão vira forja de auditoria (registro falso, sem atribuição).
     match /entregas/{entregaId} {
       allow read: if escritorio();
       allow create: if logado()
-        && request.resource.data.keys().hasAll(
-             ['pedidoId', 'rotaId', 'clienteId', 'resultado', 'confirmadaEm'])
-        && request.resource.data.resultado in ['entregue', 'ausente', 'nao_localizado', 'recusa'];
+        && request.resource.data.keys().hasOnly(
+             ['pedidoId', 'rotaId', 'clienteId', 'resultado', 'confirmadaEm',
+              'posicaoConfirmacao', 'gravadaPor'])
+        && request.resource.data.gravadaPor == request.auth.uid
+        && request.resource.data.resultado in ['entregue', 'ausente', 'nao_localizado', 'recusa']
+        && request.resource.data.confirmadaEm is string
+        && (request.resource.data.posicaoConfirmacao == null
+            || (request.resource.data.posicaoConfirmacao.lat is number
+                && request.resource.data.posicaoConfirmacao.lng is number))
+        && donoDaRota(request.resource.data.rotaId);
       allow update, delete: if false;
     }
   }

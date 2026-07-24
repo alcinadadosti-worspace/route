@@ -23,12 +23,14 @@ export interface ArquivoXml {
 export type { RelatorioImportacao };
 
 export async function importarXmls(
-  arquivos: ArquivoXml[],
+  // Aceita iterável assíncrono para permitir streaming: o handler HTTP lê e
+  // parseia um arquivo por vez, sem bufferizar a remessa inteira em memória.
+  arquivos: AsyncIterable<ArquivoXml> | Iterable<ArquivoXml>,
   repo: Repositorio,
   geocodificador: Geocodificador | null = null,
 ): Promise<RelatorioImportacao> {
   const relatorio: RelatorioImportacao = {
-    total: arquivos.length,
+    total: 0,
     importados: 0,
     duplicados: 0,
     rejeitados: [],
@@ -38,7 +40,8 @@ export async function importarXmls(
     alertas: [],
   };
 
-  for (const arquivo of arquivos) {
+  for await (const arquivo of arquivos) {
+    relatorio.total += 1;
     const resultado = await parseNfe(arquivo.conteudo);
     if (!resultado.ok) {
       relatorio.rejeitados.push({ arquivo: arquivo.nome, motivo: resultado.motivo });

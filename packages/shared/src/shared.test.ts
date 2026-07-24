@@ -17,6 +17,15 @@ test('clienteId é determinístico e ignora formatação do documento', async ()
   assert.match(a, /^[0-9a-f]{64}$/);
 });
 
+test('pepper: id determinístico mas diferente do SHA-256 puro (não reversível)', async () => {
+  const semPepper = await clienteIdDeDocumento('10000004782');
+  const comPepper1 = await clienteIdDeDocumento('10000004782', 'segredo');
+  const comPepper2 = await clienteIdDeDocumento('100.000.047-82', 'segredo');
+  assert.equal(comPepper1, comPepper2); // mesmo CPF+pepper → mesmo id (dedup)
+  assert.notEqual(comPepper1, semPepper); // pepper muda o id (não é o hash puro)
+  assert.match(comPepper1, /^[0-9a-f]{64}$/);
+});
+
 test('máscara de CPF e CNPJ mostra apenas os dois últimos dígitos', () => {
   assert.equal(mascararDocumento('10000004782'), '***.***.***-82');
   assert.equal(mascararDocumento('14750618000155'), '**.***.***/****-55');

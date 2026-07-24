@@ -2,14 +2,23 @@ import { initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getStorage } from 'firebase-admin/storage';
 
 /**
- * CORS do bucket do Storage (configuração única, aplicada em 24/07/2026):
- * o download do PMTiles (seção 12, camada 3) é um fetch() do app no
- * navegador — sem CORS o browser bloqueia. GET/HEAD abertos é inofensivo:
- * a leitura continua protegida pelas storage.rules/token de download.
- * Rodar de novo apenas se o bucket for recriado.
+ * CORS do bucket do Storage: o fetch() do PMTiles no navegador (seção 12,
+ * camada 3) precisa de CORS. Origem restrita aos dois PWAs + localhost (dev)
+ * — não `*`: as fotos de local (LGPD) são lidas por URL com token de download
+ * que ignora as rules; restringir a origem impede que um site de terceiro
+ * leia os bytes de uma URL vazada via fetch. GET/HEAD só.
+ * Rodar de novo se o bucket for recriado ou as origens mudarem.
  *
  * Uso: GOOGLE_APPLICATION_CREDENTIALS=... npm run configurar-cors -w @rota/api
  */
+
+const ORIGENS = [
+  'https://rota-motorista.onrender.com',
+  'https://rota-admin.onrender.com',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:4173',
+];
 
 const app = initializeApp({
   credential: applicationDefault(),
@@ -20,7 +29,7 @@ const bucket = getStorage(app).bucket();
 await bucket.setMetadata({
   cors: [
     {
-      origin: ['*'],
+      origin: ORIGENS,
       method: ['GET', 'HEAD'],
       responseHeader: ['Content-Type', 'Content-Length', 'Range'],
       maxAgeSeconds: 3600,

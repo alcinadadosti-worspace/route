@@ -36,6 +36,12 @@ export async function publicarRota(
   if (!entrada.motoristaId) {
     return { ok: false, status: 400, erro: 'Escolha o motorista da rota' };
   }
+  // `data` entra no rotaId, que vira caminho de documento no Firestore ('/'
+  // separa níveis): sem validar, `data` com barras escreveria num caminho
+  // arbitrário sob rotas/.
+  if (entrada.data !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(entrada.data)) {
+    return { ok: false, status: 400, erro: 'Data inválida (esperado AAAA-MM-DD)' };
+  }
 
   const usuarios = await repo.listarUsuarios();
   const motorista = usuarios.find((u) => u.id === entrada.motoristaId && u.ativo);
@@ -44,7 +50,9 @@ export async function publicarRota(
   }
 
   const cds = await repo.obterCds();
-  const cd = cds[entrada.cdId];
+  // hasOwnProperty: `cdId='__proto__'` retornaria o protótipo (truthy) e
+  // furaria a checagem, seguindo com coordenada undefined.
+  const cd = Object.prototype.hasOwnProperty.call(cds, entrada.cdId) ? cds[entrada.cdId] : undefined;
   if (!cd) return { ok: false, status: 400, erro: `CD '${entrada.cdId}' não cadastrado` };
   const retornaAoCd = entrada.retornaAoCd ?? true;
 

@@ -49,7 +49,15 @@ const parser = new XMLParser({
   removeNSPrefix: true,
 });
 
-export async function parseNfe(xml: string): Promise<ResultadoParse> {
+/**
+ * `pepper` (default: env `CLIENTE_ID_PEPPER`) torna o clienteId irreversível
+ * — sem ele (dev/CI/testes) o id é SHA-256 puro do CPF. Em produção a env var
+ * DEVE estar setada (e nunca mudar, senão o dedup por cliente quebra).
+ */
+export async function parseNfe(
+  xml: string,
+  pepper: string | undefined = process.env.CLIENTE_ID_PEPPER,
+): Promise<ResultadoParse> {
   let doc: any;
   try {
     doc = parser.parse(xml, true);
@@ -114,7 +122,7 @@ export async function parseNfe(xml: string): Promise<ResultadoParse> {
       serie: Number(ide.serie ?? 0),
       emitidoEm: String(ide.dhEmi ?? ''),
       destinatario: {
-        clienteId: await clienteIdDeDocumento(documento),
+        clienteId: await clienteIdDeDocumento(documento, pepper),
         nome: String(dest.xNome ?? ''),
         documentoMascarado: mascararDocumento(documento),
         telefone: normalizarTelefone(ender.fone ? String(ender.fone) : null),

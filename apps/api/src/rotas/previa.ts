@@ -96,7 +96,8 @@ export async function previaDeRota(
   }
 
   const cds = await repo.obterCds();
-  const cd = cds[entrada.cdId];
+  // hasOwnProperty: `cdId='__proto__'` retornaria o protótipo (truthy).
+  const cd = Object.prototype.hasOwnProperty.call(cds, entrada.cdId) ? cds[entrada.cdId] : undefined;
   if (!cd) {
     return { ok: false, status: 400, erro: `CD '${entrada.cdId}' não cadastrado` };
   }

@@ -25,6 +25,7 @@ export function registrarResultado(
   rota: { id: string } & Rota,
   parada: ParadaRota,
   resultado: ResultadoEntrega,
+  uid: string,
 ): void {
   const statusPedido = resultado === 'entregue' ? 'entregue' : 'insucesso';
   const confirmadaEm = new Date().toISOString();
@@ -52,6 +53,7 @@ export function registrarResultado(
       resultado,
       confirmadaEm,
       posicaoConfirmacao: await posicaoAtual(),
+      gravadaPor: uid,
     };
     setDoc(doc(collection(db, 'entregas')), entrega).catch((erro) =>
       console.error('Falha na sincronização da entrega', erro),

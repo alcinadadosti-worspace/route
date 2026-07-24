@@ -172,11 +172,11 @@ export function App() {
   const [navegandoPara, setNavegandoPara] = useState<string | null>(null);
 
   function resolver(pedidoId: string | undefined, resultado: ResultadoEntrega) {
-    if (!rota || !pedidoId) return;
+    if (!rota || !pedidoId || !usuario) return;
     const parada = rota.paradas.find((p) => p.pedidoId === pedidoId);
     // Parada já resolvida não gera segunda entrega (proteção contra toque duplo).
     if (!parada || parada.status === 'entregue' || parada.status === 'insucesso') return;
-    registrarResultado(rota, parada, resultado);
+    registrarResultado(rota, parada, resultado, usuario.uid);
     setInsucessoAberto(null);
   }
 

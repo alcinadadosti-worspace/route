@@ -171,6 +171,8 @@ export interface Entrega {
   resultado: ResultadoEntrega;
   confirmadaEm: string;
   posicaoConfirmacao: GeoPonto | null;
+  /** Autor do registro (uid) — accountability na trilha de auditoria. */
+  gravadaPor: string;
 }
 
 /**

@@ -30,6 +30,11 @@ app.log.warn(
     ? 'Auth: exigindo ID token do Firebase em /api/*'
     : 'Auth: DESATIVADA (sem credenciais) — /api/* aberto, use só em dev',
 );
+app.log.warn(
+  process.env.CLIENTE_ID_PEPPER
+    ? 'CPF: clienteId com pepper (HMAC) — id não reversível'
+    : 'CPF: SEM CLIENTE_ID_PEPPER — clienteId é SHA-256 reversível; defina a env var antes de dado real',
+);
 
 app.listen({ port: porta, host: '0.0.0.0' }).catch((erro) => {
   app.log.error(erro);
