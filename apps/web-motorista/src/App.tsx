@@ -157,7 +157,9 @@ export function App() {
                   ? ('entregue' as const)
                   : p.status === 'insucesso'
                     ? ('insucesso' as const)
-                    : cliente && cliente.statusMapeamento !== 'mapeado'
+                    : // Só destino RURAL (sem geocodificação) precisa de mapear/trilha;
+                      // urbano (geocodificado) e já mapeado entram como entrega normal.
+                      cliente && cliente.statusMapeamento === 'nao_mapeado'
                       ? ('trilha' as const)
                       : ('pendente' as const),
               observacao: cliente?.observacoes || undefined,

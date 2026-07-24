@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  LngLatBounds,
   Map as MapaLibre,
   Marker,
   type GeoJSONSource,
@@ -142,7 +143,9 @@ export function MapaNavegacao({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ajustandoPin]);
 
-  // Posição do veículo: marcador + câmera seguindo (exceto durante o ajuste).
+  // Posição do veículo: marcador + câmera. Indo até o destino, enquadra VOCÊ +
+  // o PIN juntos (você sempre vê para onde ir); no modo trilha (já coladinho no
+  // ponto de entrada), passa a seguir só o veículo, de perto.
   useEffect(() => {
     const mapa = mapaRef.current;
     if (!mapa || !posicao) return;
@@ -153,9 +156,15 @@ export function MapaNavegacao({
       veiculoNoMapaRef.current = true;
     }
     if (!ajustandoPin && Date.now() >= seguirAPartirDeRef.current) {
-      mapa.easeTo({ center: [posicao.lng, posicao.lat], duration: 800 });
+      if (modoTrilha) {
+        mapa.easeTo({ center: [posicao.lng, posicao.lat], duration: 800 });
+      } else {
+        const limites = new LngLatBounds([posicao.lng, posicao.lat], [posicao.lng, posicao.lat]);
+        limites.extend([pin.lng, pin.lat]);
+        mapa.fitBounds(limites, { padding: 90, maxZoom: 16, duration: 800 });
+      }
     }
-  }, [posicao, ajustandoPin]);
+  }, [posicao, ajustandoPin, modoTrilha, pin.lat, pin.lng]);
 
   return <div ref={containerRef} className="mapa mapa-navegacao" />;
 }

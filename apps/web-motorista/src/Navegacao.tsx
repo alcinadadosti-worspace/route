@@ -62,9 +62,10 @@ export function Navegacao({
   const cliente = dossie?.cliente ?? null;
   const trilha = dossie?.trilha ?? null;
   const pinDoCliente = cliente?.coordenada ?? parada.coordenada;
-  // Sem o doc do cliente (cache frio) não dá para saber o status: trata como
-  // mapeado e não grava — a pré-carga da publicação torna isso raro.
-  const precisaMapear = cliente != null && cliente.statusMapeamento !== 'mapeado';
+  // Só RURAL (sem geocodificação) grava trilha e confirma pin em campo. Urbano
+  // (geocodificado) e já mapeado: navega até o pin e entrega, sem esse fluxo.
+  // Sem o doc do cliente (cache frio) trata como já resolvido e não grava.
+  const precisaMapear = cliente != null && cliente.statusMapeamento === 'nao_mapeado';
 
   useWakeLock(true);
   const { leitura, erro: erroGps } = usePosicao(true);
