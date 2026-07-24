@@ -10,3 +10,6 @@ Thumbs.db
 # Credenciais — NUNCA commitar
 *firebase-adminsdk*.json
 *service-account*.json
+
+# Notas fiscais reais (CPF/nome) — nunca versionar
+XML_gerado_*/

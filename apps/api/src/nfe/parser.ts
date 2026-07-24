@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { pepperClienteId } from '../pepper.js';
 import {
   clienteIdDeDocumento,
   mascararDocumento,
@@ -50,13 +51,13 @@ const parser = new XMLParser({
 });
 
 /**
- * `pepper` (default: env `CLIENTE_ID_PEPPER`) torna o clienteId irreversível
- * — sem ele (dev/CI/testes) o id é SHA-256 puro do CPF. Em produção a env var
- * DEVE estar setada (e nunca mudar, senão o dedup por cliente quebra).
+ * `pepper` (default: `pepperClienteId()`) torna o clienteId irreversível — em
+ * produção vem do service account automaticamente; sem credenciais (dev/CI) é
+ * SHA-256 puro do CPF. Ver pepper.ts.
  */
 export async function parseNfe(
   xml: string,
-  pepper: string | undefined = process.env.CLIENTE_ID_PEPPER,
+  pepper: string | undefined = pepperClienteId(),
 ): Promise<ResultadoParse> {
   let doc: any;
   try {

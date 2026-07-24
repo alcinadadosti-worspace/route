@@ -4,6 +4,7 @@ import { criarRepositorioFirestore } from './db/firestore.js';
 import { criarGeocodificadorGoogle } from './geocodificacao/google.js';
 import { criarClienteOsrm } from './rotas/osrm.js';
 import { criarAutenticador } from './auth/autenticador.js';
+import { origemDoPepper } from './pepper.js';
 
 /**
  * Entrada da API (Render web service — seção 15).
@@ -30,10 +31,13 @@ app.log.warn(
     ? 'Auth: exigindo ID token do Firebase em /api/*'
     : 'Auth: DESATIVADA (sem credenciais) — /api/* aberto, use só em dev',
 );
+const origemPepper = origemDoPepper();
 app.log.warn(
-  process.env.CLIENTE_ID_PEPPER
-    ? 'CPF: clienteId com pepper (HMAC) — id não reversível'
-    : 'CPF: SEM CLIENTE_ID_PEPPER — clienteId é SHA-256 reversível; defina a env var antes de dado real',
+  origemPepper === 'explicito'
+    ? 'CPF: clienteId com pepper explícito (HMAC) — id não reversível'
+    : origemPepper === 'derivado'
+      ? 'CPF: clienteId com pepper derivado do service account (HMAC) — id não reversível'
+      : 'CPF: SEM pepper (sem credenciais) — clienteId é SHA-256 reversível; use só em dev',
 );
 
 app.listen({ port: porta, host: '0.0.0.0' }).catch((erro) => {
