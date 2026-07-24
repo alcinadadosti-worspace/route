@@ -72,7 +72,13 @@ export async function publicarRota(
 
   const pontos = [cd.coordenada, ...candidatas.map((c) => c.coordenada)];
   if (retornaAoCd) pontos.push(cd.coordenada);
-  const tracado = await osrm.route(pontos);
+  let tracado;
+  try {
+    tracado = await osrm.route(pontos);
+  } catch (erro) {
+    // Cold-start do OSRM ou falha de rota: mensagem clara em vez de 500 cru.
+    return { ok: false, status: 503, erro: erro instanceof Error ? erro.message : 'Falha no roteirizador' };
+  }
 
   let etaAcumuladoMin = 0;
   const paradas: ParadaRota[] = candidatas.map((c, i) => {

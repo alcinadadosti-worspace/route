@@ -44,6 +44,33 @@ export interface ClienteOsrm {
   match(pontos: PontoMatch[]): Promise<ResultadoMatch>;
 }
 
+/** Espera ms — usado no retry do cold-start do OSRM. */
+function esperar(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * fetch tolerante ao cold-start do OSRM (Render free desliga após 15 min): um
+ * 502/503/504 (gateway subindo) ou erro de rede é re-tentado com espera
+ * crescente, dando ~24 s para o serviço acordar antes de desistir com mensagem
+ * clara. Demais status passam direto (o chamador trata Ok/NoTrips/etc.).
+ */
+async function fetchOsrm(fetchFn: typeof fetch, url: string): Promise<Response> {
+  const esperas = [4000, 8000, 12000];
+  for (let tentativa = 0; ; tentativa++) {
+    try {
+      const resposta = await fetchFn(url);
+      if (![502, 503, 504].includes(resposta.status)) return resposta;
+    } catch {
+      // erro de rede (ex.: ECONNRESET enquanto o serviço sobe) — transitório
+    }
+    if (tentativa >= esperas.length) {
+      throw new Error('Roteirizador indisponível (pode estar acordando) — tente de novo em ~1 minuto');
+    }
+    await esperar(esperas[tentativa]!);
+  }
+}
+
 export function criarClienteOsrm(
   base: string | undefined = urlPadrao(),
   fetchFn: typeof fetch = fetch,
@@ -58,7 +85,7 @@ export function criarClienteOsrm(
         `${raiz}/trip/v1/driving/${coordenadas}` +
         `?source=first&roundtrip=${roundtrip}&geometries=polyline&overview=full`;
 
-      const resposta = await fetchFn(url);
+      const resposta = await fetchOsrm(fetchFn, url);
       if (!resposta.ok) throw new Error(`OSRM respondeu HTTP ${resposta.status}`);
       const corpo: any = await resposta.json();
       if (corpo?.code !== 'Ok' || !corpo?.trips?.[0]) {
@@ -86,7 +113,7 @@ export function criarClienteOsrm(
       const coordenadas = pontos.map((p) => `${p.lng},${p.lat}`).join(';');
       const url = `${raiz}/route/v1/driving/${coordenadas}?geometries=polyline&overview=full`;
 
-      const resposta = await fetchFn(url);
+      const resposta = await fetchOsrm(fetchFn, url);
       if (!resposta.ok) throw new Error(`OSRM respondeu HTTP ${resposta.status}`);
       const corpo: any = await resposta.json();
       const rota = corpo?.routes?.[0];
@@ -134,7 +161,7 @@ export function criarClienteOsrm(
           `${raiz}/match/v1/driving/${coordenadas}` +
           `?geometries=polyline&overview=false&radiuses=${raios}`;
 
-        const resposta = await fetchFn(url);
+        const resposta = await fetchOsrm(fetchFn, url);
         const corpo: any = await resposta.json().catch(() => null);
         // NoMatch/NoSegment não são erro: é o rastro inteiro fora da malha —
         // exatamente o caso das entradas rurais que o sistema quer aprender.

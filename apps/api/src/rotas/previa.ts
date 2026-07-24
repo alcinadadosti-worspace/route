@@ -112,6 +112,7 @@ export async function previaDeRota(
   let distanciaTotalKm: number;
   let duracaoTotalMin: number;
 
+  try {
   if (entrada.ordemManual) {
     // RF-12: o operador conhece restrições que o algoritmo não conhece.
     const pontos = [cd.coordenada, ...candidatas.map((c) => c.coordenada)];
@@ -131,6 +132,10 @@ export async function previaDeRota(
     polyline = resultado.polyline;
     distanciaTotalKm = resultado.distanciaKm;
     duracaoTotalMin = resultado.duracaoMin;
+  }
+  } catch (erro) {
+    // Cold-start do OSRM ou falha de rota: mensagem clara em vez de 500 cru.
+    return { ok: false, status: 503, erro: erro instanceof Error ? erro.message : 'Falha no roteirizador' };
   }
 
   const paradas: ParadaPrevia[] = ordenadas.map((c, i) => ({
