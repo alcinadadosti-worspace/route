@@ -13,3 +13,5 @@ Thumbs.db
 
 # Notas fiscais reais (CPF/nome) — nunca versionar
 XML_gerado_*/
+notas-teste/
+*-proc-nfe.xml
