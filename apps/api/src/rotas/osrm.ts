@@ -19,8 +19,9 @@ export interface ResultadoRoute {
   polyline: string;
   distanciaKm: number;
   duracaoMin: number;
-  /** Uma perna por trecho entre pontos consecutivos, na ordem dada. */
-  pernas: Array<{ distanciaKm: number; duracaoMin: number }>;
+  /** Uma perna por trecho entre pontos consecutivos, na ordem dada. Duração em
+   * SEGUNDOS crus: quem acumula ETA soma segundos e arredonda uma vez por parada. */
+  pernas: Array<{ distanciaKm: number; duracaoSeg: number }>;
 }
 
 export interface ResultadoMatch {
@@ -127,7 +128,7 @@ export function criarClienteOsrm(
         duracaoMin: Math.round(rota.duration / 60),
         pernas: (rota.legs ?? []).map((l: any) => ({
           distanciaKm: Math.round((l.distance / 1000) * 10) / 10,
-          duracaoMin: Math.round(l.duration / 60),
+          duracaoSeg: Number(l.duration),
         })),
       };
     },

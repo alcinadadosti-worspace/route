@@ -80,6 +80,15 @@ class RepositorioFirestore implements Repositorio {
     await this.db.collection('rotas').doc(rotaId).set(rota);
   }
 
+  async publicarRotaAtomica(rotaId: string, rota: Rota, pedidoIds: string[]): Promise<void> {
+    const lote = this.db.batch();
+    lote.set(this.db.collection('rotas').doc(rotaId), rota);
+    for (const id of pedidoIds) {
+      lote.update(this.pedidos.doc(id), { status: 'em_rota', rotaId });
+    }
+    await lote.commit();
+  }
+
   async listarRotas(): Promise<Array<{ id: string } & Rota>> {
     const resposta = await this.db.collection('rotas').orderBy('publicadaEm', 'desc').get();
     return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Rota) }));

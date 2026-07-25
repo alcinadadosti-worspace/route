@@ -36,10 +36,11 @@ export async function clienteIdDeDocumento(documento: string, pepper?: string): 
 export function mascararDocumento(documento: string): string {
   const digitos = somenteDigitos(documento);
   const finais = digitos.slice(-2);
-  if (digitos.length === 14) {
-    return `**.***.***/****-${finais}`;
-  }
-  return `***.***.***-${finais}`;
+  if (digitos.length === 14) return `**.***.***/****-${finais}`;
+  if (digitos.length === 11) return `***.***.***-${finais}`;
+  // Documento fora do padrão CPF/CNPJ (dado malformado): não expõe dígitos nem
+  // finge um formato — melhor um marcador neutro que uma máscara enganosa.
+  return '***';
 }
 
 export function somenteDigitos(valor: string): string {

@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { Importacao } from './telas/Importacao';
+import { Decisoes } from './telas/Decisoes';
 import { Pedidos } from './telas/Pedidos';
 import { Clientes } from './telas/Clientes';
 import { Rotas } from './telas/Rotas';
 import { Login } from './telas/Login';
 import { useAutenticacao } from './useAutenticacao';
 
-type Aba = 'importacao' | 'rotas' | 'pedidos' | 'clientes';
+type Aba = 'importacao' | 'decisoes' | 'rotas' | 'pedidos' | 'clientes';
 
 const ABAS: Array<{ id: Aba; rotulo: string }> = [
   { id: 'importacao', rotulo: 'Importação' },
+  { id: 'decisoes', rotulo: 'Decisões' },
   { id: 'rotas', rotulo: 'Rotas' },
   { id: 'pedidos', rotulo: 'Pedidos' },
   { id: 'clientes', rotulo: 'Clientes' },
@@ -54,6 +56,7 @@ export function App() {
       </nav>
 
       {aba === 'importacao' && <Importacao />}
+      {aba === 'decisoes' && <Decisoes />}
       {aba === 'rotas' && <Rotas />}
       {aba === 'pedidos' && <Pedidos />}
       {aba === 'clientes' && <Clientes />}

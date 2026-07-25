@@ -8,11 +8,12 @@ import type { ParametrosTrilha } from './trilha.js';
 
 export type Papel = 'admin' | 'operador' | 'motorista';
 
-export type StatusMapeamento = 'nao_mapeado' | 'geocodificado' | 'mapeado';
+export type StatusMapeamento = 'nao_mapeado' | 'aproximado' | 'geocodificado' | 'mapeado';
 
 export type StatusPedido =
   | 'importado'
   | 'pendente_de_mapeamento'
+  | 'pendente_de_decisao'
   | 'pronto_para_rota'
   | 'em_rota'
   | 'entregue'
@@ -74,6 +75,19 @@ export interface Pedido {
   status: StatusPedido;
   rotaId: string | null;
   xmlStoragePath: string | null;
+  /**
+   * Entrega em local diverso (bloco `<entrega>` da NF-e, seção 8.4): preenchido
+   * só quando a nota traz endereço de entrega diferente do fiscal. O pedido
+   * nasce `pendente_de_decisao` e o escritório escolhe na aba Decisões qual vale.
+   * A escolha nunca toca o cadastro do cliente (endereço fiscal canônico).
+   */
+  enderecoEntrega?: EnderecoFiscal;
+  /** Geocodificação do endereço de entrega (null = não localizado; o escritório
+   * posiciona o pin na tela de decisão). */
+  coordenadaEntrega?: GeoPonto | null;
+  /** Escolha do escritório: true = a rota usa o endereço de entrega (override do
+   * cliente); false/ausente = usa o endereço/coordenada do cliente. */
+  usarEnderecoEntrega?: boolean;
 }
 
 /**
@@ -95,6 +109,10 @@ export interface ParadaRota {
   etaMin: number;
   distanciaKm: number;
   status: StatusPedido;
+  /** Denormalizado da situação de mapeamento do cliente (seção 9): o app do
+   * motorista liga o "navegar e mapear" por aqui, sem depender do doc do cliente
+   * estar no cache offline. Ausente em rotas antigas → o app recai no cliente. */
+  precisaMapear?: boolean;
 }
 
 /** `rotas/{rotaId}` — seção 7.3. */
@@ -237,8 +255,14 @@ export interface RelatorioImportacao {
   rejeitados: Array<{ arquivo: string; motivo: string }>;
   prontosParaRota: number;
   pendentesDeMapeamento: number;
+  /** Notas com endereço de entrega divergente do fiscal — aguardam a escolha do
+   * escritório na aba Decisões (seção 8.4). */
+  pendentesDeDecisao: number;
   /** Destinos urbanos resolvidos pela geocodificação automática (seção 9). */
   geocodificados: number;
+  /** Destinos aproximados (rural/impreciso, mas no município certo): despacháveis
+   * com ponto grosseiro, a mapear em campo na 1ª entrega (seção 9). */
+  aproximados: number;
   /** Seção 8.3: endereço fiscal mudou em cliente já mapeado — o pin continua válido? */
   alertas: Array<{ clienteId: string; nome: string; mensagem: string }>;
 }

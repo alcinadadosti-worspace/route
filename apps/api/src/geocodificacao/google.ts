@@ -11,6 +11,10 @@ export interface ResultadoGeocodificacao {
   coordenada: GeoPonto;
   /** true = precisão de endereço/rua dentro do município esperado. */
   precisa: boolean;
+  /** true = o resultado caiu no município esperado, mesmo que aproximado (nível
+   * cidade). Um ponto aproximado no município certo serve de partida para o
+   * motorista mapear; fora do município é ponto errado e deve ser descartado. */
+  municipioConfere: boolean;
 }
 
 export interface Geocodificador {
@@ -64,6 +68,7 @@ export function criarGeocodificadorGoogle(
       return {
         coordenada: { lat: local.lat, lng: local.lng },
         precisa: nivelEndereco && municipioBate,
+        municipioConfere: municipioBate,
       };
     },
   };

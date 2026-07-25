@@ -4,6 +4,7 @@ import { listarClientes } from '../api';
 
 const ROTULO_MAPEAMENTO: Record<string, { texto: string; classe: string }> = {
   nao_mapeado: { texto: 'Não mapeado', classe: 'pendente' },
+  aproximado: { texto: 'Aproximado (a mapear)', classe: 'pendente' },
   geocodificado: { texto: 'Geocodificado', classe: '' },
   mapeado: { texto: 'Mapeado', classe: 'pronto' },
 };
@@ -21,7 +22,7 @@ export function Clientes() {
   return (
     <section className="cartao">
       <h2>Clientes</h2>
-      {erro && <div className="erro">{erro} — a API está no ar? (npm run dev:api)</div>}
+      {erro && <div className="erro">{erro}</div>}
       {!erro && clientes.length === 0 && (
         <div className="vazio">Nenhum cliente ainda — eles nascem da importação das notas.</div>
       )}

@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
-import { importarXmls, type ArquivoXml } from './importacao/servico.js';
+import { importarXmls, decidirEnderecoEntrega, type ArquivoXml } from './importacao/servico.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
 import { processarTrilhasBrutas, type RelatorioProcessamento } from './trilhas/processar.js';
@@ -92,6 +92,34 @@ export async function criarApp({
   });
 
   app.get('/api/pedidos', { config: { papeis: ESCRITORIO } }, async () => repo.listarPedidos());
+
+  // Seção 8.4: escritório resolve a ambiguidade de endereço (entrega em local
+  // diverso). Escolhe fiscal ou entrega; a escolha vira override no pedido, sem
+  // tocar o cadastro do cliente. `coordenada` (opcional) é o pin ajustado no mapa.
+  app.post(
+    '/api/pedidos/:chave/endereco-entrega',
+    { config: { papeis: ESCRITORIO } },
+    async (req, reply) => {
+      const { chave } = req.params as { chave: string };
+      // Todo pedido tem por ID a chave de acesso (44 dígitos). Validar aqui evita
+      // que uma chave malformada vire caminho inválido no Firestore (500 cru).
+      if (!/^\d{44}$/.test(chave)) {
+        return reply.code(404).send({ erro: 'Pedido não encontrado' });
+      }
+      const corpo = (req.body ?? {}) as {
+        escolha?: 'fiscal' | 'entrega';
+        coordenada?: { lat: number; lng: number } | null;
+      };
+      const resultado = await decidirEnderecoEntrega(
+        repo,
+        chave,
+        corpo.escolha as 'fiscal' | 'entrega',
+        corpo.coordenada ?? null,
+      );
+      if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+      return { status: resultado.status };
+    },
+  );
 
   app.get('/api/clientes', { config: { papeis: ESCRITORIO } }, async () => repo.listarClientes());
 

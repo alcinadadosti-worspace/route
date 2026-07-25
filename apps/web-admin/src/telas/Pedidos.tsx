@@ -4,6 +4,7 @@ import { listarPedidos } from '../api';
 
 const ROTULO_STATUS: Record<string, { texto: string; classe: string }> = {
   pendente_de_mapeamento: { texto: 'Pendente de mapeamento', classe: 'pendente' },
+  pendente_de_decisao: { texto: 'Aguardando escolha de endereço', classe: 'pendente' },
   pronto_para_rota: { texto: 'Pronto para rota', classe: 'pronto' },
   importado: { texto: 'Importado', classe: '' },
   em_rota: { texto: 'Em rota', classe: '' },
@@ -24,7 +25,7 @@ export function Pedidos() {
   return (
     <section className="cartao">
       <h2>Pedidos</h2>
-      {erro && <div className="erro">{erro} — a API está no ar? (npm run dev:api)</div>}
+      {erro && <div className="erro">{erro}</div>}
       {!erro && pedidos.length === 0 && (
         <div className="vazio">Nenhum pedido importado ainda. Comece pela aba Importação.</div>
       )}

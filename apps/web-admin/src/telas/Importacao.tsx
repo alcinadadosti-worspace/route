@@ -71,7 +71,9 @@ export function Importacao() {
             <Metrica valor={relatorio.duplicados} rotulo="Duplicados" />
             <Metrica valor={relatorio.prontosParaRota} rotulo="Prontos p/ rota" />
             <Metrica valor={relatorio.geocodificados} rotulo="Geocodificados" />
+            <Metrica valor={relatorio.aproximados} rotulo="Aproximados (a mapear)" />
             <Metrica valor={relatorio.pendentesDeMapeamento} rotulo="Pendentes de mapeamento" />
+            <Metrica valor={relatorio.pendentesDeDecisao} rotulo="Aguardando escolha de endereço" />
             <Metrica valor={relatorio.rejeitados.length} rotulo="Rejeitados" />
           </div>
 

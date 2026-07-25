@@ -24,6 +24,12 @@ export interface Repositorio {
   obterCds(): Promise<Record<string, CentroDistribuicao>>;
   listarUsuarios(): Promise<Array<{ id: string } & Usuario>>;
   salvarRota(rotaId: string, rota: Rota): Promise<void>;
+  /**
+   * Publica a rota e move os pedidos para `em_rota` numa escrita ATÔMICA (batch
+   * no Firestore): um crash no meio não pode deixar a rota gravada com pedidos
+   * ainda `pronto_para_rota` (que entrariam numa segunda rota).
+   */
+  publicarRotaAtomica(rotaId: string, rota: Rota, pedidoIds: string[]): Promise<void>;
   listarRotas(): Promise<Array<{ id: string } & Rota>>;
   atualizarCliente(clienteId: string, campos: Partial<Cliente>): Promise<void>;
   salvarTrilhaBruta(id: string, bruta: TrilhaBruta): Promise<void>;
@@ -89,6 +95,14 @@ export class RepositorioMemoria implements Repositorio {
 
   async salvarRota(rotaId: string, rota: Rota): Promise<void> {
     this.rotas.set(rotaId, rota);
+  }
+
+  async publicarRotaAtomica(rotaId: string, rota: Rota, pedidoIds: string[]): Promise<void> {
+    this.rotas.set(rotaId, rota);
+    for (const id of pedidoIds) {
+      const pedido = this.pedidos.get(id);
+      if (pedido) this.pedidos.set(id, { ...pedido, status: 'em_rota', rotaId });
+    }
   }
 
   async listarRotas(): Promise<Array<{ id: string } & Rota>> {

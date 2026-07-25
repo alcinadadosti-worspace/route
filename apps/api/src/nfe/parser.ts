@@ -5,6 +5,7 @@ import {
   mascararDocumento,
   normalizarTelefone,
   extrairPedidoELote,
+  enderecosDivergem,
   type EnderecoFiscal,
   type ItemPedido,
 } from '@rota/shared';
@@ -34,6 +35,8 @@ export interface NotaImportada {
   pesoBrutoKg: number;
   numeroPedido: string | null;
   lote: string | null;
+  /** Endereço de entrega divergente do fiscal (bloco `<entrega>`), se houver. */
+  enderecoEntrega?: EnderecoFiscal;
 }
 
 export type ResultadoParse =
@@ -92,15 +95,24 @@ export async function parseNfe(
   if (!documento) return { ok: false, motivo: 'Destinatário sem CPF/CNPJ' };
 
   const ender = dest.enderDest ?? {};
-  const enderecoFiscal: EnderecoFiscal = {
-    logradouro: String(ender.xLgr ?? ''),
-    numero: String(ender.nro ?? ''),
-    complemento: ender.xCpl ? String(ender.xCpl) : undefined,
-    bairro: String(ender.xBairro ?? ''),
-    municipio: String(ender.xMun ?? ''),
-    uf: String(ender.UF ?? ''),
-    cep: String(ender.CEP ?? ''),
-  };
+  const enderecoFiscal = enderecoDeBloco(ender);
+
+  // Entrega em local diverso (seção 8.4): a NF-e pode trazer um bloco <entrega>
+  // com endereço diferente do fiscal. Só interessa quando de fato diverge — daí
+  // o pedido vai para a decisão do escritório (senão é cópia inócua do fiscal).
+  let enderecoEntrega: EnderecoFiscal | undefined;
+  if (infNFe.entrega) {
+    // <entrega> é 0..1 no schema; se um XML malformado trouxer vários, usa o
+    // primeiro em vez de tratar o array como "sem endereço" (falha aberta).
+    const blocoEntrega = Array.isArray(infNFe.entrega) ? infNFe.entrega[0] : infNFe.entrega;
+    const entrega = enderecoDeBloco(blocoEntrega);
+    // Alguns emitentes põem <entrega> só com o documento (sem endereço). Sem
+    // logradouro não há o que roteirizar — ignora, para não mandar o pedido à
+    // decisão comparando com um endereço vazio. Só divergência real conta.
+    if (entrega.logradouro.trim() && enderecosDivergem(enderecoFiscal, entrega)) {
+      enderecoEntrega = entrega;
+    }
+  }
 
   const dets: any[] = infNFe.det ?? [];
   const itens: ItemPedido[] = dets.map((d) => ({
@@ -136,6 +148,24 @@ export async function parseNfe(
       pesoBrutoKg,
       numeroPedido,
       lote,
+      enderecoEntrega,
     },
+  };
+}
+
+/**
+ * Monta um EnderecoFiscal a partir de um bloco de endereço da NF-e (`enderDest`
+ * ou `entrega`) — os dois têm os mesmos campos (xLgr, nro, xCpl, xBairro, xMun,
+ * UF, CEP).
+ */
+function enderecoDeBloco(bloco: any): EnderecoFiscal {
+  return {
+    logradouro: String(bloco?.xLgr ?? ''),
+    numero: String(bloco?.nro ?? ''),
+    complemento: bloco?.xCpl ? String(bloco.xCpl) : undefined,
+    bairro: String(bloco?.xBairro ?? ''),
+    municipio: String(bloco?.xMun ?? ''),
+    uf: String(bloco?.UF ?? ''),
+    cep: String(bloco?.CEP ?? ''),
   };
 }

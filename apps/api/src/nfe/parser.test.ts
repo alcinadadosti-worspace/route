@@ -69,3 +69,47 @@ test('rejeita nota não autorizada (cStat diferente de 100)', async () => {
   assert.equal(resultado.ok, false);
   if (!resultado.ok) assert.match(resultado.motivo, /cStat=110/);
 });
+
+/** Insere um bloco <entrega> como irmão do <dest> (as NF-e reais deste emitente
+ * não trazem o bloco; sintetizamos para exercitar a seção 8.4). */
+function comEntrega(bloco: string): string {
+  return xml.replace('</dest>', `</dest>${bloco}`);
+}
+
+test('sem bloco <entrega>, a nota não tem endereço de entrega', async () => {
+  const resultado = await parseNfe(xml);
+  assert.ok(resultado.ok);
+  assert.equal(resultado.nota.enderecoEntrega, undefined);
+});
+
+test('bloco <entrega> DIVERGENTE do fiscal vira endereço de entrega', async () => {
+  const resultado = await parseNfe(
+    comEntrega(
+      '<entrega><xLgr>RUA DA ENTREGA</xLgr><nro>500</nro><xBairro>CENTRO</xBairro>' +
+        '<xMun>MACEIO</xMun><UF>AL</UF><CEP>57000000</CEP></entrega>',
+    ),
+  );
+  assert.ok(resultado.ok);
+  const e = resultado.nota.enderecoEntrega;
+  assert.equal(e?.logradouro, 'RUA DA ENTREGA');
+  assert.equal(e?.numero, '500');
+  assert.equal(e?.municipio, 'MACEIO');
+  assert.equal(e?.cep, '57000000');
+});
+
+test('bloco <entrega> IGUAL ao fiscal é ignorado (cópia inócua)', async () => {
+  const resultado = await parseNfe(
+    comEntrega(
+      '<entrega><xLgr>POVOADO BREJO DOS BOIS</xLgr><nro>83</nro><xBairro>ZONA RURAL</xBairro>' +
+        '<xMun>JUNQUEIRO</xMun><UF>AL</UF><CEP>57270000</CEP></entrega>',
+    ),
+  );
+  assert.ok(resultado.ok);
+  assert.equal(resultado.nota.enderecoEntrega, undefined);
+});
+
+test('bloco <entrega> sem logradouro (só documento) é ignorado', async () => {
+  const resultado = await parseNfe(comEntrega('<entrega><CNPJ>14750618000155</CNPJ></entrega>'));
+  assert.ok(resultado.ok);
+  assert.equal(resultado.nota.enderecoEntrega, undefined);
+});

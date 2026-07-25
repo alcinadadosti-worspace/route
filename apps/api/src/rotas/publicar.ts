@@ -80,10 +80,10 @@ export async function publicarRota(
     return { ok: false, status: 503, erro: erro instanceof Error ? erro.message : 'Falha no roteirizador' };
   }
 
-  let etaAcumuladoMin = 0;
+  let etaAcumuladoSeg = 0;
   const paradas: ParadaRota[] = candidatas.map((c, i) => {
-    const perna = tracado.pernas[i] ?? { distanciaKm: 0, duracaoMin: 0 };
-    etaAcumuladoMin += perna.duracaoMin;
+    const perna = tracado.pernas[i] ?? { distanciaKm: 0, duracaoSeg: 0 };
+    etaAcumuladoSeg += perna.duracaoSeg;
     return {
       pedidoId: c.pedidoId,
       clienteId: c.clienteId,
@@ -94,9 +94,12 @@ export async function publicarRota(
       volumes: c.volumes,
       pesoBrutoKg: c.pesoBrutoKg,
       coordenada: c.coordenada,
-      etaMin: etaAcumuladoMin,
+      // Acumula segundos crus e arredonda uma vez: o ETA de uma parada nunca
+      // ultrapassa a duração total da rota (que também é arredondada do total cru).
+      etaMin: Math.round(etaAcumuladoSeg / 60),
       distanciaKm: perna.distanciaKm,
       status: 'em_rota',
+      precisaMapear: c.precisaMapear,
     };
   });
 
@@ -118,11 +121,14 @@ export async function publicarRota(
     concluidaEm: null,
   };
 
-  await repo.salvarRota(rotaId, rota);
-  for (const c of candidatas) {
-    const pedido = (await repo.obterPedido(c.pedidoId))!;
-    await repo.salvarPedido(c.pedidoId, { ...pedido, status: 'em_rota', rotaId });
-  }
+  // Escrita atômica (batch): grava a rota e move os pedidos para em_rota de uma
+  // vez. Sem isso, um crash entre as escritas deixaria a rota publicada com
+  // pedidos ainda pronto_para_rota — que entrariam numa segunda rota.
+  await repo.publicarRotaAtomica(
+    rotaId,
+    rota,
+    candidatas.map((c) => c.pedidoId),
+  );
 
   return { ok: true, rotaId, rota };
 }

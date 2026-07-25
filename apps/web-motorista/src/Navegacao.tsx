@@ -3,6 +3,7 @@ import type { StyleSpecification } from 'maplibre-gl';
 import {
   distanciaEmMetros,
   PARAMETROS_TRILHA_PADRAO,
+  precisaMapearEmCampo,
   rumoEmGraus,
   type GeoPonto,
   type ParadaRota,
@@ -62,10 +63,11 @@ export function Navegacao({
   const cliente = dossie?.cliente ?? null;
   const trilha = dossie?.trilha ?? null;
   const pinDoCliente = cliente?.coordenada ?? parada.coordenada;
-  // Só RURAL (sem geocodificação) grava trilha e confirma pin em campo. Urbano
-  // (geocodificado) e já mapeado: navega até o pin e entrega, sem esse fluxo.
-  // Sem o doc do cliente (cache frio) trata como já resolvido e não grava.
-  const precisaMapear = cliente != null && cliente.statusMapeamento === 'nao_mapeado';
+  // Destino sem ponto confiável (rural/aproximado) grava trilha e confirma pin em
+  // campo. Geocodificado (preciso) e já mapeado: navega até o pin e entrega, sem
+  // esse fluxo. Sem o doc do cliente (cache frio) trata como resolvido e não grava.
+  const precisaMapear =
+    parada.precisaMapear ?? (cliente != null && precisaMapearEmCampo(cliente.statusMapeamento));
 
   useWakeLock(true);
   const { leitura, erro: erroGps } = usePosicao(true);

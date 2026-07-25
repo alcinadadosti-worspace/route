@@ -12,16 +12,22 @@ export function useWakeLock(ativo: boolean): void {
 
     let sentinela: WakeLockSentinel | null = null;
     let cancelado = false;
+    let pedindo = false;
 
     async function obter() {
-      // Lock ainda vigente: pedir outro por cima vazaria o anterior.
-      if (sentinela && !sentinela.released) return;
+      // Lock vigente OU pedido em voo: pedir outro por cima vazaria o anterior.
+      // Sem o guard `pedindo`, um visibilitychange durante o `await` (que roda
+      // com `sentinela` ainda null) dispararia um segundo request concorrente.
+      if (pedindo || (sentinela && !sentinela.released)) return;
+      pedindo = true;
       try {
         sentinela = await navigator.wakeLock.request('screen');
         if (cancelado) await sentinela.release();
       } catch {
         // Sem suporte ou economia de energia agressiva: o app segue funcionando;
         // o suporte veicular com carregador (RNF-03) é a mitigação operacional.
+      } finally {
+        pedindo = false;
       }
     }
 

@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { linkLigacao, linkWhatsApp, type GeoPonto, type ResultadoEntrega } from '@rota/shared';
+import {
+  linkLigacao,
+  linkWhatsApp,
+  precisaMapearEmCampo,
+  type GeoPonto,
+  type ResultadoEntrega,
+} from '@rota/shared';
 import { Mapa } from './Mapa';
 import { Login } from './Login';
 import { Navegacao } from './Navegacao';
@@ -157,10 +163,11 @@ export function App() {
                   ? ('entregue' as const)
                   : p.status === 'insucesso'
                     ? ('insucesso' as const)
-                    : // Só destino RURAL (sem geocodificação) precisa de mapear/trilha;
-                      // urbano (geocodificado) e já mapeado entram como entrega normal.
-                      cliente && cliente.statusMapeamento === 'nao_mapeado'
-                      ? ('trilha' as const)
+                    : // Destino sem ponto confiável (rural/aproximado) → 'trilha'
+                      // (mapear em campo); geocodificado/mapeado é entrega normal.
+                      (p.precisaMapear ??
+                        (cliente != null && precisaMapearEmCampo(cliente.statusMapeamento)))
+                        ? ('trilha' as const)
                       : ('pendente' as const),
               observacao: cliente?.observacoes || undefined,
               fotoPath: cliente?.fotoReferenciaPath ?? undefined,

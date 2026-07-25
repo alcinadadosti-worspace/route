@@ -18,26 +18,35 @@ export function useRotaDoDia(uid: string | null) {
       setCarregando(false);
       return;
     }
-    // Mesmo fuso da publicação (hojeEmAlagoas na API): aparelho com fuso
-    // trocado não pode "perder" a rota do dia.
-    const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Maceio' }).format(
-      new Date(),
-    );
+    // Janela dos últimos dias no fuso da publicação. NÃO filtra "data == hoje":
+    // uma rota EM ANDAMENTO iniciada ontem tem de continuar aparecendo hoje, e
+    // uma sessão aberta atravessando a meia-noite não pode congelar no dia
+    // anterior. `data >=` reaproveita o índice (motoristaId, data) do == antigo.
+    const limite = new Date();
+    limite.setDate(limite.getDate() - 7);
+    const desde = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Maceio' }).format(limite);
     const consulta = query(
       collection(db, 'rotas'),
       where('motoristaId', '==', uid),
-      where('data', '==', hoje),
+      where('data', '>=', desde),
     );
     return onSnapshot(
       consulta,
       (resposta) => {
-        // Inclui rotas concluídas: ao fim do dia o motorista continua vendo o
-        // resumo do que fez, em vez de a tela "esvaziar" na última entrega.
         const rotas = resposta.docs
           .map((d) => ({ id: d.id, ...(d.data() as Rota) }))
-          .filter((r) => r.status !== 'rascunho')
-          .sort((a, b) => (b.publicadaEm ?? '').localeCompare(a.publicadaEm ?? ''));
-        setRota(rotas[0] ?? null);
+          .filter((r) => r.status !== 'rascunho');
+        // A rota ATIVA mais recente (a do dia quando existe; senão a de ontem
+        // ainda em andamento). Sem nenhuma ativa, a mais recente já concluída —
+        // ao fim do dia o motorista continua vendo o resumo do que fez.
+        const ativas = rotas.filter((r) => r.status !== 'concluida');
+        const candidatas = ativas.length > 0 ? ativas : rotas;
+        candidatas.sort(
+          (a, b) =>
+            b.data.localeCompare(a.data) ||
+            (b.publicadaEm ?? '').localeCompare(a.publicadaEm ?? ''),
+        );
+        setRota(candidatas[0] ?? null);
         setCarregando(false);
       },
       () => setCarregando(false),

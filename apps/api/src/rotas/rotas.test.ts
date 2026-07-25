@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { criarClienteOsrm } from './osrm.js';
-import { previaDeRota } from './previa.js';
+import { coletarParadas, previaDeRota } from './previa.js';
 import { publicarRota } from './publicar.js';
 import { RepositorioMemoria } from '../db/repositorio.js';
 import type { Cliente, Pedido } from '@rota/shared';
@@ -168,8 +168,8 @@ test('route() converte pernas, distância e duração', async () => {
   assert.equal(r.distanciaKm, 150);
   assert.equal(r.duracaoMin, 120);
   assert.deepEqual(r.pernas, [
-    { distanciaKm: 100, duracaoMin: 80 },
-    { distanciaKm: 50, duracaoMin: 40 },
+    { distanciaKm: 100, duracaoSeg: 4800 },
+    { distanciaKm: 50, duracaoSeg: 2400 },
   ]);
 });
 
@@ -260,4 +260,39 @@ test('prévia valida CD e lista de pedidos', async () => {
 
   const cdErrado = await previaDeRota({ pedidoIds: ['p1'], cdId: 'inexistente' }, repo, osrm);
   assert.equal(cdErrado.ok, false);
+});
+
+test('override de entrega: a parada usa a coordenada e o endereço da entrega, não os do cliente', async () => {
+  const repo = new RepositorioMemoria();
+  // Cliente mapeado num ponto; o override aponta para OUTRO ponto e endereço.
+  await repo.salvarCliente('c1', clienteCom({ lat: -9.42, lng: -36.64 }, 'CLIENTE UM'));
+  await repo.salvarPedido('p1', {
+    ...pedidoDe('c1'),
+    usarEnderecoEntrega: true,
+    coordenadaEntrega: { lat: -9.99, lng: -36.99 },
+    enderecoEntrega: {
+      logradouro: 'RUA DA ENTREGA',
+      numero: '500',
+      bairro: 'CENTRO',
+      municipio: 'MACEIO',
+      uf: 'AL',
+      cep: '57000-000',
+    },
+  });
+
+  const coleta = await coletarParadas(['p1'], repo);
+  assert.ok(coleta.ok);
+  const parada = coleta.candidatas[0]!;
+  assert.deepEqual(parada.coordenada, { lat: -9.99, lng: -36.99 }); // override, não a do cliente
+  assert.match(parada.endereco, /RUA DA ENTREGA/); // endereço de entrega, não o fiscal (Rua A)
+});
+
+test('pedido pendente_de_decisao é bloqueado na coleta (não entra em rota)', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('c1', clienteCom({ lat: -9.42, lng: -36.64 }, 'CLIENTE UM'));
+  await repo.salvarPedido('p1', { ...pedidoDe('c1'), status: 'pendente_de_decisao' });
+
+  const coleta = await coletarParadas(['p1'], repo);
+  assert.equal(coleta.ok, false);
+  if (!coleta.ok) assert.equal(coleta.status, 422);
 });

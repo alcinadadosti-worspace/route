@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clienteIdDeDocumento, mascararDocumento } from './documento.js';
 import { normalizarTelefone, linkWhatsApp } from './telefone.js';
-import { ehEnderecoRural } from './endereco.js';
+import { ehEnderecoRural, enderecosDivergem, precisaMapearEmCampo } from './endereco.js';
 import { extrairPedidoELote } from './infcpl.js';
 import { codificarPolyline, decodificarPolyline } from './polyline.js';
 import { distanciaEmMetros, rumoEmGraus } from './geo.js';
@@ -29,6 +29,12 @@ test('pepper: id determinístico mas diferente do SHA-256 puro (não reversível
 test('máscara de CPF e CNPJ mostra apenas os dois últimos dígitos', () => {
   assert.equal(mascararDocumento('10000004782'), '***.***.***-82');
   assert.equal(mascararDocumento('14750618000155'), '**.***.***/****-55');
+});
+
+test('máscara de documento malformado não expõe dígitos', () => {
+  assert.equal(mascararDocumento('5'), '***');
+  assert.equal(mascararDocumento(''), '***');
+  assert.equal(mascararDocumento('123'), '***');
 });
 
 test('telefone normaliza para E.164 com +55', () => {
@@ -73,10 +79,49 @@ test('heurística rural: prefixos de logradouro', () => {
   assert.equal(ehEnderecoRural(endereco({ logradouro: 'Sítio Boa Vista' })), true);
   assert.equal(ehEnderecoRural(endereco({ logradouro: 'Fazenda Santa Fé' })), true);
   assert.equal(ehEnderecoRural(endereco({ logradouro: 'ROD AL-110 KM 12' })), true);
+  assert.equal(ehEnderecoRural(endereco({ logradouro: 'RODOVIA AL-110 KM 12' })), true);
 });
 
 test('endereço urbano plausível não é rural', () => {
   assert.equal(ehEnderecoRural(endereco({})), false);
+});
+
+test('enderecosDivergem: mesmo endereço com CEP formatado diferente NÃO diverge', () => {
+  assert.equal(
+    enderecosDivergem(endereco({ cep: '57200-000' }), endereco({ cep: '57200000' })),
+    false,
+  );
+});
+
+test('enderecosDivergem: ignora acento e caixa', () => {
+  assert.equal(
+    enderecosDivergem(endereco({ municipio: 'MACEIÓ' }), endereco({ municipio: 'maceio' })),
+    false,
+  );
+});
+
+test('enderecosDivergem: logradouro ou número diferente diverge', () => {
+  assert.equal(enderecosDivergem(endereco({}), endereco({ logradouro: 'Av Outra' })), true);
+  assert.equal(enderecosDivergem(endereco({ numero: '10' }), endereco({ numero: '20' })), true);
+  assert.equal(enderecosDivergem(endereco({ bairro: 'Centro' }), endereco({ bairro: 'Farol' })), true);
+});
+
+test('enderecosDivergem: CEP ausente num dos lados NÃO força divergência', () => {
+  assert.equal(enderecosDivergem(endereco({ cep: '57200-000' }), endereco({ cep: '' })), false);
+});
+
+test('enderecosDivergem: CEPs diferentes (ambos presentes) divergem', () => {
+  assert.equal(
+    enderecosDivergem(endereco({ cep: '57200-000' }), endereco({ cep: '57000-000' })),
+    true,
+  );
+});
+
+test('precisaMapearEmCampo: nao_mapeado e aproximado precisam; geocodificado e mapeado não', () => {
+  assert.equal(precisaMapearEmCampo('nao_mapeado'), true);
+  assert.equal(precisaMapearEmCampo('aproximado'), true);
+  assert.equal(precisaMapearEmCampo('geocodificado'), false);
+  assert.equal(precisaMapearEmCampo('mapeado'), false);
 });
 
 test('decodifica encoded polyline (exemplo canônico do formato)', () => {
@@ -170,4 +215,11 @@ test('extração de pedido e lote tolera variações de formato', () => {
     lote: null,
   });
   assert.deepEqual(extrairPedidoELote(null), { numeroPedido: null, lote: null });
+});
+
+test('extração NÃO casa palavra que apenas termina em pedido/lote', () => {
+  assert.deepEqual(extrairPedidoELote('Expedido 24/07/2026'), { numeroPedido: null, lote: null });
+  assert.deepEqual(extrairPedidoELote('culote 42'), { numeroPedido: null, lote: null });
+  // Ainda casa o campo de verdade mesmo colado a outro texto.
+  assert.equal(extrairPedidoELote('nota; PEDIDO 999').numeroPedido, '999');
 });

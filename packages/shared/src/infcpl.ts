@@ -4,8 +4,10 @@
  * regex tolerante + campo editável no painel quando nada casar (RF-02).
  */
 
-const RE_PEDIDO = /PEDIDO\s*[:#]?\s*(\d+)/i;
-const RE_LOTE = /LOTE\s*[:#]?\s*(\d+)/i;
+// `\b` antes da palavra evita casar o sufixo de outra (ex.: "exPEDIDO 24/07" ou
+// "cuLOTE 42") e extrair um número bogus de texto livre de ERP.
+const RE_PEDIDO = /\bPEDIDO\s*[:#]?\s*(\d+)/i;
+const RE_LOTE = /\bLOTE\s*[:#]?\s*(\d+)/i;
 
 export interface PedidoELote {
   numeroPedido: string | null;

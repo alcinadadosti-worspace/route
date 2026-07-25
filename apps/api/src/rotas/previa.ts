@@ -1,4 +1,10 @@
-import type { ItemPedido, GeoPonto, ParadaPrevia, PreviaRota } from '@rota/shared';
+import {
+  precisaMapearEmCampo,
+  type ItemPedido,
+  type GeoPonto,
+  type ParadaPrevia,
+  type PreviaRota,
+} from '@rota/shared';
 import type { Repositorio } from '../db/repositorio.js';
 import type { ClienteOsrm } from './osrm.js';
 
@@ -28,6 +34,9 @@ export interface CandidataParada {
   volumes: number;
   pesoBrutoKg: number;
   coordenada: GeoPonto;
+  /** Denormalizado para a ParadaRota: liga o "navegar e mapear" no app do
+   * motorista sem depender do doc do cliente estar no cache offline. */
+  precisaMapear: boolean;
 }
 
 export type FalhaColeta = {
@@ -55,12 +64,26 @@ export async function coletarParadas(
       return { ok: false, status: 404, erro: `Cliente do pedido ${pedidoId} não encontrado` };
     }
 
-    if (!cliente.coordenada) {
+    // Entrega em local diverso ainda não decidida trava a rota (seção 8.4):
+    // roteirizar aqui iria para o endereço fiscal no palpite.
+    if (pedido.status === 'pendente_de_decisao') {
+      return {
+        ok: false,
+        status: 422,
+        erro: `Pedido ${pedido.numeroNota} aguarda escolha de endereço de entrega (aba Decisões)`,
+      };
+    }
+
+    // Override: quando o escritório escolheu o endereço de entrega, a rota usa a
+    // coordenada/endereço do pedido; senão, os do cliente.
+    const usaEntrega = pedido.usarEnderecoEntrega === true;
+    const coordenada = usaEntrega ? pedido.coordenadaEntrega ?? null : cliente.coordenada;
+    const e = usaEntrega && pedido.enderecoEntrega ? pedido.enderecoEntrega : cliente.enderecoFiscal;
+    if (!coordenada) {
       pendentes.push({ pedidoId, nome: cliente.nome });
       continue;
     }
 
-    const e = cliente.enderecoFiscal;
     candidatas.push({
       pedidoId,
       clienteId: pedido.clienteId,
@@ -70,7 +93,10 @@ export async function coletarParadas(
       itens: pedido.itens,
       volumes: pedido.volumes,
       pesoBrutoKg: pedido.pesoBrutoKg,
-      coordenada: cliente.coordenada,
+      coordenada,
+      // Entrega em local diverso já é um ponto escolhido pelo escritório; senão,
+      // reflete a situação de mapeamento do cliente (aproximado → mapear em campo).
+      precisaMapear: usaEntrega ? false : precisaMapearEmCampo(cliente.statusMapeamento),
     });
   }
 

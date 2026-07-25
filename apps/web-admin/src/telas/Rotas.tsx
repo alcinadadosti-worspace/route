@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { CentroDistribuicao, Pedido, PreviaRota, Rota, Usuario } from '@rota/shared';
+import type { CentroDistribuicao, Cliente, Pedido, PreviaRota, Rota, Usuario } from '@rota/shared';
 import {
   listarCds,
+  listarClientes,
   listarPedidos,
   listarRotas,
   listarUsuarios,
@@ -24,6 +25,7 @@ const ROTULO_ROTA: Record<string, { texto: string; classe: string }> = {
  */
 export function Rotas() {
   const [pedidos, setPedidos] = useState<Array<{ id: string } & Pedido>>([]);
+  const [clientes, setClientes] = useState<Record<string, Cliente>>({});
   const [cds, setCds] = useState<Record<string, CentroDistribuicao>>({});
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [cdId, setCdId] = useState<string>('');
@@ -38,9 +40,10 @@ export function Rotas() {
   const [rotas, setRotas] = useState<Array<{ id: string } & Rota>>([]);
 
   function carregar() {
-    Promise.all([listarPedidos(), listarCds(), listarUsuarios(), listarRotas()])
-      .then(([ps, c, us, rs]) => {
+    Promise.all([listarPedidos(), listarCds(), listarUsuarios(), listarRotas(), listarClientes()])
+      .then(([ps, c, us, rs, cls]) => {
         setPedidos(ps);
+        setClientes(Object.fromEntries(cls.map((cl) => [cl.id, cl])));
         setCds(c);
         setCdId((atual) => atual || (Object.keys(c)[0] ?? ''));
         const ativos = us.filter((u) => u.ativo);
@@ -238,7 +241,14 @@ export function Rotas() {
                   <td className="mono">
                     {p.numeroNota}/{p.serie}
                   </td>
-                  <td>{p.clienteId.slice(0, 8)}…</td>
+                  <td>
+                    {clientes[p.clienteId]?.nome ?? `${p.clienteId.slice(0, 8)}…`}
+                    {clientes[p.clienteId]?.statusMapeamento === 'aproximado' && (
+                      <span className="chip pendente" style={{ marginLeft: 8 }}>
+                        aprox · a mapear
+                      </span>
+                    )}
+                  </td>
                   <td>
                     {p.volumes} vol · {p.pesoBrutoKg.toFixed(3)} kg
                   </td>
