@@ -7,6 +7,7 @@ import { extrairPedidoELote } from './infcpl.js';
 import { codificarPolyline, decodificarPolyline } from './polyline.js';
 import { distanciaEmMetros, rumoEmGraus } from './geo.js';
 import { aplicarResultadoParada } from './execucao.js';
+import { mesclarParametrosTrilha, PARAMETROS_TRILHA_PADRAO } from './trilha.js';
 import type { ParadaRota } from './tipos.js';
 import type { EnderecoFiscal } from './tipos.js';
 
@@ -122,6 +123,17 @@ test('precisaMapearEmCampo: nao_mapeado e aproximado precisam; geocodificado e m
   assert.equal(precisaMapearEmCampo('aproximado'), true);
   assert.equal(precisaMapearEmCampo('geocodificado'), false);
   assert.equal(precisaMapearEmCampo('mapeado'), false);
+});
+
+test('mesclarParametrosTrilha: override válido sobrescreve; inválido/ausente cai no padrão', () => {
+  const padrao = PARAMETROS_TRILHA_PADRAO;
+  assert.equal(mesclarParametrosTrilha().precisaoMaximaM, padrao.precisaoMaximaM);
+  assert.equal(mesclarParametrosTrilha({ precisaoMaximaM: 40 }).precisaoMaximaM, 40);
+  // demais campos permanecem no padrão
+  assert.equal(mesclarParametrosTrilha({ precisaoMaximaM: 40 }).raioChegadaM, padrao.raioChegadaM);
+  // valores inválidos (0, negativo, NaN) são ignorados — cai no padrão
+  assert.equal(mesclarParametrosTrilha({ precisaoMaximaM: 0 }).precisaoMaximaM, padrao.precisaoMaximaM);
+  assert.equal(mesclarParametrosTrilha({ precisaoMaximaM: NaN }).precisaoMaximaM, padrao.precisaoMaximaM);
 });
 
 test('decodifica encoded polyline (exemplo canônico do formato)', () => {

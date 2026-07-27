@@ -1,6 +1,7 @@
 import {
   distanciaEmMetros,
   PARAMETROS_TRILHA_PADRAO,
+  type ParametrosTrilha,
   type PontoTrilha,
 } from '@rota/shared';
 import type { LeituraGps } from './usePosicao';
@@ -18,12 +19,15 @@ export class GravadorTrilha {
   private pontos: PontoTrilha[] = [];
   readonly iniciadaEm = new Date().toISOString();
 
+  /** Parâmetros de gravação (mesclados de config/geral); padrão se não passados. */
+  constructor(private readonly parametros: ParametrosTrilha = PARAMETROS_TRILHA_PADRAO) {}
+
   /** Aplica os filtros da seção 11.1; retorna true se a leitura foi gravada. */
   registrar(leitura: LeituraGps): boolean {
     if (this.pontos.length >= GravadorTrilha.MAXIMO_DE_PONTOS) return false;
-    if (leitura.precisaoM > PARAMETROS_TRILHA_PADRAO.precisaoMaximaM) return false;
+    if (leitura.precisaoM > this.parametros.precisaoMaximaM) return false;
     const anterior = this.pontos[this.pontos.length - 1];
-    if (anterior && distanciaEmMetros(anterior, leitura) < PARAMETROS_TRILHA_PADRAO.distanciaMinimaM) {
+    if (anterior && distanciaEmMetros(anterior, leitura) < this.parametros.distanciaMinimaM) {
       return false;
     }
     this.pontos.push({

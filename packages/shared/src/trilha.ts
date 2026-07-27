@@ -26,3 +26,21 @@ export const PARAMETROS_TRILHA_PADRAO: ParametrosTrilha = {
   raioHandoffM: 100,
   raioChegadaM: 30,
 };
+
+/**
+ * Mescla os overrides de `config/geral` sobre os padrões: só sobrescreve com
+ * número finito e positivo (são todos thresholds em metros), ignorando chaves
+ * estranhas ou valores inválidos. Assim o escritório afrouxa, p.ex., o
+ * `precisaoMaximaM` para o GPS ruim do interior sem um novo deploy.
+ */
+export function mesclarParametrosTrilha(override?: Partial<ParametrosTrilha>): ParametrosTrilha {
+  const parametros = { ...PARAMETROS_TRILHA_PADRAO };
+  if (!override) return parametros;
+  for (const chave of Object.keys(PARAMETROS_TRILHA_PADRAO) as Array<keyof ParametrosTrilha>) {
+    const valor = override[chave];
+    if (typeof valor === 'number' && Number.isFinite(valor) && valor > 0) {
+      parametros[chave] = valor;
+    }
+  }
+  return parametros;
+}

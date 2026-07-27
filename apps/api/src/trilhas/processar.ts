@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import {
   codificarPolyline,
   distanciaEmMetros,
-  PARAMETROS_TRILHA_PADRAO,
+  mesclarParametrosTrilha,
   type GeoPonto,
+  type ParametrosTrilha,
   type Trilha,
 } from '@rota/shared';
 import { simplificarTrilha } from './simplificar.js';
@@ -41,11 +42,13 @@ export async function processarTrilhasBrutas(
   osrm: ClienteOsrm,
 ): Promise<RelatorioProcessamento> {
   const pendentes = await repo.listarTrilhasBrutasPendentes();
+  // Overrides de config/geral mesclados uma vez para o lote todo (seção 11.2).
+  const parametros = mesclarParametrosTrilha((await repo.obterConfig()).trilha);
   const itens: ItemProcessamento[] = [];
 
   for (const bruta of pendentes) {
     try {
-      itens.push(await processarUma(bruta, repo, osrm));
+      itens.push(await processarUma(bruta, repo, osrm, parametros));
     } catch (erro) {
       itens.push({
         trilhaBrutaId: bruta.id,
@@ -71,9 +74,8 @@ async function processarUma(
   bruta: TrilhaBrutaComId,
   repo: Repositorio,
   osrm: ClienteOsrm,
+  parametros: ParametrosTrilha,
 ): Promise<ItemProcessamento> {
-  const parametros = PARAMETROS_TRILHA_PADRAO;
-
   // Ponto malformado não pode virar pílula envenenada: sem este filtro, um
   // NaN chegaria ao /match, o erro deixaria a bruta pendente e ela seria
   // retentada para sempre.

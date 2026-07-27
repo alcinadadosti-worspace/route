@@ -1,6 +1,7 @@
 import type {
   CentroDistribuicao,
   Cliente,
+  ConfigGeral,
   Pedido,
   Rota,
   Trilha,
@@ -22,6 +23,8 @@ export interface Repositorio {
   listarClientes(): Promise<Array<{ id: string } & Cliente>>;
   listarPedidos(): Promise<Array<{ id: string } & Pedido>>;
   obterCds(): Promise<Record<string, CentroDistribuicao>>;
+  /** Doc `config/geral` — overrides operacionais (mapa, parâmetros de trilha). */
+  obterConfig(): Promise<ConfigGeral>;
   listarUsuarios(): Promise<Array<{ id: string } & Usuario>>;
   salvarRota(rotaId: string, rota: Rota): Promise<void>;
   /**
@@ -85,6 +88,10 @@ export class RepositorioMemoria implements Repositorio {
 
   async obterCds(): Promise<Record<string, CentroDistribuicao>> {
     return this.cds;
+  }
+
+  async obterConfig(): Promise<ConfigGeral> {
+    return this.config;
   }
 
   async listarUsuarios(): Promise<Array<{ id: string } & Usuario>> {
@@ -165,6 +172,9 @@ export class RepositorioMemoria implements Repositorio {
     await this.atualizarCliente(dados.clienteId, { trilhaAtivaId: dados.trilhaId });
     await this.atualizarTrilhaBruta(dados.trilhaBrutaId, dados.brutaCampos);
   }
+
+  /** Espelho local de config/geral (overrides de trilha) para dev/testes. */
+  config: ConfigGeral = {};
 
   /** Espelho local dos CDs reais (config/cds no Firestore) para dev/testes. */
   cds: Record<string, CentroDistribuicao> = {

@@ -204,6 +204,22 @@ test('processamento extrai o trecho órfão do fim como trilha aprendida', async
   assert.equal((await repo.listarTrilhasBrutasPendentes()).length, 0);
 });
 
+test('config/geral sobrescreve os parâmetros de trilha no processamento', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('c1', clienteTeste());
+  await repo.salvarTrilhaBruta('b1', brutaTeste());
+  // Aperta trilhaMinimaM acima do trecho órfão (~150-250 m): o que seria trilha
+  // vira descarte — prova que o override do config/geral chega ao processarUma.
+  repo.config = { trilha: { trilhaMinimaM: 500 } };
+
+  const relatorio = await processarTrilhasBrutas(repo, osrmQueCasa(3));
+
+  assert.equal(relatorio.criadas, 0);
+  assert.equal(relatorio.descartadas, 1);
+  assert.match(relatorio.itens[0]?.motivo ?? '', /ruído de GPS/);
+  assert.equal((await repo.listarTrilhas()).length, 0);
+});
+
 test('reaprendizado: nova gravação desativa a trilha anterior e incrementa a versão', async () => {
   const repo = new RepositorioMemoria();
   await repo.salvarCliente('c1', clienteTeste());

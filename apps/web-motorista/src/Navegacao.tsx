@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import type { StyleSpecification } from 'maplibre-gl';
 import {
   distanciaEmMetros,
-  PARAMETROS_TRILHA_PADRAO,
   precisaMapearEmCampo,
   rumoEmGraus,
   type GeoPonto,
   type ParadaRota,
+  type ParametrosTrilha,
   type ResultadoEntrega,
   type Rota,
 } from '@rota/shared';
@@ -44,6 +44,7 @@ export function Navegacao({
   uid,
   estilo,
   estiloKey,
+  parametros,
   aoResolver,
   aoFechar,
 }: {
@@ -58,8 +59,9 @@ export function Navegacao({
   estiloKey: string;
   aoResolver: (pedidoId: string, resultado: ResultadoEntrega) => void;
   aoFechar: () => void;
+  /** Parâmetros de trilha já mesclados de config/geral (seção 11). */
+  parametros: ParametrosTrilha;
 }) {
-  const parametros = PARAMETROS_TRILHA_PADRAO;
   const cliente = dossie?.cliente ?? null;
   const trilha = dossie?.trilha ?? null;
   const pinDoCliente = cliente?.coordenada ?? parada.coordenada;
@@ -90,7 +92,7 @@ export function Navegacao({
   }, [leitura]);
 
   function iniciarGravacao() {
-    gravadorRef.current = new GravadorTrilha();
+    gravadorRef.current = new GravadorTrilha(parametros);
     setPontosGravados(0);
     setGravando(true);
   }

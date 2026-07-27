@@ -2,6 +2,7 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import type {
   CentroDistribuicao,
   Cliente,
+  ConfigGeral,
   Pedido,
   Rota,
   Trilha,
@@ -69,6 +70,11 @@ class RepositorioFirestore implements Repositorio {
   async obterCds(): Promise<Record<string, CentroDistribuicao>> {
     const doc = await this.db.collection('config').doc('cds').get();
     return (doc.data() as Record<string, CentroDistribuicao>) ?? {};
+  }
+
+  async obterConfig(): Promise<ConfigGeral> {
+    const doc = await this.db.collection('config').doc('geral').get();
+    return (doc.data() as ConfigGeral) ?? {};
   }
 
   async listarUsuarios(): Promise<Array<{ id: string } & Usuario>> {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   linkLigacao,
   linkWhatsApp,
+  mesclarParametrosTrilha,
   precisaMapearEmCampo,
   type GeoPonto,
   type ResultadoEntrega,
@@ -116,6 +117,9 @@ export function App() {
     () => estiloMapa(tema, mapaOffline.urlFonte),
     [tema, mapaOffline.urlFonte],
   );
+  // Parâmetros de trilha: padrões mesclados com os overrides de config/geral —
+  // o escritório ajusta filtros de GPS/handoff sem novo deploy (seção 11).
+  const parametrosTrilha = useMemo(() => mesclarParametrosTrilha(config?.trilha), [config?.trilha]);
 
   // Alternância Galpão/Pátio em um toque no topo da tela (seção 14.2).
   useEffect(() => {
@@ -229,6 +233,7 @@ export function App() {
         uid={usuario.uid}
         estilo={estilo}
         estiloKey={mapaOffline.urlFonte ?? 'online'}
+        parametros={parametrosTrilha}
         aoResolver={(pedidoId, resultado) => resolver(pedidoId, resultado)}
         aoFechar={() => setNavegandoPara(null)}
       />
