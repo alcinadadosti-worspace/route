@@ -433,3 +433,40 @@ td input[type='checkbox'] {
 .pin-b:active {
   cursor: grabbing;
 }
+
+/* Filtros das abas (Pedidos, Clientes) */
+.filtro {
+  width: 100%;
+  max-width: 380px;
+  min-height: var(--alvo-toque);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--fonte-corpo);
+  font-size: 1rem;
+  padding: 0 12px;
+  margin-bottom: 14px;
+}
+
+.filtro:focus-visible {
+  outline: 2px solid var(--ambar);
+  outline-offset: 1px;
+}
+
+/* Pedidos de um cliente (linha expandida na aba Clientes) */
+.pedidos-cliente {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 6px 12px;
+  border-left: 3px solid var(--ambar);
+}
+
+.pedido-linha {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}

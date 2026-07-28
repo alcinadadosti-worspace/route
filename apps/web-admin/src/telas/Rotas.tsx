@@ -69,11 +69,30 @@ export function Rotas() {
     [pedidos],
   );
 
+  const todosProntosMarcados = prontos.length > 0 && prontos.every((p) => selecionados.has(p.id));
+  const algumProntoMarcado = prontos.some((p) => selecionados.has(p.id));
+
+  // Poda a seleção quando a lista de prontos muda (Atualizar/publicar): um id que
+  // deixou de estar pronto não pode seguir selecionado e ir para a otimização.
+  useEffect(() => {
+    setSelecionados((sel) => {
+      const validos = new Set(prontos.map((p) => p.id));
+      const podado = new Set([...sel].filter((id) => validos.has(id)));
+      return podado.size === sel.size ? sel : podado;
+    });
+  }, [prontos]);
+
   function alternar(id: string) {
     const proximo = new Set(selecionados);
     if (proximo.has(id)) proximo.delete(id);
     else proximo.add(id);
     setSelecionados(proximo);
+    setPrevia(null);
+  }
+
+  // Marca/desmarca todos os pedidos prontos de uma vez.
+  function alternarTodos() {
+    setSelecionados(todosProntosMarcados ? new Set() : new Set(prontos.map((p) => p.id)));
     setPrevia(null);
   }
 
@@ -221,7 +240,17 @@ export function Rotas() {
           <table>
             <thead>
               <tr>
-                <th></th>
+                <th>
+                  <input
+                    type="checkbox"
+                    aria-label="Selecionar todos os pedidos"
+                    checked={todosProntosMarcados}
+                    ref={(el) => {
+                      if (el) el.indeterminate = algumProntoMarcado && !todosProntosMarcados;
+                    }}
+                    onChange={alternarTodos}
+                  />
+                </th>
                 <th>Nota</th>
                 <th>Cliente</th>
                 <th>Vol · Peso</th>

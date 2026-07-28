@@ -14,6 +14,7 @@ const ROTULO_STATUS: Record<string, { texto: string; classe: string }> = {
 
 export function Pedidos() {
   const [pedidos, setPedidos] = useState<Array<{ id: string } & Pedido>>([]);
+  const [filtro, setFiltro] = useState('');
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
@@ -22,14 +23,36 @@ export function Pedidos() {
       .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao listar'));
   }, []);
 
+  const q = filtro.trim();
+  const filtrados = q
+    ? pedidos.filter(
+        (p) =>
+          String(p.numeroNota).includes(q) ||
+          (p.numeroPedido ?? '').includes(q) ||
+          (p.lote ?? '').includes(q),
+      )
+    : pedidos;
+
   return (
     <section className="cartao">
       <h2>Pedidos</h2>
+      {pedidos.length > 0 && (
+        <input
+          type="search"
+          className="filtro"
+          placeholder="Filtrar por nº da nota, pedido ou lote…"
+          value={filtro}
+          onChange={(e) => setFiltro(e.target.value)}
+        />
+      )}
       {erro && <div className="erro">{erro}</div>}
       {!erro && pedidos.length === 0 && (
         <div className="vazio">Nenhum pedido importado ainda. Comece pela aba Importação.</div>
       )}
-      {pedidos.length > 0 && (
+      {pedidos.length > 0 && filtrados.length === 0 && (
+        <div className="vazio">Nenhum pedido bate com “{filtro}”.</div>
+      )}
+      {filtrados.length > 0 && (
         <table>
           <thead>
             <tr>
@@ -43,7 +66,7 @@ export function Pedidos() {
             </tr>
           </thead>
           <tbody>
-            {pedidos.map((p) => {
+            {filtrados.map((p) => {
               const s = ROTULO_STATUS[p.status] ?? { texto: p.status, classe: '' };
               return (
                 <tr key={p.id}>
