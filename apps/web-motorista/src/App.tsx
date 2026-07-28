@@ -95,6 +95,26 @@ const TEXTO_STATUS: Record<ParadaDemo['status'], string> = {
   insucesso: 'Insucesso',
 };
 
+type Filtro = 'todas' | 'a_entregar' | 'entregues' | 'insucessos' | 'rural' | 'urbana';
+
+const ABAS_FILTRO: Array<{ id: Filtro; rotulo: string }> = [
+  { id: 'todas', rotulo: 'Todas' },
+  { id: 'a_entregar', rotulo: 'A entregar' },
+  { id: 'rural', rotulo: 'Rural' },
+  { id: 'urbana', rotulo: 'Urbana' },
+  { id: 'entregues', rotulo: 'Entregues' },
+  { id: 'insucessos', rotulo: 'Insucessos' },
+];
+
+/** Quais status de parada compõem cada filtro (rural = as de "navegar e mapear"). */
+const STATUS_DO_FILTRO: Record<Exclude<Filtro, 'todas'>, ParadaDemo['status'][]> = {
+  a_entregar: ['pendente', 'trilha'],
+  entregues: ['entregue'],
+  insucessos: ['insucesso'],
+  rural: ['trilha'],
+  urbana: ['pendente'],
+};
+
 const MOTIVOS_INSUCESSO: Array<{ resultado: ResultadoEntrega; rotulo: string }> = [
   { resultado: 'ausente', rotulo: 'Ausente' },
   { resultado: 'nao_localizado', rotulo: 'Não localizado' },
@@ -183,6 +203,7 @@ export function App() {
   );
   const [insucessoAberto, setInsucessoAberto] = useState<string | null>(null);
   const [navegandoPara, setNavegandoPara] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState<Filtro>('todas');
 
   function resolver(pedidoId: string | undefined, resultado: ResultadoEntrega) {
     if (!rota || !pedidoId || !usuario) return;
@@ -212,6 +233,26 @@ export function App() {
   );
 
   const entregues = paradas.filter((p) => p.status === 'entregue').length;
+
+  const contagem = useMemo((): Record<Filtro, number> => {
+    const conta = (fs: ParadaDemo['status'][]) => paradas.filter((p) => fs.includes(p.status)).length;
+    return {
+      todas: paradas.length,
+      a_entregar: conta(STATUS_DO_FILTRO.a_entregar),
+      entregues: conta(STATUS_DO_FILTRO.entregues),
+      insucessos: conta(STATUS_DO_FILTRO.insucessos),
+      rural: conta(STATUS_DO_FILTRO.rural),
+      urbana: conta(STATUS_DO_FILTRO.urbana),
+    };
+  }, [paradas]);
+
+  const paradasFiltradas = useMemo(
+    () =>
+      filtro === 'todas'
+        ? paradas
+        : paradas.filter((p) => STATUS_DO_FILTRO[filtro].includes(p.status)),
+    [paradas, filtro],
+  );
 
   if (carregando) {
     return <div className="tela-login"><div className="sub-login">CARREGANDO…</div></div>;
@@ -346,8 +387,28 @@ export function App() {
         </div>
       </div>
 
-      {paradas.map((p) => (
-        <article key={p.ordem} className="parada">
+      <nav className="abas-filtro" role="tablist" aria-label="Filtrar paradas">
+        {ABAS_FILTRO.filter(
+          (a) => a.id === 'todas' || a.id === 'a_entregar' || contagem[a.id] > 0,
+        ).map((a) => (
+          <button
+            key={a.id}
+            role="tab"
+            aria-selected={filtro === a.id}
+            className={`aba-filtro${a.id === 'rural' ? ' rural' : ''}`}
+            onClick={() => setFiltro(a.id)}
+          >
+            {a.rotulo} <span className="aba-contagem">{contagem[a.id]}</span>
+          </button>
+        ))}
+      </nav>
+
+      {paradasFiltradas.length === 0 && (
+        <div className="vazio-filtro">Nenhuma parada neste filtro.</div>
+      )}
+
+      {paradasFiltradas.map((p) => (
+        <article key={p.ordem} className={`parada${p.status === 'trilha' ? ' rural' : ''}`}>
           <div className="ordem">PARADA {String(p.ordem).padStart(2, '0')}</div>
           <h2>{p.cliente}</h2>
           <div className="endereco">{p.endereco}</div>

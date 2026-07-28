@@ -259,6 +259,70 @@
   color: var(--vermelho-falha);
 }
 
+/* Abas de filtro das paradas (Todas · A entregar · Rural · Urbana · Entregues) */
+.abas-filtro {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 12px;
+}
+
+.aba-filtro {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--alvo-toque);
+  padding: 0 14px;
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  background: var(--superficie);
+  color: var(--texto);
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.aba-filtro[aria-selected='true'] {
+  background: var(--ambar);
+  border-color: var(--ambar);
+  color: #121212;
+  font-weight: 700;
+}
+
+.aba-filtro.rural {
+  border-color: var(--laranja-seg);
+  color: var(--laranja-seg);
+}
+
+.aba-filtro.rural[aria-selected='true'] {
+  background: var(--laranja-seg);
+  border-color: var(--laranja-seg);
+  color: #121212;
+}
+
+.aba-contagem {
+  font-family: var(--fonte-mono);
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+.vazio-filtro {
+  color: var(--texto-2);
+  text-align: center;
+  padding: 20px;
+}
+
+/* Zona rural (navegar e mapear) — card com destaque laranja bem visível. */
+.parada.rural {
+  border-color: var(--laranja-seg);
+  border-left-width: 5px;
+  background: color-mix(in srgb, var(--laranja-seg) 10%, var(--superficie));
+}
+
 .acoes {
   display: grid;
   grid-template-columns: 1fr 1fr;
