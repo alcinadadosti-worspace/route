@@ -32,9 +32,12 @@ export function App() {
   return (
     <div className="painel">
       <header className="topo">
-        <div>
-          <h1>Rota · Grupo Alcina Maria</h1>
-          <div className="sub">Painel do escritório — importação e rotas</div>
+        <div className="topo-marca">
+          <img src="/logo.png" className="logo-marca" alt="Grupo Alcina Maria" />
+          <div>
+            <h1>Rota · Grupo Alcina Maria</h1>
+            <div className="sub">Painel do escritório — importação e rotas</div>
+          </div>
         </div>
         <div className="topo-direita">
           <span className="sub mono">{usuario.email}</span>

@@ -23,6 +23,7 @@ export function Login({ entrar }: { entrar: (email: string, senha: string) => Pr
   return (
     <div className="tela-login">
       <form className="cartao-login" onSubmit={aoEnviar}>
+        <img src="/logo.png" className="logo-login" alt="Grupo Alcina Maria" />
         <h1>Rota · Grupo Alcina Maria</h1>
         <div className="sub">Painel do escritório — acesso restrito</div>
 

@@ -1,23 +1,29 @@
 /*
- * Design system "industrial de verdade" — tokens da seção 14.2.
- * Tema padrão: Galpão (escuro). O app do motorista adiciona o tema Pátio
- * (claro de alto contraste) via [data-tema="patio"].
+ * Design system vintage — VERDE, DOURADO e PRETO (estilo anos 70).
+ * Dourado tirado da logo (monograma AM). Tema padrão escuro (Galpão); o app do
+ * motorista adiciona o tema claro de alto contraste (Pátio) para sol via
+ * [data-tema="patio"]. Os nomes dos tokens são mantidos (--ambar, --laranja-seg,
+ * --verde-maq) para não quebrar os componentes — só os VALORES mudaram.
  */
 :root {
-  --carvao: #1c1c1e;
-  --aco: #2e3033;
-  --borda: #4a4d52;
-  --ambar: #ffb020;
-  --laranja-seg: #ff5f1f;
-  --verde-maq: #2ea043;
-  --vermelho-falha: #d64545;
-  --texto: #ececec;
-  --texto-2: #9aa0a6;
+  /* Base preto-esverdeada */
+  --carvao: #0f140f;
+  --aco: #19211a;
+  --borda: #3c4c3f;
+
+  /* Dourado da logo + verde vintage */
+  --ambar: #cba85c; /* dourado claro — títulos, foco, destaques */
+  --laranja-seg: #b0842f; /* dourado profundo (bronze) — ações primárias e rural */
+  --verde-maq: #5a9a6a; /* verde — sucesso / entregue */
+  --vermelho-falha: #c1503e; /* terracota — falha */
+
+  --texto: #efe7d4; /* creme quente */
+  --texto-2: #a6a087; /* creme dessaturado */
 
   --fundo: var(--carvao);
   --superficie: var(--aco);
 
-  --raio: 3px;
+  --raio: 8px; /* cantos mais arredondados — clima setentista */
   --alvo-toque: 48px;
 
   --fonte-titulo: 'Archivo Black', 'Barlow Condensed', sans-serif;
@@ -26,15 +32,17 @@
   --fonte-mono: 'JetBrains Mono', monospace;
 }
 
-/* Tema Pátio — claro de alto contraste para sol direto (seção 14.2). */
+/* Tema Pátio — creme de alto contraste para sol direto (seção 14.2). */
 [data-tema='patio'] {
-  --fundo: #e8e6e1;
-  --superficie: #f4f2ee;
-  --borda: #6b6e73;
-  --texto: #121212;
-  --texto-2: #4a4d52;
-  --verde-maq: #1e7a33;
-  --vermelho-falha: #b73232;
+  --fundo: #ece6d5;
+  --superficie: #f5f1e4;
+  --borda: #8c876c;
+  --texto: #151a13;
+  --texto-2: #484c3b;
+  --ambar: #8a6a1e; /* dourado escuro, legível no creme sob sol */
+  --laranja-seg: #7c5c18;
+  --verde-maq: #2c6b3e;
+  --vermelho-falha: #a63a2c;
 }
 
 * {
@@ -64,7 +72,7 @@ code,
   font-family: var(--fonte-mono);
 }
 
-/* Hazard stripes — estados críticos (seção 14.1). */
+/* Faixas de atenção — estados críticos (seção 14.1), agora ouro sobre preto. */
 .hazard {
   background: repeating-linear-gradient(
     -45deg,

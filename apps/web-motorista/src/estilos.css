@@ -43,6 +43,36 @@
   gap: 8px;
 }
 
+.topo-marca {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.logo-marca {
+  height: 46px;
+  width: 46px;
+  border-radius: 50%;
+  background: #141b15;
+  border: 2px solid var(--ambar);
+  padding: 5px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.logo-login {
+  display: block;
+  height: 100px;
+  width: 100px;
+  border-radius: 50%;
+  background: #141b15;
+  border: 2px solid var(--ambar);
+  padding: 12px;
+  object-fit: contain;
+  margin: 0 auto 8px;
+}
+
 .tela-login {
   min-height: 100dvh;
   display: flex;

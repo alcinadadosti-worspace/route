@@ -23,6 +23,7 @@ export function Login({ entrar }: { entrar: (email: string, senha: string) => Pr
   return (
     <div className="tela-login">
       <form className="cartao-login" onSubmit={aoEnviar}>
+        <img src="/logo.png" className="logo-login" alt="Alcina Maria" />
         <h1>Rota</h1>
         <div className="sub-login">Grupo Alcina Maria · app do motorista</div>
 

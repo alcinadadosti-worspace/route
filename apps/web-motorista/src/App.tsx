@@ -299,10 +299,13 @@ export function App() {
   return (
     <div className="app">
       <header className="topo">
-        <div>
-          <h1>Rota do dia</h1>
-          <div className="dia">
-            {rota ? `${rota.data} · ${rota.origemNome.toUpperCase()}` : 'DEMONSTRAÇÃO'}
+        <div className="topo-marca">
+          <img src="/logo.png" className="logo-marca" alt="Alcina Maria" />
+          <div>
+            <h1>Rota do dia</h1>
+            <div className="dia">
+              {rota ? `${rota.data} · ${rota.origemNome.toUpperCase()}` : 'DEMONSTRAÇÃO'}
+            </div>
           </div>
         </div>
         <div className="topo-acoes">
