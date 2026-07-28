@@ -42,6 +42,14 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+    # Revalida sempre (no-cache): sem isto o navegador serve o sw.js/index.html
+    # antigos após o deploy e o PWA fica preso na versão velha (nem Ctrl+Shift+R
+    # resolve). Com o sw.js sempre fresco, o autoUpdate troca a versão sozinho.
+    # Os assets têm hash no nome, então revalidar é barato (304 no que não mudou).
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
     envVars:
       - key: VITE_API_URL
         value: https://rota-api-npz8.onrender.com
@@ -56,6 +64,13 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+    # Revalida sempre (no-cache) — ver rota-admin. O service worker precacheia o
+    # app shell, então offline continua funcionando; o no-cache só garante que o
+    # sw.js novo seja detectado online e o autoUpdate troque a versão.
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
     envVars:
       - key: VITE_API_URL
         value: https://rota-api-npz8.onrender.com
