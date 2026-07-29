@@ -1,4 +1,5 @@
-import type { GeoPonto } from '@rota/shared';
+import { validarGeoPonto, type GeoPonto } from '@rota/shared';
+import { FORMATO_ROTA_ID } from './comum.js';
 import type { Repositorio } from '../db/repositorio.js';
 import type { ClienteOsrm } from './osrm.js';
 
@@ -20,9 +21,6 @@ export type ResultadoOrdemSugerida =
   | { ok: true; ordem: string[] }
   | { ok: false; status: number; erro: string };
 
-/** Formato do rotaId gerado na publicação: `AAAA-MM-DD_` + 8 hex do uuid. */
-const FORMATO_ROTA_ID = /^\d{4}-\d{2}-\d{2}_[0-9a-f]{8}$/;
-
 export async function sugerirOrdemDeParadas(
   entrada: {
     rotaId: string;
@@ -33,12 +31,10 @@ export async function sugerirOrdemDeParadas(
   repo: Repositorio,
   osrm: ClienteOsrm,
 ): Promise<ResultadoOrdemSugerida> {
-  // O rotaId vira caminho de documento no Firestore ('/' separa níveis):
-  // validar aqui fecha a mesma injeção de caminho já tratada na publicação.
   if (!FORMATO_ROTA_ID.test(entrada.rotaId ?? '')) {
     return { ok: false, status: 404, erro: 'Rota não encontrada' };
   }
-  const origem = validarCoordenada(entrada.origem);
+  const origem = validarGeoPonto(entrada.origem);
   if (!origem) {
     return { ok: false, status: 400, erro: 'Posição atual inválida' };
   }
@@ -75,11 +71,4 @@ export async function sugerirOrdemDeParadas(
       erro: erro instanceof Error ? erro.message : 'Falha no roteirizador',
     };
   }
-}
-
-function validarCoordenada(c: GeoPonto | null | undefined): GeoPonto | null {
-  if (!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') return null;
-  if (!Number.isFinite(c.lat) || !Number.isFinite(c.lng)) return null;
-  if (c.lat < -90 || c.lat > 90 || c.lng < -180 || c.lng > 180) return null;
-  return { lat: c.lat, lng: c.lng };
 }

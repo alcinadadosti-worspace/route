@@ -1,6 +1,7 @@
 import {
   ehEnderecoRural,
   enderecosDivergem,
+  validarGeoPonto,
   type Cliente,
   type EnderecoFiscal,
   type GeoPonto,
@@ -320,7 +321,7 @@ export async function decidirEnderecoEntrega(
   // importação geocodificou. EXIGE um ponto — "entregar em local X" sem saber X
   // não roteiriza, e mapear o cliente depois não resolveria o override (o pedido
   // ficaria preso). Sem coordenada, o operador precisa posicionar o pin.
-  const coord = validarCoordenada(coordenada) ?? pedido.coordenadaEntrega ?? null;
+  const coord = validarGeoPonto(coordenada) ?? pedido.coordenadaEntrega ?? null;
   if (!coord) {
     return {
       ok: false,
@@ -431,13 +432,6 @@ async function liberarPedidosEmRevisao(
     if (dados.enderecoEntrega && dados.usarEnderecoEntrega === undefined) continue;
     await repo.salvarPedido(id, { ...dados, status });
   }
-}
-
-function validarCoordenada(c: GeoPonto | null | undefined): GeoPonto | null {
-  if (!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') return null;
-  if (!Number.isFinite(c.lat) || !Number.isFinite(c.lng)) return null;
-  if (c.lat < -90 || c.lat > 90 || c.lng < -180 || c.lng > 180) return null;
-  return { lat: c.lat, lng: c.lng };
 }
 
 export { ehEnderecoRural };

@@ -1,11 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  aplicarOrdemSugerida,
-  formatarDistancia,
-  ordenarPorProximidade,
-  type ParadaOrdenavel,
-} from './proximidade.js';
+import { aplicarOrdemSugerida, ordenarPorProximidade, type ParadaOrdenavel } from './proximidade.js';
+import { formatarDistancia } from './formato.js';
 
 /** Três paradas ao longo de uma linha, ~1 km, ~3 km e ~5 km ao norte da base. */
 const BASE = { lat: -10.28, lng: -36.56 };

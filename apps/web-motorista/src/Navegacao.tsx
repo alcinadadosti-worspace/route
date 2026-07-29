@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { StyleSpecification } from 'maplibre-gl';
 import {
+  decodificarPolyline,
+  distanciaAoTracadoEmMetros,
   distanciaEmMetros,
   paradaPrecisaMapear,
   rumoEmGraus,
@@ -16,7 +18,8 @@ import { useWakeLock } from './useWakeLock';
 import { usePosicao } from './usePosicao';
 import { useBussola } from './useBussola';
 import { GravadorTrilha } from './gravadorTrilha';
-import { confirmarPin, salvarTrilhaBruta } from './servicoMapeamento';
+import { confirmarPin, recalcularTracado, salvarTrilhaBruta } from './servicoMapeamento';
+import { formatarDistancia } from './formato';
 import type { DossieCliente } from './useClientesDaRota';
 
 const MOTIVOS_INSUCESSO: Array<{ resultado: ResultadoEntrega; rotulo: string }> = [
@@ -152,6 +155,56 @@ export function Navegacao({
   }, [ajustandoPin, pinAjustado, leitura]);
   const pinNoMapa = ajustandoPin ? (pinAjustado ?? pinDoCliente) : pinDoCliente;
 
+  // Desvio do traçado (seção 11.6). A DETECÇÃO é geometria pura e roda offline;
+  // só o recálculo precisa de rede. Uma vez recalculado, o desvio passa a ser
+  // medido contra o traçado novo — senão o app pediria outro a cada leitura.
+  const [rerota, setRerota] = useState<{ polyline: string; distanciaKm: number } | null>(null);
+  const [recalculando, setRecalculando] = useState(false);
+  const [erroRerota, setErroRerota] = useState<string | null>(null);
+  const tracadoDesenhado = rerota?.polyline ?? rota.polylinePlanejada;
+  const pontosTracado = useMemo(
+    () => (tracadoDesenhado ? decodificarPolyline(tracadoDesenhado) : []),
+    [tracadoDesenhado],
+  );
+  const desvioM = leitura ? distanciaAoTracadoEmMetros(leitura, pontosTracado) : null;
+  // Perto do destino o traçado acaba e a orientação passa a ser a seta (e a
+  // trilha, quando existe): desvio ali é esperado, não é motivo de recálculo.
+  const longeDoDestino = distanciaAoPin == null || distanciaAoPin > 400;
+  const foraDoTracado =
+    desvioM != null && desvioM > parametros.desvioMinimoM && longeDoDestino && !chegou && !modoTrilha;
+
+  const recalcularRef = useRef<() => void>(() => {});
+  const [tentativaEm, setTentativaEm] = useState(0);
+  recalcularRef.current = () => {
+    if (!leitura || recalculando) return;
+    setRecalculando(true);
+    setErroRerota(null);
+    setTentativaEm(Date.now());
+    recalcularTracado(rota.id, parada.pedidoId, { lat: leitura.lat, lng: leitura.lng })
+      .then((novo) => setRerota(novo))
+      .catch((erro: unknown) =>
+        setErroRerota(erro instanceof Error ? erro.message : 'Não deu para recalcular'),
+      )
+      .finally(() => setRecalculando(false));
+  };
+
+  // Dispara sozinho depois de LEITURAS SEGUIDAS fora do traçado — um salto de
+  // GPS não pode acordar o OSRM à toa —, uma vez por minuto no máximo, e só
+  // com rede: offline a chamada só queimaria bateria.
+  const forasSeguidosRef = useRef(0);
+  useEffect(() => {
+    if (!foraDoTracado) {
+      forasSeguidosRef.current = 0;
+      return;
+    }
+    forasSeguidosRef.current += 1;
+    if (forasSeguidosRef.current < 3) return;
+    if (!navigator.onLine || recalculando) return;
+    if (tentativaEm && Date.now() - tentativaEm < 60_000) return;
+    recalcularRef.current();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [foraDoTracado, leitura]);
+
   const [perguntaReaprendizado, setPerguntaReaprendizado] = useState(false);
   useEffect(() => {
     if (chegou && gravando && !precisaMapear) setPerguntaReaprendizado(true);
@@ -240,7 +293,7 @@ export function Navegacao({
         key={estiloKey}
         estilo={estilo}
         pin={pinNoMapa}
-        polylinePlanejada={rota.polylinePlanejada}
+        polylinePlanejada={tracadoDesenhado}
         trilha={trilha}
         modoTrilha={modoTrilha}
         posicao={leitura}
@@ -250,6 +303,27 @@ export function Navegacao({
 
       <div className="nav-painel">
         {erroGps && !leitura && <div className="nav-gps-erro">⚠ {erroGps}</div>}
+
+        {foraDoTracado && (
+          <div className="nav-desvio">
+            <span>
+              ⚠ Fora do traçado · {formatarDistancia(desvioM)}
+              {erroRerota && ` — ${erroRerota}`}
+            </span>
+            {recalculando ? (
+              <span className="nav-desvio-estado">recalculando…</span>
+            ) : navigator.onLine ? (
+              <button onClick={() => recalcularRef.current()}>Recalcular</button>
+            ) : (
+              <span className="nav-desvio-estado">sem sinal — traçado antigo</span>
+            )}
+          </div>
+        )}
+        {rerota && !foraDoTracado && (
+          <div className="nav-desvio ok">
+            ✔ Traçado recalculado daqui · {rerota.distanciaKm} km até o destino
+          </div>
+        )}
         <div className="nav-direcao">
           <div
             className="nav-seta"
@@ -345,10 +419,4 @@ export function Navegacao({
       </div>
     </div>
   );
-}
-
-function formatarDistancia(metros: number | null): string {
-  if (metros == null) return '— m';
-  if (metros < 1000) return `${Math.round(metros)} m`;
-  return `${(metros / 1000).toFixed(1)} km`;
 }

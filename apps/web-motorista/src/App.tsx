@@ -22,11 +22,8 @@ import { registrarResultado } from './servicoEntrega';
 import { dispararProcessamento, ordemSugerida } from './servicoMapeamento';
 import { processarFilaFotos } from './servicoFotos';
 import { usePosicao } from './usePosicao';
-import {
-  aplicarOrdemSugerida,
-  formatarDistancia,
-  ordenarPorProximidade,
-} from './proximidade';
+import { aplicarOrdemSugerida, ordenarPorProximidade } from './proximidade';
+import { formatarDistancia } from './formato';
 
 interface ParadaDemo {
   ordem: number;

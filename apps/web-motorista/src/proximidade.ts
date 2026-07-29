@@ -81,10 +81,3 @@ export function aplicarOrdemSugerida<T extends ParadaOrdenavel>(
     return ia - ib;
   });
 }
-
-/** Formata metros para a tela: `840 m`, `12,3 km`. */
-export function formatarDistancia(metros: number | null): string {
-  if (metros == null) return '— m';
-  if (metros < 1000) return `${Math.round(metros)} m`;
-  return `${(metros / 1000).toFixed(1).replace('.', ',')} km`;
-}

@@ -323,7 +323,18 @@ A ordem publicada é calculada **uma vez, no escritório, partindo do CD**. Quan
 
 **As duas apenas sugerem: nada é gravado na rota.** O documento da rota é reescrito pelo app a cada confirmação de entrega (o array `paradas` inteiro) — se o servidor reescrevesse esse mesmo array, uma confirmação feita no mesmo instante seria apagada, e a ordem que o escritório publicou e acompanha mudaria sozinha. O número oficial da parada continua impresso no cartão, e a parada já resolvida nunca disputa "a próxima".
 
-O que **não** existe (e não é acidente): recálculo automático ao desviar do traçado. O basemap embarcado é PMTiles, que é desenho e não grafo de roteirização — turn-by-turn com re-rota em campo exigiria um motor de rota com grafo no aparelho, outra arquitetura (RF-22 é a evolução registrada).
+### 11.7 Desvio do traçado e recálculo (online)
+A polyline desenhada é calculada na publicação, saindo do CD. Quando o motorista sai dela — atalho que ele conhece, estrada interditada, ou simplesmente se perdeu — o app **detecta sozinho e sem rede**: distância do veículo até a polilinha (geometria pura, `distanciaAoTracadoEmMetros`), acima de `desvioMinimoM` (padrão 150 m, ajustável em `config/geral.trilha`).
+
+Detectado o desvio, o app pede um traçado novo da posição atual até o destino: `POST /api/rotas/:rotaId/rerota` → `/route` do OSRM. A polyline devolvida substitui a planejada **no desenho daquela navegação** e passa a ser a referência do próximo cálculo de desvio. Como a ordem sugerida, **não grava nada** — a rota publicada continua intacta.
+
+Disciplina do disparo, porque o OSRM dorme no plano free e a rede em campo é o recurso escasso:
+- exige 3 leituras seguidas fora do traçado (um salto de GPS não acorda o OSRM);
+- no máximo uma tentativa por minuto, e só com `navigator.onLine`;
+- suspenso perto do destino (< 400 m), no modo trilha e depois da chegada — ali o traçado já acabou e a orientação é a seta;
+- offline o cartão diz "sem sinal — traçado antigo" e a navegação segue como antes, com seta e distância, que nunca dependeram de rede.
+
+O que **não** existe: recálculo **offline**. O basemap embarcado é PMTiles, que é desenho e não grafo de roteirização, e não há motor de roteirização maduro para navegador — num PWA isso teria que ser construído (pipeline emitindo um grafo de Alagoas + A* num Web Worker). É uma fase própria, registrada como evolução junto do turn-by-turn falado (RF-22). Re-rota e turn-by-turn são coisas distintas: o que existe hoje é a linha nova, não instrução de curva.
 
 ### 11.4 Ponto empírico que sustenta tudo isso
 O receptor GNSS do celular **não depende de internet** — rede só acelera o primeiro fix (A-GPS). Portanto gravação e navegação funcionam integralmente offline; o que a rede faz é sincronizar depois. É isso que torna a Starlink um conforto operacional na base, e não um pré-requisito do sistema em campo.

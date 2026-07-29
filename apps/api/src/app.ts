@@ -10,6 +10,7 @@ import {
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
 import { sugerirOrdemDeParadas } from './rotas/ordem-sugerida.js';
+import { recalcularTracado } from './rotas/rerota.js';
 import { processarTrilhasBrutas, type RelatorioProcessamento } from './trilhas/processar.js';
 import type { Repositorio } from './db/repositorio.js';
 import type { Geocodificador } from './geocodificacao/google.js';
@@ -199,6 +200,24 @@ export async function criarApp({
     );
     if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
     return { ordem: resultado.ordem };
+  });
+
+  // Traçado novo da posição atual até a parada em curso (seção 11.6): o app
+  // detecta o desvio sozinho (geometria, offline) e pede isto quando há sinal.
+  // O destino vem do servidor — o corpo manda só onde o motorista está.
+  app.post('/api/rotas/:rotaId/rerota', { config: { papeis: TODOS } }, async (req, reply) => {
+    if (!osrm) {
+      return reply.code(503).send({ erro: 'Roteirizador indisponível (OSRM_URL não configurada)' });
+    }
+    const { rotaId } = req.params as { rotaId: string };
+    const corpo = (req.body ?? {}) as { origem?: { lat: number; lng: number }; pedidoId?: string };
+    const resultado = await recalcularTracado(
+      { rotaId, pedidoId: corpo.pedidoId ?? '', origem: corpo.origem, uid: req.usuario?.uid ?? null },
+      repo,
+      osrm,
+    );
+    if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+    return resultado;
   });
 
   app.get('/api/trilhas', { config: { papeis: ESCRITORIO } }, async () => repo.listarTrilhas());

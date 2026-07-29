@@ -10,7 +10,12 @@ import {
 } from './endereco.js';
 import { extrairPedidoELote } from './infcpl.js';
 import { codificarPolyline, decodificarPolyline } from './polyline.js';
-import { distanciaEmMetros, rumoEmGraus } from './geo.js';
+import {
+  distanciaAoTracadoEmMetros,
+  distanciaEmMetros,
+  rumoEmGraus,
+  validarGeoPonto,
+} from './geo.js';
 import { aplicarResultadoParada } from './execucao.js';
 import { mesclarParametrosTrilha, PARAMETROS_TRILHA_PADRAO } from './trilha.js';
 import type { ParadaRota } from './tipos.js';
@@ -35,6 +40,42 @@ test('pepper: id determinístico mas diferente do SHA-256 puro (não reversível
 test('máscara de CPF e CNPJ mostra apenas os dois últimos dígitos', () => {
   assert.equal(mascararDocumento('10000004782'), '***.***.***-82');
   assert.equal(mascararDocumento('14750618000155'), '**.***.***/****-55');
+});
+
+/** Traçado reto de ~2 km ao longo do meridiano -36,56. */
+const TRACADO = [
+  { lat: -10.28, lng: -36.56 },
+  { lat: -10.27, lng: -36.56 },
+  { lat: -10.26, lng: -36.56 },
+];
+
+test('em cima do traçado, o desvio é ~zero', () => {
+  const d = distanciaAoTracadoEmMetros({ lat: -10.275, lng: -36.56 }, TRACADO);
+  assert.ok(d != null && d < 1, `esperava ~0 m, veio ${d}`);
+});
+
+test('desvio lateral é medido perpendicular ao segmento, não até os vértices', () => {
+  // No MEIO de um segmento, deslocado ~110 m para leste (0,001° de longitude).
+  const d = distanciaAoTracadoEmMetros({ lat: -10.275, lng: -36.559 }, TRACADO);
+  assert.ok(d != null && d > 95 && d < 125, `esperava ~110 m, veio ${d}`);
+});
+
+test('além da ponta do traçado, a distância é até a ponta (não à reta infinita)', () => {
+  // 0,01° ao sul do primeiro ponto: ~1,1 km depois do fim do traçado.
+  const d = distanciaAoTracadoEmMetros({ lat: -10.29, lng: -36.56 }, TRACADO);
+  assert.ok(d != null && d > 1000 && d < 1250, `esperava ~1,1 km, veio ${d}`);
+});
+
+test('traçado vazio devolve null — "não sei" não pode virar desvio zero', () => {
+  assert.equal(distanciaAoTracadoEmMetros({ lat: -10.28, lng: -36.56 }, []), null);
+});
+
+test('validação de coordenada barra null, NaN e faixa impossível', () => {
+  assert.deepEqual(validarGeoPonto({ lat: -10.28, lng: -36.56 }), { lat: -10.28, lng: -36.56 });
+  assert.equal(validarGeoPonto(null), null);
+  assert.equal(validarGeoPonto({ lat: NaN, lng: -36.56 }), null);
+  assert.equal(validarGeoPonto({ lat: 91, lng: -36.56 }), null);
+  assert.equal(validarGeoPonto({ lat: -10.28, lng: 181 }), null);
 });
 
 test('parada: o doc do cliente manda sobre a flag denormalizada da rota', () => {

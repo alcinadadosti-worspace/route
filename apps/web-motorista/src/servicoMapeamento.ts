@@ -55,27 +55,62 @@ export function salvarTrilhaBruta(dados: {
  * sugestão de exibição: nada na rota é alterado.
  */
 export async function ordemSugerida(rotaId: string, origem: GeoPonto): Promise<string[]> {
+  const dados = await postApi<{ ordem?: string[] }>(
+    `/api/rotas/${encodeURIComponent(rotaId)}/ordem-sugerida`,
+    { origem },
+  );
+  if (!Array.isArray(dados.ordem)) throw new Error('Resposta inesperada do servidor');
+  return dados.ordem;
+}
+
+/**
+ * Traçado novo da posição atual até a parada em curso (seção 11.6) — pedido
+ * quando o app detecta que o motorista saiu do caminho desenhado. Exige rede:
+ * quem sabe traçar por estrada é o OSRM, e ele mora no servidor.
+ */
+export async function recalcularTracado(
+  rotaId: string,
+  pedidoId: string,
+  origem: GeoPonto,
+): Promise<{ polyline: string; distanciaKm: number; duracaoMin: number }> {
+  const dados = await postApi<{ polyline?: string; distanciaKm?: number; duracaoMin?: number }>(
+    `/api/rotas/${encodeURIComponent(rotaId)}/rerota`,
+    { origem, pedidoId },
+  );
+  if (typeof dados.polyline !== 'string' || !dados.polyline) {
+    throw new Error('Resposta inesperada do servidor');
+  }
+  return {
+    polyline: dados.polyline,
+    distanciaKm: Number(dados.distanciaKm ?? 0),
+    duracaoMin: Number(dados.duracaoMin ?? 0),
+  };
+}
+
+/** POST autenticado na API, tolerante a resposta que não é JSON. */
+async function postApi<T>(caminho: string, corpo: unknown): Promise<T> {
   const token = await auth.currentUser?.getIdToken();
-  const resposta = await fetch(`${API}/api/rotas/${encodeURIComponent(rotaId)}/ordem-sugerida`, {
+  const resposta = await fetch(`${API}${caminho}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify({ origem }),
+    body: JSON.stringify(corpo),
   });
-  // Corpo pode não ser JSON (502/504 do gateway no cold start do Render).
+  // O corpo pode não ser JSON (página 502/504 do gateway no cold start do
+  // Render): lê como texto e tenta parsear, sem esconder o status real.
   const texto = await resposta.text();
-  let dados: { ordem?: string[]; erro?: string } | null = null;
+  let dados: (T & { erro?: string }) | null = null;
   try {
     dados = texto ? JSON.parse(texto) : null;
   } catch {
     dados = null;
   }
-  if (!resposta.ok || !Array.isArray(dados?.ordem)) {
+  if (!resposta.ok || !dados) {
     throw new Error(dados?.erro ?? `Não deu para calcular agora (HTTP ${resposta.status})`);
   }
-  return dados.ordem;
+  return dados;
 }
 
 /**

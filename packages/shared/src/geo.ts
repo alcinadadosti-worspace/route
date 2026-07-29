@@ -27,6 +27,50 @@ export function rumoEmGraus(de: GeoPonto, para: GeoPonto): number {
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
+/**
+ * Menor distância do ponto até uma polilinha (o traçado planejado), em metros —
+ * é assim que o app sabe que o motorista saiu do caminho desenhado. Projeção
+ * equiretangular local: o que se compara aqui é ordem de grandeza (dezenas ou
+ * centenas de metros), não medida topográfica.
+ *
+ * Traçado vazio devolve null — "não sei", que é diferente de "está no
+ * traçado" e não pode virar desvio zero.
+ */
+export function distanciaAoTracadoEmMetros(ponto: GeoPonto, tracado: GeoPonto[]): number | null {
+  if (tracado.length === 0) return null;
+  if (tracado.length === 1) return distanciaEmMetros(ponto, tracado[0]!);
+
+  const mPorGrauLat = 111_320;
+  const mPorGrauLng = 111_320 * Math.cos(grausParaRad(ponto.lat));
+  const px = ponto.lng * mPorGrauLng;
+  const py = ponto.lat * mPorGrauLat;
+
+  let menor = Infinity;
+  for (let i = 1; i < tracado.length; i++) {
+    const ax = tracado[i - 1]!.lng * mPorGrauLng;
+    const ay = tracado[i - 1]!.lat * mPorGrauLat;
+    const bx = tracado[i]!.lng * mPorGrauLng;
+    const by = tracado[i]!.lat * mPorGrauLat;
+    const abx = bx - ax;
+    const aby = by - ay;
+    const quadrado = abx * abx + aby * aby;
+    // Projeta no segmento e prende em [0,1]: fora disso o mais perto é a ponta.
+    const t =
+      quadrado === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / quadrado));
+    const d = Math.hypot(px - (ax + t * abx), py - (ay + t * aby));
+    if (d < menor) menor = d;
+  }
+  return menor;
+}
+
+/** Coordenada utilizável? Barra null, NaN e faixa impossível de uma vez só. */
+export function validarGeoPonto(c: GeoPonto | null | undefined): GeoPonto | null {
+  if (!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') return null;
+  if (!Number.isFinite(c.lat) || !Number.isFinite(c.lng)) return null;
+  if (c.lat < -90 || c.lat > 90 || c.lng < -180 || c.lng > 180) return null;
+  return { lat: c.lat, lng: c.lng };
+}
+
 function grausParaRad(graus: number): number {
   return (graus * Math.PI) / 180;
 }

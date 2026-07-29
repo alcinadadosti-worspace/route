@@ -16,6 +16,12 @@ export interface ParametrosTrilha {
   raioHandoffM: number;
   /** Raio em torno do pin que aciona o cartão de chegada (RF-18). */
   raioChegadaM: number;
+  /**
+   * Distância do traçado desenhado a partir da qual o motorista é considerado
+   * fora do caminho (dispara o recálculo online, seção 11.6). Folgado de
+   * propósito: erro de GPS e via larga não podem virar desvio.
+   */
+  desvioMinimoM: number;
 }
 
 export const PARAMETROS_TRILHA_PADRAO: ParametrosTrilha = {
@@ -25,6 +31,7 @@ export const PARAMETROS_TRILHA_PADRAO: ParametrosTrilha = {
   trilhaMinimaM: 20,
   raioHandoffM: 100,
   raioChegadaM: 30,
+  desvioMinimoM: 150,
 };
 
 /**

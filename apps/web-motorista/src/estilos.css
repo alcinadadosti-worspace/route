@@ -391,6 +391,41 @@
   background: color-mix(in srgb, var(--laranja-seg) 10%, var(--superficie));
 }
 
+/* Desvio do traçado e recálculo online (seção 11.6) */
+.nav-desvio {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  border: 1px solid var(--laranja-seg);
+  border-radius: var(--raio);
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+  color: var(--laranja-seg);
+  background: color-mix(in srgb, var(--laranja-seg) 12%, var(--superficie));
+}
+
+.nav-desvio.ok {
+  border-color: var(--verde-maq);
+  color: var(--verde-maq);
+  background: color-mix(in srgb, var(--verde-maq) 12%, var(--superficie));
+}
+
+.nav-desvio button {
+  min-height: var(--alvo-toque);
+  padding: 0 14px;
+  border-color: var(--laranja-seg);
+  color: var(--laranja-seg);
+}
+
+.nav-desvio-estado {
+  font-family: var(--fonte-mono);
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
 /* Abrir o dossiê num pedido já entregue/insucesso */
 .dossie-toggle {
   width: 100%;
