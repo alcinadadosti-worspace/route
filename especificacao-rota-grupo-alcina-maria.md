@@ -324,6 +324,15 @@ A ordem publicada é calculada **uma vez, no escritório, partindo do CD**. Quan
 
 **As duas apenas sugerem: nada é gravado na rota.** O documento da rota é reescrito pelo app a cada confirmação de entrega (o array `paradas` inteiro) — se o servidor reescrevesse esse mesmo array, uma confirmação feita no mesmo instante seria apagada, e a ordem que o escritório publicou e acompanha mudaria sozinha. O número oficial da parada continua impresso no cartão, e a parada já resolvida nunca disputa "a próxima".
 
+### 11.6.2 Legibilidade das linhas no mapa
+Rota desenhada em cor única e chapada some sobre estrada clara, se confunde com rio ou divisa, e perde contraste ao sol — o mapa fica "tudo de uma cor só". As linhas seguem então a receita de qualquer app de navegação: **contorno escuro mais largo por baixo, cor viva por cima**, pontas e junções arredondadas, e espessura interpolada por zoom (fina na visão de rota inteira, grossa no zoom de rua). O estilo mora num módulo único (`estiloRota.ts`) para os dois mapas não divergirem.
+
+Duas linguagens de cor que não podem se confundir em campo:
+- **dourado** — o caminho a seguir (rota planejada ou recalculada), o mesmo dourado que na interface significa foco e ação;
+- **laranja de segurança** — trilha aprendida, o trecho fora da malha, mantendo o laranja que a interface inteira já usa para rural (cartão, chip, aba de filtro). Tracejada até o handoff, cheia e mais grossa depois dele.
+
+Antes disso o traçado planejado era desenhado em **cinza fino** na navegação, como "contexto" — a leitura errada: o caminho a seguir é a informação principal da tela.
+
 ### 11.6.1 O mapa como seletor de parada
 Escolher a próxima parada rolando uma lista de dez cartões é ruim dentro de um veículo. Os dois mapas passam a servir de seletor:
 

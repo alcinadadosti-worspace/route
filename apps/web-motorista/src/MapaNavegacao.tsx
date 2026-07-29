@@ -10,6 +10,7 @@ import {
 import type { Feature, LineString } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { decodificarPolyline, type GeoPonto, type Trilha } from '@rota/shared';
+import { camadaContorno, camadaLinha, COR_ROTA, COR_TRILHA, larguraLinha } from './estiloRota';
 
 /**
  * Mapa da navegação por parada (RF-17, seção 11.3). Ao contrário do mapa de
@@ -77,20 +78,14 @@ export function MapaNavegacao({
     mapa.on('error', (evento) => console.error('[mapa-navegacao]', evento.error));
 
     mapa.on('load', () => {
+      // Ordem importa: contorno embaixo, cor em cima; e a trilha depois da
+      // rota, porque no trecho final ela é que manda.
       mapa.addSource('planejada', { type: 'geojson', data: linhaVazia() });
-      mapa.addLayer({
-        id: 'planejada',
-        type: 'line',
-        source: 'planejada',
-        paint: { 'line-color': '#8a8f98', 'line-width': 3 },
-      });
+      mapa.addLayer(camadaContorno('planejada-contorno', 'planejada', 6));
+      mapa.addLayer(camadaLinha('planejada', 'planejada', 6, COR_ROTA));
       mapa.addSource('trilha', { type: 'geojson', data: linhaVazia() });
-      mapa.addLayer({
-        id: 'trilha',
-        type: 'line',
-        source: 'trilha',
-        paint: { 'line-color': '#ff5f1f', 'line-width': 5, 'line-dasharray': [1, 2] },
-      });
+      mapa.addLayer(camadaContorno('trilha-contorno', 'trilha', 5));
+      mapa.addLayer(camadaLinha('trilha', 'trilha', 5, COR_TRILHA, [1, 2]));
       setPronto(true);
     });
 
@@ -165,12 +160,15 @@ export function MapaNavegacao({
     atualizarLinha(mapa, 'trilha', trilha ? decodificarPolyline(trilha.polyline) : []);
   }, [pronto, polylinePlanejada, trilha]);
 
-  // Handoff (seção 11.3): a trilha tracejada vira linha cheia e mais grossa.
+  // Handoff (seção 11.3): a trilha tracejada vira linha cheia e mais grossa —
+  // o contorno cresce junto, senão a linha engorda e o realce some.
   useEffect(() => {
     const mapa = mapaRef.current;
     if (!mapa || !pronto) return;
+    const base = modoTrilha ? 7 : 5;
     mapa.setPaintProperty('trilha', 'line-dasharray', modoTrilha ? [1, 0] : [1, 2]);
-    mapa.setPaintProperty('trilha', 'line-width', modoTrilha ? 7 : 5);
+    mapa.setPaintProperty('trilha', 'line-width', larguraLinha(base));
+    mapa.setPaintProperty('trilha-contorno', 'line-width', larguraLinha(base + 3));
   }, [pronto, modoTrilha]);
 
   // Pin do destino: segue o doc do cliente; arrastável só durante o ajuste.

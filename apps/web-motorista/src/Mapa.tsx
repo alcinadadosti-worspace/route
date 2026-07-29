@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { LngLatBounds, Map as MapaLibre, Marker, Popup, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { decodificarPolyline, type GeoPonto } from '@rota/shared';
+import { camadaContorno, camadaLinha, COR_ROTA } from './estiloRota';
 
 export interface PontoMapa {
   ordem: number;
@@ -78,14 +79,13 @@ export function Mapa({
         type: 'geojson',
         data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coordenadas } },
       });
-      mapa.addLayer({
-        id: 'tracado',
-        type: 'line',
-        source: 'tracado',
-        paint: tracado
-          ? { 'line-color': '#ff5f1f', 'line-width': 4 }
-          : { 'line-color': '#ff5f1f', 'line-width': 4, 'line-dasharray': [2, 1.5] },
-      });
+      // Contorno escuro por baixo + dourado por cima: é o que faz a rota saltar
+      // do mapa. Sem traçado do OSRM, a ligação em linha reta entre os pontos é
+      // um palpite e vai tracejada, para não passar por caminho de verdade.
+      mapa.addLayer(camadaContorno('tracado-contorno', 'tracado', 5));
+      mapa.addLayer(
+        camadaLinha('tracado', 'tracado', 5, COR_ROTA, tracado ? undefined : [2, 1.5]),
+      );
     });
 
     new Marker({ color: '#2e3033' })
