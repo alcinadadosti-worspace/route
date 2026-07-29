@@ -11,8 +11,15 @@ export function Importacao() {
   const [erro, setErro] = useState<string | null>(null);
 
   async function enviar(lista: FileList | null) {
-    if (!lista || lista.length === 0) return;
-    const xmls = Array.from(lista).filter((f) => f.name.toLowerCase().endsWith('.xml'));
+    // Copia ANTES de limpar: `files` é uma lista VIVA do input, e zerar o value
+    // esvaziaria a lista que acabamos de receber.
+    const escolhidos = Array.from(lista ?? []);
+    // Limpar a seleção é o que permite reenviar OS MESMOS arquivos: sem isto o
+    // input não dispara `change` de novo e a tela não faz nada — justo a
+    // tentativa mais provável depois de uma importação que falhou (API dormindo).
+    if (inputRef.current) inputRef.current.value = '';
+    if (escolhidos.length === 0) return;
+    const xmls = escolhidos.filter((f) => f.name.toLowerCase().endsWith('.xml'));
     if (xmls.length === 0) {
       setErro('Nenhum arquivo .xml entre os selecionados.');
       return;

@@ -37,14 +37,14 @@ export function Decisoes() {
   const aguardando = pedidos.filter((p) => p.status === 'pendente_de_decisao');
 
   /**
-   * Resolver uma pergunta nem sempre tira o pedido da fila: responder a da
-   * entrega num pedido que também mudou de cadastro deixa a segunda pergunta em
-   * aberto (a API devolve `pendente_de_decisao` de novo). Aí recarrega, para o
-   * cartão certo aparecer.
+   * Sempre recarrega em vez de só tirar o cartão da tela. Uma decisão mexe em
+   * MAIS pedidos que o da vez: a de mudança de endereço libera todas as notas
+   * do mesmo cliente presas pela mesma pergunta (senão elas continuariam na
+   * lista e responder qualquer uma delas devolveria 409), e responder a
+   * pergunta da entrega pode deixar a do cadastro em aberto no mesmo pedido.
    */
-  function resolvido(id: string, status: string) {
-    if (status === 'pendente_de_decisao') carregar();
-    else setPedidos((atual) => atual.filter((p) => p.id !== id));
+  function resolvido() {
+    carregar();
   }
 
   return (
@@ -72,14 +72,14 @@ export function Decisoes() {
             key={pedido.id}
             pedido={pedido}
             cliente={clientes[pedido.clienteId] ?? null}
-            aoResolver={(status) => resolvido(pedido.id, status)}
+            aoResolver={resolvido}
           />
         ) : pedido.enderecoAnterior ? (
           <CartaoMudancaEndereco
             key={pedido.id}
             pedido={pedido}
             cliente={clientes[pedido.clienteId] ?? null}
-            aoResolver={(status) => resolvido(pedido.id, status)}
+            aoResolver={resolvido}
           />
         ) : null,
       )}
@@ -99,7 +99,7 @@ function CartaoMudancaEndereco({
 }: {
   pedido: { id: string } & Pedido;
   cliente: Cliente | null;
-  aoResolver: (status: string) => void;
+  aoResolver: () => void;
 }) {
   const [escolha, setEscolha] = useState<'manter' | 'remapear' | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -110,8 +110,8 @@ function CartaoMudancaEndereco({
     setSalvando(true);
     setErro(null);
     try {
-      const { status } = await decidirMudancaEndereco(pedido.id, escolha);
-      aoResolver(status);
+      await decidirMudancaEndereco(pedido.id, escolha);
+      aoResolver();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao salvar');
       setSalvando(false);
@@ -213,7 +213,7 @@ function CartaoDecisao({
 }: {
   pedido: { id: string } & Pedido;
   cliente: Cliente | null;
-  aoResolver: (status: string) => void;
+  aoResolver: () => void;
 }) {
   const fiscal = cliente?.enderecoFiscal ?? null;
   const entrega = pedido.enderecoEntrega ?? null;
@@ -230,12 +230,12 @@ function CartaoDecisao({
     setSalvando(true);
     setErro(null);
     try {
-      const { status } = await decidirEnderecoEntrega(
+      await decidirEnderecoEntrega(
         pedido.id,
         escolha,
         escolha === 'entrega' ? coordEntrega : undefined,
       );
-      aoResolver(status);
+      aoResolver();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao salvar');
       setSalvando(false);
