@@ -501,3 +501,28 @@ td input[type='checkbox'] {
   flex-wrap: wrap;
   font-size: 0.9rem;
 }
+
+/* Dossiê do local no admin — foto de referência + observações do motorista */
+.dossie-bloco {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  padding: 8px 0 10px 12px;
+  border-left: 3px solid var(--ambar);
+  margin-bottom: 8px;
+}
+
+.foto-referencia {
+  max-width: 220px;
+  max-height: 180px;
+  border-radius: var(--raio);
+  border: 1px solid var(--borda);
+  object-fit: cover;
+}
+
+.dossie-obs-admin {
+  flex: 1;
+  min-width: 200px;
+  font-size: 0.95rem;
+}

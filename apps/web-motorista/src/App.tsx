@@ -10,7 +10,7 @@ import {
 import { Mapa } from './Mapa';
 import { Login } from './Login';
 import { Navegacao } from './Navegacao';
-import { FotoReferencia } from './DossieLocal';
+import { DossieLocal, FotoReferencia } from './DossieLocal';
 import { useAutenticacao } from './useAutenticacao';
 import { useRotaDoDia } from './useRotaDoDia';
 import { useClientesDaRota } from './useClientesDaRota';
@@ -34,8 +34,9 @@ interface ParadaDemo {
   status: 'pendente' | 'entregue' | 'trilha' | 'insucesso';
   observacao?: string;
   fotoPath?: string;
-  /** Presente apenas nas paradas de rota real (não demo). */
+  /** Presentes apenas nas paradas de rota real (não demo). */
   pedidoId?: string;
+  clienteId?: string;
 }
 
 const CD_DEMO = { nome: 'CD ARAPIRACA', lat: -9.7515, lng: -36.6612 };
@@ -196,6 +197,7 @@ export function App() {
               observacao: cliente?.observacoes || undefined,
               fotoPath: cliente?.fotoReferenciaPath ?? undefined,
               pedidoId: p.pedidoId,
+              clienteId: p.clienteId,
             };
           })
         : PARADAS_DEMO,
@@ -203,6 +205,7 @@ export function App() {
   );
   const [insucessoAberto, setInsucessoAberto] = useState<string | null>(null);
   const [navegandoPara, setNavegandoPara] = useState<string | null>(null);
+  const [dossieAberto, setDossieAberto] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>('todas');
 
   function resolver(pedidoId: string | undefined, resultado: ResultadoEntrega) {
@@ -470,6 +473,24 @@ export function App() {
               )}
             </div>
           )}
+
+          {(p.status === 'entregue' || p.status === 'insucesso') &&
+            p.clienteId &&
+            dossies[p.clienteId]?.cliente && (
+              <>
+                <button
+                  className="dossie-toggle"
+                  onClick={() =>
+                    setDossieAberto(dossieAberto === p.pedidoId ? null : (p.pedidoId ?? null))
+                  }
+                >
+                  📋 {dossieAberto === p.pedidoId ? 'Fechar dossiê do local' : 'Dossiê do local'}
+                </button>
+                {dossieAberto === p.pedidoId && (
+                  <DossieLocal cliente={dossies[p.clienteId]!.cliente!} />
+                )}
+              </>
+            )}
         </article>
       ))}
 

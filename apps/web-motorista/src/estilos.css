@@ -353,6 +353,14 @@
   background: color-mix(in srgb, var(--laranja-seg) 10%, var(--superficie));
 }
 
+/* Abrir o dossiê num pedido já entregue/insucesso */
+.dossie-toggle {
+  width: 100%;
+  margin-top: 10px;
+  border-color: var(--ambar);
+  color: var(--ambar);
+}
+
 .acoes {
   display: grid;
   grid-template-columns: 1fr 1fr;

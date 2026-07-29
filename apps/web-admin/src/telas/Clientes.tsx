@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { normalizar, type Cliente, type Pedido } from '@rota/shared';
 import { listarClientes, listarPedidos } from '../api';
+import { FotoReferencia } from '../FotoReferencia';
 
 const ROTULO_MAPEAMENTO: Record<string, { texto: string; classe: string }> = {
   nao_mapeado: { texto: 'Não mapeado', classe: 'pendente' },
@@ -108,6 +109,19 @@ export function Clientes() {
                   {aberto && (
                     <tr>
                       <td colSpan={6}>
+                        {(c.fotoReferenciaPath || c.observacoes) && (
+                          <div className="dossie-bloco">
+                            {c.fotoReferenciaPath && (
+                              <FotoReferencia
+                                caminho={c.fotoReferenciaPath}
+                                alt={`Referência de ${c.nome}`}
+                              />
+                            )}
+                            {c.observacoes && (
+                              <div className="dossie-obs-admin">📌 {c.observacoes}</div>
+                            )}
+                          </div>
+                        )}
                         <div className="pedidos-cliente">
                           {meus.map((p) => (
                             <div key={p.id} className="pedido-linha">
