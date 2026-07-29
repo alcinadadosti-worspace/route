@@ -8,3 +8,4 @@ export * from './polyline.js';
 export * from './execucao.js';
 export * from './geo.js';
 export * from './trilha.js';
+export * from './aviso.js';

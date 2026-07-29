@@ -18,6 +18,14 @@ import {
 } from './geo.js';
 import { aplicarResultadoParada } from './execucao.js';
 import { mesclarParametrosTrilha, PARAMETROS_TRILHA_PADRAO } from './trilha.js';
+import {
+  formatarJanela,
+  janelaDeChegada,
+  mensagemDeChegada,
+  mensagemDeRota,
+  mesclarParametrosAviso,
+  PARAMETROS_AVISO_PADRAO,
+} from './aviso.js';
 import type { ParadaRota } from './tipos.js';
 import type { EnderecoFiscal } from './tipos.js';
 
@@ -40,6 +48,61 @@ test('pepper: id determinístico mas diferente do SHA-256 puro (não reversível
 test('máscara de CPF e CNPJ mostra apenas os dois últimos dígitos', () => {
   assert.equal(mascararDocumento('10000004782'), '***.***.***-82');
   assert.equal(mascararDocumento('14750618000155'), '**.***.***/****-55');
+});
+
+// --- Aviso ao cliente (seção 11.8) ---
+
+/** 8h00 em ponto, para as janelas saírem em horários conferíveis na mão. */
+const OITO_DA_MANHA = new Date(2026, 6, 29, 8, 0, 0);
+
+test('janela da primeira parada é estreita; a do fim do dia, larga', () => {
+  const p = PARAMETROS_AVISO_PADRAO;
+  const primeira = janelaDeChegada(20, 0, p);
+  const decima = janelaDeChegada(180, 9, p);
+
+  const larguraPrimeira = primeira.ateMin - primeira.deMin;
+  const larguraDecima = decima.ateMin - decima.deMin;
+  assert.ok(
+    larguraDecima > larguraPrimeira * 2,
+    `a incerteza tem de crescer: ${larguraPrimeira} → ${larguraDecima}`,
+  );
+  // O tempo parado nos clientes anteriores empurra a chegada para mais tarde.
+  assert.ok(decima.deMin > 180, 'a décima parada não chega no ETA cru de direção');
+});
+
+test('janela vira horário redondo e não promete precisão que não existe', () => {
+  // 40 min de direção, 3 paradas antes → centro 70 min, margem 38 min.
+  const texto = formatarJanela(OITO_DA_MANHA, janelaDeChegada(40, 3, PARAMETROS_AVISO_PADRAO));
+  assert.equal(texto, 'entre 8h30 e 9h50');
+});
+
+test('janela nunca começa no passado', () => {
+  const janela = janelaDeChegada(2, 0, PARAMETROS_AVISO_PADRAO);
+  assert.equal(janela.deMin, 0);
+});
+
+test('mensagem do dia embute a janela; a de chegada, o tempo restante', () => {
+  const rota = mensagemDeRota(OITO_DA_MANHA, 40, 3, PARAMETROS_AVISO_PADRAO);
+  assert.match(rota, /entre 8h30 e 9h50/);
+  assert.ok(!rota.includes('{janela}'), 'o modelo não pode vazar para o cliente');
+
+  assert.match(mensagemDeChegada(10, PARAMETROS_AVISO_PADRAO), /em uns 10 minutos/);
+  assert.match(mensagemDeChegada(1, PARAMETROS_AVISO_PADRAO), /agora/);
+  // Sem sinal não há estimativa de estrada: não inventa número.
+  assert.match(mensagemDeChegada(null, PARAMETROS_AVISO_PADRAO), /em instantes/);
+});
+
+test('config torta não vira mensagem em branco no WhatsApp do cliente', () => {
+  const p = mesclarParametrosAviso({
+    textoRota: '   ',
+    textoChegando: 'Chego {quando}, tudo bem?',
+    minutosPorParada: -5,
+    margemBaseMin: 45,
+  });
+  assert.equal(p.textoRota, PARAMETROS_AVISO_PADRAO.textoRota); // vazio é ignorado
+  assert.equal(p.textoChegando, 'Chego {quando}, tudo bem?'); // texto válido entra
+  assert.equal(p.minutosPorParada, PARAMETROS_AVISO_PADRAO.minutosPorParada); // negativo, não
+  assert.equal(p.margemBaseMin, 45);
 });
 
 /** Traçado reto de ~2 km ao longo do meridiano -36,56. */

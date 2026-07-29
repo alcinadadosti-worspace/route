@@ -5,6 +5,7 @@
  */
 
 import type { ParametrosTrilha } from './trilha.js';
+import type { ParametrosAviso } from './aviso.js';
 
 export type Papel = 'admin' | 'operador' | 'motorista';
 
@@ -131,6 +132,12 @@ export interface ParadaRota {
    * motorista liga o "navegar e mapear" por aqui, sem depender do doc do cliente
    * estar no cache offline. Ausente em rotas antigas → o app recai no cliente. */
   precisaMapear?: boolean;
+  /**
+   * Quando o motorista avisou o cliente pelo WhatsApp (seção 11.8). Serve ao
+   * escritório: diante de um "ausente", saber se o cliente tinha sido avisado
+   * é o que separa aprendizado de reclamação.
+   */
+  avisadoEm?: string | null;
 }
 
 /** `rotas/{rotaId}` — seção 7.3. */
@@ -234,6 +241,8 @@ export interface MapaOffline {
 export interface ConfigGeral {
   mapa?: MapaOffline;
   trilha?: Partial<ParametrosTrilha>;
+  /** Redação e ritmo do aviso ao cliente — ajustáveis sem deploy (seção 11.8). */
+  aviso?: Partial<ParametrosAviso>;
 }
 
 /** Doc `config/cds` — centros de distribuição de partida (seção 7.6). */

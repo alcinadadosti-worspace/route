@@ -4,8 +4,11 @@ import {
   decodificarPolyline,
   distanciaAoTracadoEmMetros,
   distanciaEmMetros,
+  linkWhatsApp,
+  mensagemDeChegada,
   paradaPrecisaMapear,
   rumoEmGraus,
+  type ParametrosAviso,
   type GeoPonto,
   type ParadaRota,
   type ParametrosTrilha,
@@ -48,6 +51,7 @@ export function Navegacao({
   estilo,
   estiloKey,
   parametros,
+  parametrosAviso,
   aoResolver,
   aoFechar,
   outrasParadas,
@@ -69,6 +73,8 @@ export function Navegacao({
   aoFechar: () => void;
   /** Parâmetros de trilha já mesclados de config/geral (seção 11). */
   parametros: ParametrosTrilha;
+  /** Redação do aviso ao cliente, mesclada de config/geral (seção 11.8). */
+  parametrosAviso: ParametrosAviso;
 }) {
   const cliente = dossie?.cliente ?? null;
   const trilha = dossie?.trilha ?? null;
@@ -163,7 +169,11 @@ export function Navegacao({
   // Desvio do traçado (seção 11.6). A DETECÇÃO é geometria pura e roda offline;
   // só o recálculo precisa de rede. Uma vez recalculado, o desvio passa a ser
   // medido contra o traçado novo — senão o app pediria outro a cada leitura.
-  const [rerota, setRerota] = useState<{ polyline: string; distanciaKm: number } | null>(null);
+  const [rerota, setRerota] = useState<{
+    polyline: string;
+    distanciaKm: number;
+    duracaoMin: number;
+  } | null>(null);
   const [recalculando, setRecalculando] = useState(false);
   const [erroRerota, setErroRerota] = useState<string | null>(null);
   const tracadoDesenhado = rerota?.polyline ?? rota.polylinePlanejada;
@@ -365,6 +375,22 @@ export function Navegacao({
             <div className="nav-modo">{rotuloModo}</div>
           </div>
         </div>
+
+        {/* Aviso de aproximação: o minuto só sai quando veio do recálculo por
+            estrada — sem sinal, a mensagem vai sem número em vez de chutar. */}
+        {!chegou && parada.telefone && (
+          <a
+            className="avisar"
+            href={linkWhatsApp(
+              parada.telefone,
+              mensagemDeChegada(rerota?.duracaoMin ?? null, parametrosAviso),
+            )}
+            target="_blank"
+            rel="noreferrer"
+          >
+            📣 Avisar que estou chegando
+          </a>
+        )}
 
         {!chegou && (
           <div className="nav-acoes">

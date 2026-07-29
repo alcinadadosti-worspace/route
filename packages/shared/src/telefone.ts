@@ -17,9 +17,16 @@ export function normalizarTelefone(fone: string | null | undefined): string | nu
   return null;
 }
 
-/** Link de contato em um toque (RF-19). wa.me exige dígitos sem `+`. */
-export function linkWhatsApp(telefoneE164: string): string {
-  return `https://wa.me/${telefoneE164.replace(/\D/g, '')}`;
+/**
+ * Link de contato em um toque (RF-19). `wa.me` exige dígitos sem `+`.
+ *
+ * Com `mensagem`, abre a conversa com o texto já escrito — o motorista revisa
+ * e envia. O WhatsApp NÃO permite envio automático por link, de propósito
+ * (trava anti-spam): envio sem toque só pela API oficial da Meta, que é paga.
+ */
+export function linkWhatsApp(telefoneE164: string, mensagem?: string): string {
+  const numero = telefoneE164.replace(/\D/g, '');
+  return `https://wa.me/${numero}${mensagem ? `?text=${encodeURIComponent(mensagem)}` : ''}`;
 }
 
 export function linkLigacao(telefoneE164: string): string {

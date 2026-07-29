@@ -36,7 +36,12 @@ service cloud.firestore {
         && resource.data.motoristaId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['paradas', 'status', 'concluidaEm'])
-        && request.resource.data.status in ['em_execucao', 'concluida'];
+        // Só pode MUDAR o status para em_execucao/concluida — ou deixá-lo como
+        // está. O "deixar como está" existe porque há escrita em `paradas` que
+        // não inicia a rota: marcar que o cliente foi avisado (seção 11.8)
+        // acontece com a rota ainda `publicada`, antes da primeira entrega.
+        && (request.resource.data.status == resource.data.status
+            || request.resource.data.status in ['em_execucao', 'concluida']);
       allow create, delete: if false;
     }
 

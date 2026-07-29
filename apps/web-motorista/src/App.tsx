@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   linkLigacao,
   linkWhatsApp,
+  mensagemDeRota,
+  mesclarParametrosAviso,
   mesclarParametrosTrilha,
   paradaPrecisaMapear,
   type GeoPonto,
@@ -18,7 +20,7 @@ import { useConfigGeral } from './useConfigGeral';
 import { useMapaOffline } from './useMapaOffline';
 import { estiloMapa, type Tema } from './estiloMapa';
 import { tipoDeRede } from './mapaOffline';
-import { registrarResultado } from './servicoEntrega';
+import { registrarAviso, registrarResultado } from './servicoEntrega';
 import { dispararProcessamento, ordemSugerida } from './servicoMapeamento';
 import { processarFilaFotos } from './servicoFotos';
 import { usePosicao } from './usePosicao';
@@ -40,6 +42,9 @@ interface ParadaDemo {
   /** Presentes apenas nas paradas de rota real (não demo). */
   pedidoId?: string;
   clienteId?: string;
+  /** Minutos de direção acumulados desde o CD, calculados na publicação. */
+  etaMin?: number;
+  avisadoEm?: string | null;
 }
 
 const CD_DEMO = { nome: 'CD ARAPIRACA', lat: -9.7515, lng: -36.6612 };
@@ -125,6 +130,12 @@ const MOTIVOS_INSUCESSO: Array<{ resultado: ResultadoEntrega; rotulo: string }> 
   { resultado: 'recusa', rotulo: 'Recusa' },
 ];
 
+/** ISO → `08h15`, para o motorista ver de relance quando avisou o cliente. */
+function horaCurta(iso: string): string {
+  const data = new Date(iso);
+  return `${data.getHours()}h${String(data.getMinutes()).padStart(2, '0')}`;
+}
+
 /** `20260723` → `23/07/2026` — a versão do mapa é a data do extrato OSM. */
 function versaoLegivel(versao: string): string {
   return `${versao.slice(6, 8)}/${versao.slice(4, 6)}/${versao.slice(0, 4)}`;
@@ -144,6 +155,8 @@ export function App() {
   // Parâmetros de trilha: padrões mesclados com os overrides de config/geral —
   // o escritório ajusta filtros de GPS/handoff sem novo deploy (seção 11).
   const parametrosTrilha = useMemo(() => mesclarParametrosTrilha(config?.trilha), [config?.trilha]);
+  // Redação e ritmo do aviso ao cliente — também ajustáveis sem deploy.
+  const parametrosAviso = useMemo(() => mesclarParametrosAviso(config?.aviso), [config?.aviso]);
 
   // Alternância Galpão/Pátio em um toque no topo da tela (seção 14.2).
   useEffect(() => {
@@ -200,6 +213,8 @@ export function App() {
               fotoPath: cliente?.fotoReferenciaPath ?? undefined,
               pedidoId: p.pedidoId,
               clienteId: p.clienteId,
+              etaMin: p.etaMin,
+              avisadoEm: p.avisadoEm ?? null,
             };
           })
         : PARADAS_DEMO,
@@ -344,6 +359,7 @@ export function App() {
         estilo={estilo}
         estiloKey={mapaOffline.urlFonte ?? 'online'}
         parametros={parametrosTrilha}
+        parametrosAviso={parametrosAviso}
         outrasParadas={outrasParadas}
         aoTrocarParada={setNavegandoPara}
         aoResolver={(pedidoId, resultado) => resolver(pedidoId, resultado)}
@@ -551,6 +567,24 @@ export function App() {
                   <a href={linkLigacao(p.telefone)}>📞 Ligar</a>
                   <a href={linkWhatsApp(p.telefone)} target="_blank" rel="noreferrer">
                     💬 WhatsApp
+                  </a>
+                  {/* Aviso com a janela estimada — o que evita o "ausente".
+                      A mensagem é montada na renderização para a janela ficar
+                      sempre relativa a agora; o WhatsApp abre com o texto
+                      pronto e o motorista revisa antes de enviar. */}
+                  <a
+                    className={`avisar${p.avisadoEm ? ' feito' : ''}`}
+                    href={linkWhatsApp(
+                      p.telefone,
+                      mensagemDeRota(new Date(), p.etaMin ?? 0, p.ordem - 1, parametrosAviso),
+                    )}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => {
+                      if (rota && p.pedidoId) registrarAviso(rota, p.pedidoId);
+                    }}
+                  >
+                    {p.avisadoEm ? `✔ Avisado ${horaCurta(p.avisadoEm)}` : '📣 Avisar chegada'}
                   </a>
                 </>
               )}

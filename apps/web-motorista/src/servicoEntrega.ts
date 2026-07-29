@@ -1,4 +1,4 @@
-import { collection, doc, setDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import {
   aplicarResultadoParada,
   type Entrega,
@@ -59,6 +59,23 @@ export function registrarResultado(
       console.error('Falha na sincronização da entrega', erro),
     );
   })();
+}
+
+/**
+ * Marca na parada que o cliente foi avisado (seção 11.8). O WhatsApp não
+ * devolve nada ao app, então este registro é o único rastro: diante de um
+ * "ausente", o escritório vê se o cliente tinha sido avisado.
+ *
+ * Escreve o array de paradas inteiro, como a confirmação de entrega — e pelo
+ * mesmo motivo é síncrono a partir do snapshot atual.
+ */
+export function registrarAviso(rota: { id: string } & Rota, pedidoId: string): void {
+  const paradas = rota.paradas.map((p) =>
+    p.pedidoId === pedidoId ? { ...p, avisadoEm: new Date().toISOString() } : p,
+  );
+  updateDoc(doc(db, 'rotas', rota.id), { paradas }).catch((erro) =>
+    console.error('Falha ao registrar o aviso', erro),
+  );
 }
 
 function posicaoAtual(): Promise<GeoPonto | null> {

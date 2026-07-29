@@ -341,6 +341,21 @@ Escolher a próxima parada rolando uma lista de dez cartões é ruim dentro de u
 
 Trocar de parada **remonta** a tela de navegação (`key` pelo pedidoId). Chegada, pin ajustado, gravação em curso e traçado recalculado são estado daquela parada e precisam zerar juntos — sem isso o cartão de chegada da parada anterior apareceria já aberto na parada nova. O custo é o mapa ser recriado na troca, o mesmo de hoje ao fechar e reabrir. Gravação em curso com pontos pede confirmação antes de ser descartada, como no fechar.
 
+### 11.8 Aviso ao cliente pelo WhatsApp
+O insucesso mais caro da operação rural é o **"ausente"**: a revendedora não estava em casa e a viagem inteira se perde — ida, volta, vaga na rota do dia seguinte e o produto voltando ao CD. Nenhuma otimização de rota paga isso; avisar com antecedência, sim.
+
+Dois momentos, que resolvem problemas diferentes:
+- **começo do dia**, na lista: o motorista dispara o aviso com a **janela estimada** de chegada. É o que dá tempo de a pessoa estar em casa — avisar da porta não adianta se ela foi para a roça;
+- **aproximação**, na navegação: "estou chegando {quando}". O minuto só entra quando veio do recálculo por estrada (11.7); sem sinal a mensagem vai sem número, em vez de chutar.
+
+**A janela alarga ao longo do dia, de propósito.** O `etaMin` da parada é acumulado de DIRIGIR desde o CD e ignora o tempo parado em cada cliente — que é justamente o que faz a promessa furar no fim da rota. O cálculo devolve esse tempo e aumenta a margem a cada parada de distância: meia hora para a próxima, duas horas para a décima. Prometer 10h20 para a última parada e chegar meio-dia é pior do que não ter avisado.
+
+**Entrega pelo link `wa.me`, sem servidor no meio — custo zero.** O WhatsApp abre no aparelho do motorista com o texto pronto; ele revisa e envia. Envio automático (sem toque) exigiria a API oficial da Meta: número dedicado, verificação da empresa, modelos aprovados e cobrança por mensagem — ordem de US$ 1 a 2 por mês no volume atual. A parte que MONTA a mensagem é pura e isolada (`shared/aviso.ts`), então essa migração troca só quem entrega.
+
+Redação e ritmo ficam em `config/geral.aviso`, ajustáveis sem deploy. Config torta é ignorada: texto vazio ou número não-positivo cai no padrão, para não sair mensagem em branco no WhatsApp do cliente.
+
+O aviso fica registrado na parada (`avisadoEm`). O WhatsApp não devolve nada ao app, então esse é o único rastro — e é o que permite ao escritório, diante de um "ausente", saber se o cliente tinha sido avisado. Como não muda o status da rota, a regra do Firestore precisou permitir escrita em `paradas` com status inalterado.
+
 ### 11.7 Desvio do traçado e recálculo (online)
 A polyline desenhada é calculada na publicação, saindo do CD. Quando o motorista sai dela — atalho que ele conhece, estrada interditada, ou simplesmente se perdeu — o app **detecta sozinho e sem rede**: distância do veículo até a polilinha (geometria pura, `distanciaAoTracadoEmMetros`), acima de `desvioMinimoM` (padrão 150 m, ajustável em `config/geral.trilha`).
 
