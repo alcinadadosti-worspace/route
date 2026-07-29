@@ -77,8 +77,10 @@ export function Importacao() {
             <Metrica valor={relatorio.rejeitados.length} rotulo="Rejeitados" />
           </div>
 
-          {relatorio.alertas.map((a) => (
-            <div key={a.clienteId} className="alerta">
+          {/* Um mesmo cliente pode render dois alertas na mesma remessa (mudança
+              de cadastro + entrega em local diverso): a chave leva o índice. */}
+          {relatorio.alertas.map((a, i) => (
+            <div key={`${a.clienteId}-${i}`} className="alerta">
               <strong>{a.nome}:</strong> {a.mensagem}
             </div>
           ))}

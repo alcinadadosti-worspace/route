@@ -1,5 +1,6 @@
 import {
   ehEnderecoRural,
+  enderecosDivergem,
   type Cliente,
   type EnderecoFiscal,
   type GeoPonto,
@@ -59,7 +60,7 @@ export async function importarXmls(
       continue;
     }
 
-    const cliente = await upsertCliente(nota, repo, relatorio);
+    const { cliente, enderecoAnterior, revisaoNova } = await upsertCliente(nota, repo);
     let status = await classificarDestino(
       nota.destinatario.clienteId,
       cliente,
@@ -67,6 +68,25 @@ export async function importarXmls(
       geocodificador,
       relatorio,
     );
+
+    // Mudança de endereço do cadastro (seção 8.3): a nota trouxe endereço fiscal
+    // diferente daquele para o qual o ponto atual foi estabelecido. Roteirizar no
+    // ponto velho levaria o motorista ao lugar errado (e, no rural, a trilha
+    // aprendida reforçaria o engano), então o pedido espera a confirmação do
+    // escritório. O pin NÃO é descartado aqui: quem decide é quem conhece.
+    if (enderecoAnterior) {
+      status = 'pendente_de_decisao';
+      // Um alerta por cliente, não por nota: uma remessa com 5 notas dele faz a
+      // mesma pergunta uma vez.
+      if (revisaoNova) {
+        relatorio.alertas.push({
+          clienteId: nota.destinatario.clienteId,
+          nome: nota.destinatario.nome,
+          mensagem:
+            'Endereço do cadastro mudou — confirme na aba Decisões se o ponto atual ainda vale.',
+        });
+      }
+    }
 
     // Entrega em local diverso (seção 8.4): a nota traz endereço de entrega
     // diferente do fiscal. Geocodifica o candidato e deixa o pedido AGUARDANDO a
@@ -107,6 +127,7 @@ export async function importarXmls(
       // Só carrega os campos de entrega quando há divergência — pedido normal
       // fica idêntico ao de antes do recurso (sem chaves indefinidas no doc).
       ...(enderecoEntrega ? { enderecoEntrega, coordenadaEntrega } : {}),
+      ...(enderecoAnterior ? { enderecoAnterior } : {}),
     };
     await repo.salvarPedido(nota.chaveAcesso, pedido);
     relatorio.importados += 1;
@@ -124,13 +145,16 @@ export async function importarXmls(
  *    ponto de partida: coordenada grosseira, `aproximado`, pronto_para_rota — o
  *    motorista experiente entrega e o app aprende a trilha na 1ª viagem;
  * 4. sem resultado, fora do município, ou sem geocodificador → pendente_de_mapeamento.
+ *
+ * `relatorio` é nulo quando a chamada não vem de uma importação (reclassificação
+ * depois de o escritório descartar um ponto vencido) — não há o que contabilizar.
  */
 async function classificarDestino(
   clienteId: string,
   cliente: Cliente,
   repo: Repositorio,
   geocodificador: Geocodificador | null,
-  relatorio: RelatorioImportacao,
+  relatorio: RelatorioImportacao | null,
 ): Promise<StatusPedido> {
   if (cliente.coordenada) return 'pronto_para_rota';
   if (!geocodificador) return 'pendente_de_mapeamento';
@@ -144,7 +168,7 @@ async function classificarDestino(
       coordenada: resultado.coordenada,
       statusMapeamento: 'geocodificado',
     });
-    relatorio.geocodificados += 1;
+    if (relatorio) relatorio.geocodificados += 1;
     return 'pronto_para_rota';
   }
 
@@ -156,7 +180,7 @@ async function classificarDestino(
       coordenada: resultado.coordenada,
       statusMapeamento: 'aproximado',
     });
-    relatorio.aproximados += 1;
+    if (relatorio) relatorio.aproximados += 1;
     return 'pronto_para_rota';
   }
 
@@ -177,15 +201,24 @@ async function geocodificarEntrega(
   return resultado?.precisa ? resultado.coordenada : null;
 }
 
+interface ResultadoUpsert {
+  cliente: Cliente;
+  /**
+   * Endereço fiscal para o qual o ponto atual foi estabelecido — presente
+   * enquanto a revisão do ponto estiver aberta (mudança relevante de endereço
+   * num cliente que já tinha ponto). É o gatilho da decisão da seção 8.3;
+   * ausente significa "nada a questionar".
+   */
+  enderecoAnterior?: EnderecoFiscal;
+  /** A revisão começou NESTA nota — só então vale alertar (uma vez por remessa). */
+  revisaoNova: boolean;
+}
+
 /**
  * Seção 8.3: a nota é mais recente que o cadastro — atualiza contato e endereço
  * fiscal, preservando coordenada, statusMapeamento e trilhas.
  */
-async function upsertCliente(
-  nota: NotaImportada,
-  repo: Repositorio,
-  relatorio: RelatorioImportacao,
-): Promise<Cliente> {
+async function upsertCliente(nota: NotaImportada, repo: Repositorio): Promise<ResultadoUpsert> {
   const { clienteId } = nota.destinatario;
   const existente = await repo.obterCliente(clienteId);
 
@@ -203,20 +236,26 @@ async function upsertCliente(
       mapeadoEm: null,
       fotoReferenciaPath: null,
       observacoes: '',
+      enderecoEmRevisao: null,
     };
     await repo.salvarCliente(clienteId, novo);
-    return novo;
+    return { cliente: novo, revisaoNova: false };
   }
 
-  const enderecoMudou =
-    JSON.stringify(existente.enderecoFiscal) !== JSON.stringify(nota.destinatario.enderecoFiscal);
-  if (enderecoMudou && existente.statusMapeamento === 'mapeado') {
-    relatorio.alertas.push({
-      clienteId,
-      nome: nota.destinatario.nome,
-      mensagem: 'Endereço da nota mudou; o pin continua válido?',
-    });
-  }
+  // `enderecosDivergem` compara os campos que mudam o LUGAR (logradouro, número,
+  // bairro, município, UF, CEP) já normalizados — diferença só de formatação ou
+  // de complemento não vira decisão para o escritório resolver à toa.
+  // Sem coordenada não há ponto velho para questionar: a classificação vai
+  // geocodificar o endereço novo normalmente, que é o comportamento certo.
+  const mudouDeLugar =
+    existente.coordenada !== null &&
+    enderecosDivergem(existente.enderecoFiscal, nota.destinatario.enderecoFiscal);
+
+  // Uma revisão já aberta prevalece: o ponto pertence ao endereço da PRIMEIRA
+  // divergência, e mudanças encadeadas antes da decisão não podem reescrever
+  // essa referência (senão o "antes" que o escritório vê seria o intermediário).
+  const revisaoAberta = existente.enderecoEmRevisao ?? null;
+  const enderecoEmRevisao = revisaoAberta ?? (mudouDeLugar ? existente.enderecoFiscal : null);
 
   const atualizado: Cliente = {
     ...existente,
@@ -224,9 +263,12 @@ async function upsertCliente(
     telefone: nota.destinatario.telefone ?? existente.telefone,
     email: nota.destinatario.email ?? existente.email,
     enderecoFiscal: nota.destinatario.enderecoFiscal,
+    enderecoEmRevisao,
   };
   await repo.salvarCliente(clienteId, atualizado);
-  return atualizado;
+  return enderecoEmRevisao
+    ? { cliente: atualizado, enderecoAnterior: enderecoEmRevisao, revisaoNova: !revisaoAberta }
+    : { cliente: atualizado, revisaoNova: false };
 }
 
 export type ResultadoDecisao =
@@ -250,11 +292,19 @@ export async function decidirEnderecoEntrega(
   }
   const pedido = await repo.obterPedido(pedidoId);
   if (!pedido) return { ok: false, status: 404, erro: 'Pedido não encontrado' };
-  if (pedido.status !== 'pendente_de_decisao') {
+  if (pedido.status !== 'pendente_de_decisao' || !pedido.enderecoEntrega) {
     return { ok: false, status: 409, erro: 'Pedido não está aguardando decisão de endereço' };
   }
 
   if (escolha === 'fiscal') {
+    // Quando o cadastro TAMBÉM mudou de endereço (seção 8.3), escolher o fiscal
+    // ainda deixa em aberto a pergunta do ponto antigo — o pedido continua em
+    // decisão, agora só com ela. `usarEnderecoEntrega: false` registra que a
+    // pergunta da entrega já foi respondida e tira este cartão da fila.
+    if (pedido.enderecoAnterior) {
+      await repo.salvarPedido(pedidoId, { ...pedido, usarEnderecoEntrega: false });
+      return { ok: true, status: 'pendente_de_decisao' };
+    }
     const cliente = await repo.obterCliente(pedido.clienteId);
     const status: StatusPedido = cliente?.coordenada ? 'pronto_para_rota' : 'pendente_de_mapeamento';
     await repo.salvarPedido(pedidoId, { ...pedido, usarEnderecoEntrega: false, status });
@@ -280,6 +330,97 @@ export async function decidirEnderecoEntrega(
     status: 'pronto_para_rota',
   });
   return { ok: true, status: 'pronto_para_rota' };
+}
+
+/**
+ * Resolve a mudança de endereço do cadastro (seção 8.3): o cliente passou a ter
+ * outro endereço fiscal e já tinha um ponto estabelecido para o anterior. Quem
+ * conhece a operação decide se aquele ponto sobrevive à mudança.
+ * - `manter`: era mudança de cadastro, não de lugar (ou o operador sabe que a
+ *   entrega continua no mesmo ponto) — o pedido volta ao fluxo normal.
+ * - `remapear`: o ponto morreu com o endereço antigo. Descarta coordenada,
+ *   autoria e trilha ativa e reclassifica pelo endereço NOVO: se ele
+ *   geocodificar, o pedido já sai despachável; se não (o caso rural), vai para
+ *   mapeamento em campo, que é como um destino novo sempre entra.
+ */
+export async function decidirMudancaEndereco(
+  repo: Repositorio,
+  pedidoId: string,
+  escolha: 'manter' | 'remapear',
+  geocodificador: Geocodificador | null = null,
+): Promise<ResultadoDecisao> {
+  if (escolha !== 'manter' && escolha !== 'remapear') {
+    return { ok: false, status: 400, erro: 'Escolha inválida (manter ou remapear)' };
+  }
+  const pedido = await repo.obterPedido(pedidoId);
+  if (!pedido) return { ok: false, status: 404, erro: 'Pedido não encontrado' };
+  if (pedido.status !== 'pendente_de_decisao' || !pedido.enderecoAnterior) {
+    return {
+      ok: false,
+      status: 409,
+      erro: 'Pedido não está aguardando decisão de mudança de endereço',
+    };
+  }
+  // Com a pergunta da entrega ainda aberta, responder esta primeiro pularia
+  // aquela: a rota sairia pelo cadastro sem o escritório ter escolhido.
+  if (pedido.enderecoEntrega && pedido.usarEnderecoEntrega === undefined) {
+    return {
+      ok: false,
+      status: 409,
+      erro: 'Responda antes a decisão de endereço de entrega desta nota',
+    };
+  }
+  const cliente = await repo.obterCliente(pedido.clienteId);
+  if (!cliente) return { ok: false, status: 404, erro: 'Cliente não encontrado' };
+
+  if (escolha === 'manter') {
+    const status: StatusPedido = cliente.coordenada ? 'pronto_para_rota' : 'pendente_de_mapeamento';
+    await repo.salvarCliente(pedido.clienteId, { ...cliente, enderecoEmRevisao: null });
+    await liberarPedidosEmRevisao(repo, pedido.clienteId, status);
+    return { ok: true, status };
+  }
+
+  // O ponto vencido sai ANTES da reclassificação: com a coordenada ainda no
+  // cadastro, classificarDestino curto-circuitaria em 'pronto_para_rota' e o
+  // endereço novo nunca seria geocodificado.
+  const semPonto: Cliente = {
+    ...cliente,
+    coordenada: null,
+    statusMapeamento: 'nao_mapeado',
+    mapeadoPor: null,
+    mapeadoEm: null,
+    trilhaAtivaId: null,
+    enderecoEmRevisao: null,
+  };
+  await repo.salvarCliente(pedido.clienteId, semPonto);
+  // A trilha aprendida levava ao endereço antigo: desativa para não reaparecer
+  // como "anterior" num reaprendizado. Escrita separada de propósito — se ela
+  // falhar sobra uma trilha ativa que ninguém lê (o cliente já não aponta para
+  // ela), o que é bem menos grave do que o cadastro ficar com o ponto vencido.
+  if (cliente.trilhaAtivaId) await repo.atualizarTrilha(cliente.trilhaAtivaId, { ativa: false });
+
+  const status = await classificarDestino(pedido.clienteId, semPonto, repo, geocodificador, null);
+  await liberarPedidosEmRevisao(repo, pedido.clienteId, status);
+  return { ok: true, status };
+}
+
+/**
+ * Solta os pedidos que estavam presos SÓ pela revisão do ponto (seção 8.3) —
+ * inclusive o que motivou a decisão. Uma remessa com várias notas do mesmo
+ * cliente faz a pergunta uma vez, não uma por nota. Quem ainda deve a decisão
+ * de endereço de ENTREGA (seção 8.4) fica na fila: são perguntas diferentes.
+ */
+async function liberarPedidosEmRevisao(
+  repo: Repositorio,
+  clienteId: string,
+  status: StatusPedido,
+): Promise<void> {
+  for (const { id, ...dados } of await repo.listarPedidos()) {
+    if (dados.clienteId !== clienteId) continue;
+    if (dados.status !== 'pendente_de_decisao' || !dados.enderecoAnterior) continue;
+    if (dados.enderecoEntrega && dados.usarEnderecoEntrega === undefined) continue;
+    await repo.salvarPedido(id, { ...dados, status });
+  }
 }
 
 function validarCoordenada(c: GeoPonto | null | undefined): GeoPonto | null {

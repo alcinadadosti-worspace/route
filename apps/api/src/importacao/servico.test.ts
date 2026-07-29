@@ -1,10 +1,10 @@
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { importarXmls, decidirEnderecoEntrega } from './servico.js';
+import { importarXmls, decidirEnderecoEntrega, decidirMudancaEndereco } from './servico.js';
 import { RepositorioMemoria } from '../db/repositorio.js';
 import { parseNfe } from '../nfe/parser.js';
-import type { EnderecoFiscal } from '@rota/shared';
+import type { Cliente, EnderecoFiscal } from '@rota/shared';
 
 let xml: string;
 
@@ -78,33 +78,231 @@ test('cliente com coordenada confirmada gera pedido pronto_para_rota', async () 
   assert.equal(cliente.trilhaAtivaId, 'trilha-1');
 });
 
-test('mudança de endereço fiscal em cliente mapeado gera alerta, não descarta o pin', async () => {
-  const repo = new RepositorioMemoria();
+// --- Mudança de endereço do cadastro (seção 8.3) ---
+
+/** Cliente já cadastrado, com o endereço da nota alterado pelos `campos`. */
+async function comClienteExistente(
+  repo: RepositorioMemoria,
+  campos: Partial<Cliente> = {},
+  enderecoAntigo: Partial<EnderecoFiscal> = { logradouro: 'RUA ANTIGA' },
+): Promise<string> {
   const parse = await parseNfe(xml);
   assert.ok(parse.ok);
-
-  await repo.salvarCliente(parse.nota.destinatario.clienteId, {
+  const clienteId = parse.nota.destinatario.clienteId;
+  await repo.salvarCliente(clienteId, {
     nome: 'MARIA JOSE DA SILVA',
     documentoMascarado: '***.***.***-82',
     telefone: null,
     email: null,
-    enderecoFiscal: { ...parse.nota.destinatario.enderecoFiscal, logradouro: 'RUA ANTIGA' },
+    enderecoFiscal: { ...parse.nota.destinatario.enderecoFiscal, ...enderecoAntigo },
     coordenada: { lat: -9.925, lng: -36.47 },
     statusMapeamento: 'mapeado',
     trilhaAtivaId: null,
-    mapeadoPor: null,
-    mapeadoEm: null,
+    mapeadoPor: 'motorista-1',
+    mapeadoEm: '2026-03-01T10:00:00-03:00',
     fotoReferenciaPath: null,
     observacoes: '',
+    ...campos,
   });
+  return clienteId;
+}
+
+test('mudança de endereço segura o pedido em decisão e NÃO descarta o pin', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteExistente(repo);
 
   const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  assert.equal(relatorio.pendentesDeDecisao, 1);
+  assert.equal(relatorio.prontosParaRota, 0);
   assert.equal(relatorio.alertas.length, 1);
-  assert.match(relatorio.alertas[0]!.mensagem, /pin continua válido/);
+  assert.match(relatorio.alertas[0]!.mensagem, /cadastro mudou/i);
+
+  // O pedido carrega o endereço ANTERIOR, para o escritório comparar.
+  const pedido = (await repo.listarPedidos())[0]!;
+  assert.equal(pedido.status, 'pendente_de_decisao');
+  assert.equal(pedido.enderecoAnterior?.logradouro, 'RUA ANTIGA');
+
+  // O cadastro recebe o endereço novo; o ponto fica intacto até a decisão.
+  const cliente = (await repo.listarClientes())[0]!;
+  assert.equal(cliente.enderecoFiscal.logradouro, 'POVOADO BREJO DOS BOIS');
+  assert.deepEqual(cliente.coordenada, { lat: -9.925, lng: -36.47 });
+  assert.equal(cliente.statusMapeamento, 'mapeado');
+});
+
+/** Mesma nota com outra chave de acesso: segunda nota do MESMO cliente. */
+function xmlOutraChave(): string {
+  return xml.replaceAll(
+    '27260314750618000155550010002761651000070282',
+    '27260314750618000155550010002761661000070283',
+  );
+}
+
+test('segunda nota do mesmo cliente na mesma remessa também é segurada', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteExistente(repo);
+
+  const relatorio = await importarXmls(
+    [
+      { nome: 'a.xml', conteudo: xml },
+      { nome: 'b.xml', conteudo: xmlOutraChave() },
+    ],
+    repo,
+  );
+
+  // A 1ª nota já atualiza o cadastro; sem a marca no CLIENTE, a 2ª não veria
+  // divergência nenhuma e sairia roteirizada no ponto vencido.
+  assert.equal(relatorio.importados, 2);
+  assert.equal(relatorio.pendentesDeDecisao, 2);
+  assert.equal(relatorio.prontosParaRota, 0);
+  assert.equal(relatorio.alertas.length, 1); // um alerta por cliente, não por nota
+
+  const pedidos = await repo.listarPedidos();
+  assert.ok(pedidos.every((p) => p.status === 'pendente_de_decisao'));
+  assert.ok(pedidos.every((p) => p.enderecoAnterior?.logradouro === 'RUA ANTIGA'));
+});
+
+test('uma decisão libera todos os pedidos do cliente presos pela mesma pergunta', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteExistente(repo);
+  await importarXmls(
+    [
+      { nome: 'a.xml', conteudo: xml },
+      { nome: 'b.xml', conteudo: xmlOutraChave() },
+    ],
+    repo,
+  );
+  const pedido = (await repo.listarPedidos())[0]!;
+
+  const r = await decidirMudancaEndereco(repo, pedido.id, 'manter');
+  assert.ok(r.ok);
+  const pedidos = await repo.listarPedidos();
+  assert.ok(pedidos.every((p) => p.status === 'pronto_para_rota'));
+  // A marca sai do cadastro: importações seguintes não são mais seguradas.
+  assert.equal((await repo.listarClientes())[0]!.enderecoEmRevisao, null);
+});
+
+test('mudança encadeada antes da decisão preserva o endereço do ponto original', async () => {
+  const repo = new RepositorioMemoria();
+  const clienteId = await comClienteExistente(repo);
+  // 1ª mudança: RUA ANTIGA → endereço da nota. Abre a revisão.
+  await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  // 2ª mudança antes de decidir: o "antes" continua sendo RUA ANTIGA, que é o
+  // endereço para o qual o pin foi realmente estabelecido.
+  await importarXmls([{ nome: 'b.xml', conteudo: xmlOutraChave() }], repo);
+
+  const cliente = (await repo.obterCliente(clienteId))!;
+  assert.equal(cliente.enderecoEmRevisao?.logradouro, 'RUA ANTIGA');
+  const pedidos = await repo.listarPedidos();
+  assert.ok(pedidos.every((p) => p.enderecoAnterior?.logradouro === 'RUA ANTIGA'));
+});
+
+test('vale para QUALQUER status de mapeamento — o rural aproximado também segura', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteExistente(repo, { statusMapeamento: 'aproximado', mapeadoPor: null });
+
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  assert.equal(relatorio.pendentesDeDecisao, 1);
+  assert.equal((await repo.listarPedidos())[0]!.status, 'pendente_de_decisao');
+});
+
+test('mudança irrelevante (só complemento) não vira decisão', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteExistente(repo, {}, { complemento: 'CASA' });
+
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  assert.equal(relatorio.pendentesDeDecisao, 0);
+  assert.equal(relatorio.prontosParaRota, 1);
+  assert.equal(relatorio.alertas.length, 0);
+});
+
+test('cliente SEM ponto que muda de endereço não vira decisão — geocodifica o novo', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteExistente(repo, { coordenada: null, statusMapeamento: 'nao_mapeado' });
+
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo, {
+    async geocodificar() {
+      return { coordenada: { lat: -9.9, lng: -36.5 }, precisa: false, municipioConfere: true };
+    },
+  });
+  assert.equal(relatorio.pendentesDeDecisao, 0);
+  assert.equal(relatorio.aproximados, 1);
+  assert.deepEqual((await repo.listarClientes())[0]!.coordenada, { lat: -9.9, lng: -36.5 });
+});
+
+test('decidir MANTER devolve o pedido ao fluxo normal, com o ponto preservado', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteExistente(repo);
+  await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  const pedido = (await repo.listarPedidos())[0]!;
+
+  const r = await decidirMudancaEndereco(repo, pedido.id, 'manter');
+  assert.ok(r.ok);
+  assert.equal(r.status, 'pronto_para_rota');
+  assert.equal((await repo.listarPedidos())[0]!.status, 'pronto_para_rota');
+  assert.deepEqual((await repo.listarClientes())[0]!.coordenada, { lat: -9.925, lng: -36.47 });
+});
+
+test('decidir REMAPEAR limpa pin, autoria e trilha e manda o rural para mapeamento', async () => {
+  const repo = new RepositorioMemoria();
+  const clienteId = await comClienteExistente(repo, { trilhaAtivaId: 'trilha-1' });
+  await repo.salvarTrilha('trilha-1', {
+    clienteId,
+    polyline: 'a~l~Fjk~uOwHJy@P',
+    pontoEntrada: { lat: -9.9, lng: -36.4 },
+    distanciaM: 100,
+    precisaoMediaM: 8,
+    ativa: true,
+    gravadaPor: 'motorista-1',
+    gravadaEm: '2026-03-01T10:00:00-03:00',
+    versao: 1,
+  });
+  await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  const pedido = (await repo.listarPedidos())[0]!;
+
+  // Endereço novo é rural e não geocodifica → mapeamento em campo.
+  const r = await decidirMudancaEndereco(repo, pedido.id, 'remapear', {
+    async geocodificar() {
+      return { coordenada: { lat: 0, lng: 0 }, precisa: false, municipioConfere: false };
+    },
+  });
+  assert.ok(r.ok);
+  assert.equal(r.status, 'pendente_de_mapeamento');
 
   const cliente = (await repo.listarClientes())[0]!;
-  assert.deepEqual(cliente.coordenada, { lat: -9.925, lng: -36.47 });
-  assert.equal(cliente.enderecoFiscal.logradouro, 'POVOADO BREJO DOS BOIS');
+  assert.equal(cliente.coordenada, null);
+  assert.equal(cliente.statusMapeamento, 'nao_mapeado');
+  assert.equal(cliente.mapeadoPor, null);
+  assert.equal(cliente.trilhaAtivaId, null);
+  // A trilha do endereço antigo sai de cena.
+  assert.equal((await repo.obterTrilhaAtiva(clienteId)), null);
+});
+
+test('REMAPEAR com endereço novo geocodificável já sai despachável', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteExistente(repo);
+  await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  const pedido = (await repo.listarPedidos())[0]!;
+
+  const r = await decidirMudancaEndereco(repo, pedido.id, 'remapear', {
+    async geocodificar() {
+      return { coordenada: { lat: -9.88, lng: -36.44 }, precisa: true, municipioConfere: true };
+    },
+  });
+  assert.ok(r.ok);
+  assert.equal(r.status, 'pronto_para_rota');
+  const cliente = (await repo.listarClientes())[0]!;
+  assert.equal(cliente.statusMapeamento, 'geocodificado');
+  assert.deepEqual(cliente.coordenada, { lat: -9.88, lng: -36.44 });
+});
+
+test('decidir mudança num pedido que não a aguarda é rejeitado (409)', async () => {
+  const repo = new RepositorioMemoria();
+  await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo); // cliente novo → sem mudança
+  const pedido = (await repo.listarPedidos())[0]!;
+
+  const r = await decidirMudancaEndereco(repo, pedido.id, 'manter');
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.status, 409);
 });
 
 function xmlUrbano(): string {
@@ -303,4 +501,38 @@ test('decidir num pedido que não aguarda decisão é rejeitado (409)', async ()
   const r = await decidirEnderecoEntrega(repo, pedido.id, 'entrega');
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.status, 409);
+});
+
+test('entrega divergente E cadastro mudado: uma pergunta de cada vez', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteExistente(repo);
+  await importarXmls([{ nome: 'a.xml', conteudo: xmlComEntregaDivergente() }], repo, geoOk);
+
+  const pedido = (await repo.listarPedidos())[0]!;
+  assert.equal(pedido.status, 'pendente_de_decisao');
+  assert.equal(pedido.enderecoAnterior?.logradouro, 'RUA ANTIGA');
+  assert.equal(pedido.enderecoEntrega?.logradouro, 'RUA DA ENTREGA');
+
+  // Escolher o fiscal responde a pergunta da entrega; a do cadastro continua —
+  // senão o pedido sairia roteirizado no ponto do endereço antigo.
+  const r1 = await decidirEnderecoEntrega(repo, pedido.id, 'fiscal');
+  assert.ok(r1.ok);
+  assert.equal(r1.status, 'pendente_de_decisao');
+  assert.equal((await repo.listarPedidos())[0]!.usarEnderecoEntrega, false);
+
+  const r2 = await decidirMudancaEndereco(repo, pedido.id, 'manter');
+  assert.ok(r2.ok);
+  assert.equal(r2.status, 'pronto_para_rota');
+});
+
+test('escolher a ENTREGA encerra a decisão mesmo com o cadastro mudado', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteExistente(repo);
+  await importarXmls([{ nome: 'a.xml', conteudo: xmlComEntregaDivergente() }], repo, geoOk);
+  const pedido = (await repo.listarPedidos())[0]!;
+
+  // O ponto do cliente não importa: a rota usa o override da entrega.
+  const r = await decidirEnderecoEntrega(repo, pedido.id, 'entrega');
+  assert.ok(r.ok);
+  assert.equal(r.status, 'pronto_para_rota');
 });

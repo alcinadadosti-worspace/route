@@ -92,6 +92,15 @@ export async function decidirEnderecoEntrega(
   });
 }
 
+/** Seção 8.3: o cadastro mudou de endereço e o cliente já tinha ponto. 'manter'
+ * mantém o ponto; 'remapear' descarta pin/trilha e reclassifica pelo novo. */
+export async function decidirMudancaEndereco(
+  pedidoId: string,
+  escolha: 'manter' | 'remapear',
+): Promise<{ status: string }> {
+  return post(`${BASE}/api/pedidos/${encodeURIComponent(pedidoId)}/mudanca-endereco`, { escolha });
+}
+
 async function post<T>(url: string, corpo: unknown): Promise<T> {
   const resposta = await apiFetch(url, {
     method: 'POST',

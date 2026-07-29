@@ -52,6 +52,15 @@ export interface Cliente {
   mapeadoEm: string | null;
   fotoReferenciaPath: string | null;
   observacoes: string;
+  /**
+   * Endereço fiscal para o qual o ponto atual foi estabelecido, guardado quando
+   * o cadastro muda de lugar e o ponto ainda não foi revisto (seção 8.3).
+   * Enquanto não for null, TODO pedido novo do cliente nasce
+   * `pendente_de_decisao` — a marca vive no CLIENTE, e não só no pedido, porque
+   * a segunda nota da mesma remessa já encontra o cadastro atualizado e
+   * escaparia com o ponto vencido. Ausente (cadastro antigo) = null.
+   */
+  enderecoEmRevisao?: EnderecoFiscal | null;
 }
 
 export interface ItemPedido {
@@ -88,6 +97,15 @@ export interface Pedido {
   /** Escolha do escritório: true = a rota usa o endereço de entrega (override do
    * cliente); false/ausente = usa o endereço/coordenada do cliente. */
   usarEnderecoEntrega?: boolean;
+  /**
+   * Mudança de endereço do cadastro (seção 8.3): endereço fiscal que o cliente
+   * tinha ANTES desta nota, preenchido só quando ele mudou de forma relevante e
+   * o cliente já tinha um ponto (pin de campo, trilha ou geocodificação). Aquele
+   * ponto foi estabelecido para o endereço antigo e pode não valer mais, então o
+   * pedido nasce `pendente_de_decisao`: despachar no ponto velho levaria o
+   * motorista ao lugar errado. O escritório confirma na aba Decisões.
+   */
+  enderecoAnterior?: EnderecoFiscal;
 }
 
 /**

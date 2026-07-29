@@ -246,7 +246,17 @@ Entrada: XML `nfeProc` (namespace `http://www.portalfiscal.inf.br/nfe`), modelo 
 Regex de referência (tolerante a variações de espaçamento e asteriscos): `Pedido\s*[:#]?\s*(\d+)` e `Lote\s*[:#]?\s*(\d+)`, aplicadas sobre `infCpl` normalizado. Se nada casar, o pedido entra sem número e o campo fica destacado para preenchimento manual — o layout desse texto é definido pelo ERP emissor e pode mudar sem aviso.
 
 ### 8.3 Regras de atualização de cliente
-Se o `clienteId` já existe: atualizar telefone/e-mail/endereço fiscal se vierem diferentes (a nota é mais recente que o cadastro), **preservando** `coordenada`, `statusMapeamento` e trilhas — mudança de endereço fiscal com destino já mapeado gera um alerta no painel ("endereço da nota mudou; o pin continua válido?") em vez de descartar o mapeamento.
+Se o `clienteId` já existe: atualizar telefone/e-mail/endereço fiscal se vierem diferentes (a nota é mais recente que o cadastro), **preservando** `coordenada`, `statusMapeamento` e trilhas — o ponto nunca é descartado pela importação.
+
+Mas preservar o ponto **não** pode significar despachar nele. Quando o endereço novo diverge do anterior a ponto de mudar o lugar (comparação normalizada de logradouro, número, bairro, município, UF e CEP — formatação e complemento não contam) **e** o cliente já tinha `coordenada`, aquele ponto foi estabelecido para o endereço antigo e pode não valer mais: o pedido nasce `pendente_de_decisao` e o escritório resolve na aba Decisões. Vale para qualquer `statusMapeamento` — um destino rural `aproximado` que muda para outra zona rural é justamente o caso em que roteirizar no ponto velho leva o motorista ao lugar errado, com a trilha aprendida reforçando o engano.
+
+A marca da revisão fica no **cliente** (`enderecoEmRevisao`, o endereço a que o ponto pertence), não só no pedido: a segunda nota da mesma remessa já encontra o cadastro atualizado e escaparia da checagem. Enquanto a revisão estiver aberta, todo pedido novo do cliente é segurado, e mudanças encadeadas antes da decisão preservam o endereço original do ponto.
+
+Duas saídas, ambas do escritório:
+- **manter** — mudou o cadastro, não o lugar da entrega: o ponto continua e os pedidos voltam ao fluxo normal;
+- **remapear** — o cliente mudou de lugar: descarta `coordenada`, autoria e trilha ativa e reclassifica pelo endereço NOVO (seção 9). Se ele geocodificar, o pedido já sai despachável; se não (o caso rural), vai para mapeamento em campo, que é como todo destino novo entra.
+
+Uma decisão resolve todos os pedidos do cliente presos pela mesma pergunta. Quando a nota também traz entrega em local diverso (8.4), a pergunta da entrega vem primeiro; escolher o endereço fiscal deixa a do cadastro em aberto.
 
 ---
 

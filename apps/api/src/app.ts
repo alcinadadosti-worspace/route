@@ -1,7 +1,12 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
-import { importarXmls, decidirEnderecoEntrega, type ArquivoXml } from './importacao/servico.js';
+import {
+  importarXmls,
+  decidirEnderecoEntrega,
+  decidirMudancaEndereco,
+  type ArquivoXml,
+} from './importacao/servico.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
 import { processarTrilhasBrutas, type RelatorioProcessamento } from './trilhas/processar.js';
@@ -115,6 +120,29 @@ export async function criarApp({
         chave,
         corpo.escolha as 'fiscal' | 'entrega',
         corpo.coordenada ?? null,
+      );
+      if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+      return { status: resultado.status };
+    },
+  );
+
+  // Seção 8.3: o cadastro do cliente mudou de endereço e ele já tinha ponto. O
+  // escritório confirma se o ponto atual sobrevive à mudança ou manda refazer —
+  // 'remapear' descarta pin/trilha e reclassifica pelo endereço novo.
+  app.post(
+    '/api/pedidos/:chave/mudanca-endereco',
+    { config: { papeis: ESCRITORIO } },
+    async (req, reply) => {
+      const { chave } = req.params as { chave: string };
+      if (!/^\d{44}$/.test(chave)) {
+        return reply.code(404).send({ erro: 'Pedido não encontrado' });
+      }
+      const corpo = (req.body ?? {}) as { escolha?: 'manter' | 'remapear' };
+      const resultado = await decidirMudancaEndereco(
+        repo,
+        chave,
+        corpo.escolha as 'manter' | 'remapear',
+        geocodificador,
       );
       if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
       return { status: resultado.status };
