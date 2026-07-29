@@ -176,8 +176,9 @@ function CartaoMudancaEndereco({
           <div>
             <div className="decisao-rotulo">O cliente mudou de lugar — refazer o ponto</div>
             <div className="decisao-aviso">
-              descarta o pin e a trilha e tenta o endereço novo; sem geocodificação (zona rural), o
-              motorista mapeia na primeira viagem
+              descarta o pin, a trilha e o dossiê do local (foto e observações, que são do endereço
+              antigo) e tenta o endereço novo; sem geocodificação (zona rural), o motorista mapeia
+              na primeira viagem
             </div>
           </div>
         </label>

@@ -71,7 +71,15 @@ export function processarFilaFotos(): Promise<void> {
         const arquivo = await pasta.getFileHandle(nome);
         const foto = await arquivo.getFile();
         await uploadBytes(ref(storage, caminho), foto, { contentType: 'image/jpeg' });
-        await updateDoc(doc(db, 'clientes', clienteId), { fotoReferenciaPath: caminho });
+        // O ponteiro no cliente vai pela fila offline do Firestore (persistida em
+        // IndexedDB, sobrevive a recarga) e NÃO é esperado aqui: `updateDoc` só
+        // resolve com o ack do SERVIDOR, então perder o sinal entre o upload e o
+        // ack deixaria esta promessa pendente para sempre — e, como toda a fila
+        // roda numa cadeia única, travaria também as fotos seguintes, que nem
+        // chegariam ao OPFS. É o mesmo padrão do pin e das observações.
+        void updateDoc(doc(db, 'clientes', clienteId), { fotoReferenciaPath: caminho }).catch(
+          (erro) => console.error('Falha ao apontar a foto no cliente', erro),
+        );
         await pasta.removeEntry(nome);
       } catch {
         // Sem rede de verdade, Storage ainda não provisionado, etc.:

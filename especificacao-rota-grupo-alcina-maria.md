@@ -254,7 +254,9 @@ A marca da revisão fica no **cliente** (`enderecoEmRevisao`, o endereço a que 
 
 Duas saídas, ambas do escritório:
 - **manter** — mudou o cadastro, não o lugar da entrega: o ponto continua e os pedidos voltam ao fluxo normal;
-- **remapear** — o cliente mudou de lugar: descarta `coordenada`, autoria e trilha ativa e reclassifica pelo endereço NOVO (seção 9). Se ele geocodificar, o pedido já sai despachável; se não (o caso rural), vai para mapeamento em campo, que é como todo destino novo entra.
+- **remapear** — o cliente mudou de lugar: descarta `coordenada`, autoria, trilha ativa **e o dossiê do local** (foto de referência e observações — descrevem o lugar antigo e no endereço novo enganariam o motorista tanto quanto o pin vencido) e reclassifica pelo endereço NOVO (seção 9). Se ele geocodificar, o pedido já sai despachável; se não (o caso rural), vai para mapeamento em campo, que é como todo destino novo entra.
+
+O cadastro em si nunca é recriado: a identidade do cliente é o CPF/CNPJ (seção 7.1), não o endereço — quem muda de endereço continua o mesmo cliente, com o mesmo histórico de pedidos.
 
 Uma decisão resolve todos os pedidos do cliente presos pela mesma pergunta. Quando a nota também traz entrega em local diverso (8.4), a pergunta da entrega vem primeiro; escolher o endereço fiscal deixa a do cadastro em aberto.
 

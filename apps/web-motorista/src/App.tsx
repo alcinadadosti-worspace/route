@@ -394,8 +394,11 @@ export function App() {
       </div>
 
       <nav className="abas-filtro" role="tablist" aria-label="Filtrar paradas">
+        {/* Abas vazias somem, MENOS a que está selecionada: entregar a última
+            parada rural fazia a aba Rural desaparecer com o filtro ainda nela,
+            deixando a lista vazia sem nenhuma aba marcada. */}
         {ABAS_FILTRO.filter(
-          (a) => a.id === 'todas' || a.id === 'a_entregar' || contagem[a.id] > 0,
+          (a) => a.id === 'todas' || a.id === 'a_entregar' || a.id === filtro || contagem[a.id] > 0,
         ).map((a) => (
           <button
             key={a.id}

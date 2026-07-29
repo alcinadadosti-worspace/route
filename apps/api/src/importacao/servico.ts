@@ -163,8 +163,11 @@ async function classificarDestino(
   if (!resultado) return 'pendente_de_mapeamento';
 
   if (resultado.precisa) {
-    await repo.salvarCliente(clienteId, {
-      ...cliente,
+    // Update por CAMPO, não `set` do documento inteiro: entre a leitura do
+    // cliente e esta escrita houve uma ida à Google, e um motorista em campo
+    // pode ter gravado pin, foto ou observações nesse intervalo — reescrever o
+    // doc com a cópia lida antes apagaria esse trabalho em silêncio.
+    await repo.atualizarCliente(clienteId, {
       coordenada: resultado.coordenada,
       statusMapeamento: 'geocodificado',
     });
@@ -175,8 +178,7 @@ async function classificarDestino(
   if (resultado.municipioConfere) {
     // Ponto aproximado no município certo: despachável com ponto grosseiro, mas
     // marcado como `aproximado` — o motorista mapeia em campo na 1ª entrega.
-    await repo.salvarCliente(clienteId, {
-      ...cliente,
+    await repo.atualizarCliente(clienteId, {
       coordenada: resultado.coordenada,
       statusMapeamento: 'aproximado',
     });
@@ -257,15 +259,18 @@ async function upsertCliente(nota: NotaImportada, repo: Repositorio): Promise<Re
   const revisaoAberta = existente.enderecoEmRevisao ?? null;
   const enderecoEmRevisao = revisaoAberta ?? (mudouDeLugar ? existente.enderecoFiscal : null);
 
-  const atualizado: Cliente = {
-    ...existente,
+  // Só os campos que a nota traz — `set` do doc inteiro reescreveria pin, foto e
+  // observações com a cópia lida acima, apagando o que o campo tivesse gravado
+  // no intervalo (a importação roda com motoristas na rua).
+  const campos = {
     nome: nota.destinatario.nome,
     telefone: nota.destinatario.telefone ?? existente.telefone,
     email: nota.destinatario.email ?? existente.email,
     enderecoFiscal: nota.destinatario.enderecoFiscal,
     enderecoEmRevisao,
   };
-  await repo.salvarCliente(clienteId, atualizado);
+  const atualizado: Cliente = { ...existente, ...campos };
+  await repo.atualizarCliente(clienteId, campos);
   return enderecoEmRevisao
     ? { cliente: atualizado, enderecoAnterior: enderecoEmRevisao, revisaoNova: !revisaoAberta }
     : { cliente: atualizado, revisaoNova: false };
@@ -375,24 +380,29 @@ export async function decidirMudancaEndereco(
 
   if (escolha === 'manter') {
     const status: StatusPedido = cliente.coordenada ? 'pronto_para_rota' : 'pendente_de_mapeamento';
-    await repo.salvarCliente(pedido.clienteId, { ...cliente, enderecoEmRevisao: null });
+    await repo.atualizarCliente(pedido.clienteId, { enderecoEmRevisao: null });
     await liberarPedidosEmRevisao(repo, pedido.clienteId, status);
     return { ok: true, status };
   }
 
   // O ponto vencido sai ANTES da reclassificação: com a coordenada ainda no
   // cadastro, classificarDestino curto-circuitaria em 'pronto_para_rota' e o
-  // endereço novo nunca seria geocodificado.
-  const semPonto: Cliente = {
-    ...cliente,
+  // endereço novo nunca seria geocodificado. Junto do pin e da trilha vai o
+  // dossiê: a foto da fachada e as observações ("portão azul", "entrar pela
+  // lateral") descrevem o local ANTIGO e no endereço novo enganariam o
+  // motorista tanto quanto o pin vencido.
+  const limpeza = {
     coordenada: null,
     statusMapeamento: 'nao_mapeado',
     mapeadoPor: null,
     mapeadoEm: null,
     trilhaAtivaId: null,
+    fotoReferenciaPath: null,
+    observacoes: '',
     enderecoEmRevisao: null,
-  };
-  await repo.salvarCliente(pedido.clienteId, semPonto);
+  } satisfies Partial<Cliente>;
+  const semPonto: Cliente = { ...cliente, ...limpeza };
+  await repo.atualizarCliente(pedido.clienteId, limpeza);
   // A trilha aprendida levava ao endereço antigo: desativa para não reaparecer
   // como "anterior" num reaprendizado. Escrita separada de propósito — se ela
   // falhar sobra uma trilha ativa que ninguém lê (o cliente já não aponta para

@@ -64,13 +64,17 @@ export async function coletarParadas(
       return { ok: false, status: 404, erro: `Cliente do pedido ${pedidoId} não encontrado` };
     }
 
-    // Entrega em local diverso ainda não decidida trava a rota (seção 8.4):
-    // roteirizar aqui iria para o endereço fiscal no palpite.
+    // Decisão de endereço pendente trava a rota: entrega em local diverso
+    // (8.4) roteirizaria o endereço fiscal no palpite, e cadastro que mudou de
+    // lugar (8.3) roteirizaria o ponto do endereço antigo.
     if (pedido.status === 'pendente_de_decisao') {
+      const pergunta = pedido.enderecoEntrega
+        ? 'escolha de endereço de entrega'
+        : 'confirmação do ponto após mudança de endereço';
       return {
         ok: false,
         status: 422,
-        erro: `Pedido ${pedido.numeroNota} aguarda escolha de endereço de entrega (aba Decisões)`,
+        erro: `Pedido ${pedido.numeroNota} aguarda ${pergunta} (aba Decisões)`,
       };
     }
 

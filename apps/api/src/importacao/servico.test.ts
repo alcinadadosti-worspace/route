@@ -277,6 +277,43 @@ test('decidir REMAPEAR limpa pin, autoria e trilha e manda o rural para mapeamen
   assert.equal((await repo.obterTrilhaAtiva(clienteId)), null);
 });
 
+test('REMAPEAR também descarta o dossiê — foto e observações eram do lugar antigo', async () => {
+  const repo = new RepositorioMemoria();
+  const clienteId = await comClienteExistente(repo, {
+    fotoReferenciaPath: 'clientes/x/referencia.jpg',
+    observacoes: 'portão azul, entrar pela lateral',
+  });
+  await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  const pedido = (await repo.listarPedidos())[0]!;
+
+  await decidirMudancaEndereco(repo, pedido.id, 'remapear');
+
+  const cliente = (await repo.obterCliente(clienteId))!;
+  assert.equal(cliente.fotoReferenciaPath, null);
+  assert.equal(cliente.observacoes, '');
+  // O cadastro em si continua: identidade é o CPF, não o endereço.
+  assert.equal(cliente.nome, 'MARIA JOSE DA SILVA');
+});
+
+test('MANTER preserva o dossiê e só tira a marca de revisão', async () => {
+  const repo = new RepositorioMemoria();
+  const clienteId = await comClienteExistente(repo, {
+    fotoReferenciaPath: 'clientes/x/referencia.jpg',
+    observacoes: 'portão azul',
+    trilhaAtivaId: 'trilha-1',
+  });
+  await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  const pedido = (await repo.listarPedidos())[0]!;
+
+  await decidirMudancaEndereco(repo, pedido.id, 'manter');
+
+  const cliente = (await repo.obterCliente(clienteId))!;
+  assert.equal(cliente.fotoReferenciaPath, 'clientes/x/referencia.jpg');
+  assert.equal(cliente.observacoes, 'portão azul');
+  assert.equal(cliente.trilhaAtivaId, 'trilha-1');
+  assert.equal(cliente.enderecoEmRevisao, null);
+});
+
 test('REMAPEAR com endereço novo geocodificável já sai despachável', async () => {
   const repo = new RepositorioMemoria();
   await comClienteExistente(repo);
@@ -349,6 +386,31 @@ test('endereço rural é geocodificado; aproximado no município vira despacháv
   assert.equal(cliente.statusMapeamento, 'aproximado');
   assert.deepEqual(cliente.coordenada, { lat: -9.9, lng: -36.5 });
   assert.equal((await repo.listarPedidos())[0]!.status, 'pronto_para_rota');
+});
+
+test('escrita de campo durante a importação não é apagada pela geocodificação', async () => {
+  const repo = new RepositorioMemoria();
+  const parse = await parseNfe(xmlUrbano());
+  assert.ok(parse.ok);
+  const clienteId = parse.nota.destinatario.clienteId;
+
+  // O motorista salva observações e foto ENQUANTO a importação espera a Google.
+  // Reescrever o doc inteiro com a cópia lida antes da chamada apagaria as duas.
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: xmlUrbano() }], repo, {
+    async geocodificar() {
+      await repo.atualizarCliente(clienteId, {
+        observacoes: 'portão azul',
+        fotoReferenciaPath: `clientes/${clienteId}/referencia.jpg`,
+      });
+      return { coordenada: { lat: -10.29, lng: -36.58 }, precisa: true, municipioConfere: true };
+    },
+  });
+
+  assert.equal(relatorio.geocodificados, 1);
+  const cliente = (await repo.obterCliente(clienteId))!;
+  assert.equal(cliente.observacoes, 'portão azul');
+  assert.equal(cliente.fotoReferenciaPath, `clientes/${clienteId}/referencia.jpg`);
+  assert.deepEqual(cliente.coordenada, { lat: -10.29, lng: -36.58 });
 });
 
 test('geocodificação fora do município (ponto errado) fica pendente, sem coordenada', async () => {

@@ -44,6 +44,12 @@ export function useRotaDoDia(uid: string | null) {
         candidatas.sort(
           (a, b) =>
             b.data.localeCompare(a.data) ||
+            // Empate na data: a rota JÁ INICIADA vem primeiro. Publicar a
+            // segunda rota do dia não pode esconder a que o motorista está no
+            // meio de executar (com paradas entregues e o resto por entregar).
+            // A data continua mandando antes disso, senão uma rota de ontem
+            // esquecida em execução seguraria a de hoje para sempre.
+            Number(b.status === 'em_execucao') - Number(a.status === 'em_execucao') ||
             (b.publicadaEm ?? '').localeCompare(a.publicadaEm ?? ''),
         );
         setRota(candidatas[0] ?? null);
