@@ -294,6 +294,11 @@ export function Navegacao({
   const alvoSeta = rumoAoPin != null && rumoAparelho != null ? rumoAoPin - rumoAparelho : 0;
   anguloSetaRef.current += ((((alvoSeta - anguloSetaRef.current) % 360) + 540) % 360) - 180;
 
+  /** ~2 km em linha reta: daqui "em instantes" descreve a realidade. */
+  const RAIO_AVISO_CHEGADA_M = 2000;
+  const podeAvisarChegada =
+    rerota?.duracaoMin != null || (distanciaAoPin != null && distanciaAoPin <= RAIO_AVISO_CHEGADA_M);
+
   const rotuloModo = chegou
     ? 'VOCÊ CHEGOU'
     : modoTrilha
@@ -376,9 +381,13 @@ export function Navegacao({
           </div>
         </div>
 
-        {/* Aviso de aproximação: o minuto só sai quando veio do recálculo por
-            estrada — sem sinal, a mensagem vai sem número em vez de chutar. */}
-        {!chegou && parada.telefone && (
+        {/* Aviso de APROXIMAÇÃO — e só de aproximação. Sem estimativa de
+            estrada (o normal, quando não houve recálculo) o texto é "estou
+            chegando em instantes", que a 20 km de distância é mentira. Então o
+            botão só aparece quando há um minuto de verdade para dizer, ou
+            quando o destino já está perto o bastante para "em instantes" ser
+            honesto. Para o resto do dia existe o aviso com janela, na lista. */}
+        {!chegou && parada.telefone && podeAvisarChegada && (
           <a
             className="avisar"
             href={linkWhatsApp(

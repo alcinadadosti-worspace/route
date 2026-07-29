@@ -571,7 +571,10 @@ export function App() {
                   {/* Aviso com a janela estimada — o que evita o "ausente".
                       A mensagem é montada na renderização para a janela ficar
                       sempre relativa a agora; o WhatsApp abre com o texto
-                      pronto e o motorista revisa antes de enviar. */}
+                      pronto e o motorista revisa antes de enviar. Só em rota
+                      real: na demonstração a janela sairia de um ETA que não
+                      existe, para um telefone inventado. */}
+                  {rota && (
                   <a
                     className={`avisar${p.avisadoEm ? ' feito' : ''}`}
                     href={linkWhatsApp(
@@ -586,6 +589,7 @@ export function App() {
                   >
                     {p.avisadoEm ? `✔ Avisado ${horaCurta(p.avisadoEm)}` : '📣 Avisar chegada'}
                   </a>
+                  )}
                 </>
               )}
               {rota ? (
