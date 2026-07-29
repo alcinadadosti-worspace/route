@@ -142,6 +142,36 @@ test('prévia de rota ordena as paradas e monta o resumo', async () => {
   assert.equal(previa.duracaoTotalMin, 229);
 });
 
+test('prévia recusa misturar pedidos de CDs diferentes na mesma rota', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('c1', clienteCom({ lat: -10.28, lng: -36.56 }, 'CLIENTE UM'));
+  await repo.salvarCliente('c2', clienteCom({ lat: -9.42, lng: -36.64 }, 'CLIENTE DOIS'));
+  await repo.salvarPedido('p1', { ...pedidoDe('c1'), cdId: 'penedo' });
+  await repo.salvarPedido('p2', { ...pedidoDe('c2'), cdId: 'palmeira' });
+
+  const osrm = criarClienteOsrm('http://osrm.local', fetchFalso(RESPOSTA_TRIP))!;
+  const r = await previaDeRota({ pedidoIds: ['p1', 'p2'], cdId: 'penedo' }, repo, osrm);
+
+  assert.equal(r.ok, false);
+  if (!r.ok) {
+    assert.equal(r.status, 422);
+    assert.match(r.erro, /CDs diferentes/);
+  }
+});
+
+test('pedido sem CD reconhecido não bloqueia a montagem da rota', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('c1', clienteCom({ lat: -10.28, lng: -36.56 }, 'CLIENTE UM'));
+  await repo.salvarCliente('c2', clienteCom({ lat: -10.27, lng: -36.55 }, 'CLIENTE DOIS'));
+  await repo.salvarPedido('p1', { ...pedidoDe('c1'), cdId: 'penedo' });
+  await repo.salvarPedido('p2', { ...pedidoDe('c2'), cdId: null });
+
+  const osrm = criarClienteOsrm('http://osrm.local', fetchFalso(RESPOSTA_TRIP))!;
+  const r = await previaDeRota({ pedidoIds: ['p1', 'p2'], cdId: 'penedo' }, repo, osrm);
+
+  assert.ok(r.ok, 'nota de emitente desconhecido não pode travar a operação');
+});
+
 test('prévia recusa pedido com destino sem coordenada, listando as pendências', async () => {
   const repo = new RepositorioMemoria();
   await repo.salvarCliente('c1', clienteCom(null, 'SEM COORDENADA'));

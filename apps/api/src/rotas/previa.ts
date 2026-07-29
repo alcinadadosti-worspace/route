@@ -38,6 +38,8 @@ export interface CandidataParada {
   /** Denormalizado para a ParadaRota: liga o "navegar e mapear" no app do
    * motorista sem depender do doc do cliente estar no cache offline. */
   precisaMapear: boolean;
+  /** CD de origem do pedido, deduzido do emitente da nota (seção 8.5). */
+  cdId: string | null;
 }
 
 export type FalhaColeta = {
@@ -102,6 +104,7 @@ export async function coletarParadas(
       // Entrega em local diverso já é um ponto escolhido pelo escritório; senão,
       // reflete a situação de mapeamento do cliente (aproximado → mapear em campo).
       precisaMapear: usaEntrega ? false : precisaMapearEmCampo(cliente.statusMapeamento),
+      cdId: pedido.cdId ?? null,
     });
   }
 
@@ -111,6 +114,19 @@ export async function coletarParadas(
       status: 422,
       erro: 'Há pedidos com destino sem coordenada — resolva o mapeamento antes de montar a rota',
       pendentes,
+    };
+  }
+
+  // Pedidos de CDs DIFERENTES na mesma rota (seção 8.5): a mercadoria está em
+  // dois galpões e o motorista sai de um só. Erro de seleção, não de desenho —
+  // e barato de barrar aqui, caro de descobrir com o caminhão carregado.
+  // Compara só o que se sabe: pedido sem CD reconhecido não entra na conta.
+  const cdsDosPedidos = [...new Set(candidatas.map((c) => c.cdId).filter(Boolean))];
+  if (cdsDosPedidos.length > 1) {
+    return {
+      ok: false,
+      status: 422,
+      erro: `Seleção mistura pedidos de CDs diferentes (${cdsDosPedidos.join(', ')}) — monte uma rota por CD`,
     };
   }
 

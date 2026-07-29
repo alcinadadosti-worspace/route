@@ -4,6 +4,7 @@ import {
   clienteIdDeDocumento,
   mascararDocumento,
   normalizarTelefone,
+  somenteDigitos,
   extrairPedidoELote,
   enderecosDivergem,
   type EnderecoFiscal,
@@ -37,6 +38,11 @@ export interface NotaImportada {
   lote: string | null;
   /** Endereço de entrega divergente do fiscal (bloco `<entrega>`), se houver. */
   enderecoEntrega?: EnderecoFiscal;
+  /**
+   * CNPJ do EMITENTE (só dígitos): a filial que emitiu a nota. É o que
+   * identifica o CD de origem sem ninguém digitar nada (seção 8.5).
+   */
+  emitenteCnpj: string | null;
 }
 
 export type ResultadoParse =
@@ -149,6 +155,7 @@ export async function parseNfe(
       numeroPedido,
       lote,
       enderecoEntrega,
+      emitenteCnpj: somenteDigitos(String(infNFe.emit?.CNPJ ?? '')) || null,
     },
   };
 }

@@ -44,7 +44,18 @@ export async function importarXmls(
     geocodificados: 0,
     aproximados: 0,
     alertas: [],
+    porCd: {},
   };
+
+  // Índice CNPJ → cdId, montado uma vez para a remessa toda (seção 8.5). O
+  // emitente da nota é a filial que a emitiu; é ele que diz de qual CD o
+  // pedido sai, sem ninguém digitar nada.
+  const cds = await repo.obterCds();
+  const cdPorCnpj = new Map(
+    Object.entries(cds)
+      .filter(([, cd]) => cd.cnpj)
+      .map(([id, cd]) => [String(cd.cnpj).replace(/\D/g, ''), id]),
+  );
 
   for await (const arquivo of arquivos) {
     relatorio.total += 1;
@@ -107,6 +118,9 @@ export async function importarXmls(
       });
     }
 
+    const cdId = nota.emitenteCnpj ? (cdPorCnpj.get(nota.emitenteCnpj) ?? null) : null;
+    relatorio.porCd[cdId ?? '—'] = (relatorio.porCd[cdId ?? '—'] ?? 0) + 1;
+
     if (status === 'pronto_para_rota') relatorio.prontosParaRota += 1;
     else if (status === 'pendente_de_decisao') relatorio.pendentesDeDecisao += 1;
     else relatorio.pendentesDeMapeamento += 1;
@@ -129,6 +143,7 @@ export async function importarXmls(
       // fica idêntico ao de antes do recurso (sem chaves indefinidas no doc).
       ...(enderecoEntrega ? { enderecoEntrega, coordenadaEntrega } : {}),
       ...(enderecoAnterior ? { enderecoAnterior } : {}),
+      cdId,
     };
     await repo.salvarPedido(nota.chaveAcesso, pedido);
     relatorio.importados += 1;

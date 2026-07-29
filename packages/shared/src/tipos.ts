@@ -107,6 +107,12 @@ export interface Pedido {
    * motorista ao lugar errado. O escritório confirma na aba Decisões.
    */
   enderecoAnterior?: EnderecoFiscal;
+  /**
+   * CD de origem, deduzido do CNPJ do EMITENTE da nota (seção 8.5). Null quando
+   * o emitente não corresponde a nenhum CD cadastrado — aí o operador escolhe
+   * na mão, como sempre foi.
+   */
+  cdId?: string | null;
 }
 
 /**
@@ -250,6 +256,12 @@ export interface CentroDistribuicao {
   nome: string;
   endereco?: string;
   coordenada: GeoPonto;
+  /**
+   * CNPJ (só dígitos) da filial que emite as notas deste CD. É o que liga a
+   * NF-e ao centro de distribuição sem ninguém digitar nada: o emitente da nota
+   * identifica a origem. Ausente = este CD não é reconhecido automaticamente.
+   */
+  cnpj?: string;
 }
 
 /** Parada da prévia de rota — contrato de `POST /api/rotas/previa` (RF-11). */
@@ -292,4 +304,9 @@ export interface RelatorioImportacao {
   aproximados: number;
   /** Seção 8.3: endereço fiscal mudou em cliente já mapeado — o pin continua válido? */
   alertas: Array<{ clienteId: string; nome: string; mensagem: string }>;
+  /**
+   * Quantas notas de cada CD de origem (seção 8.5), pelo CNPJ do emitente.
+   * A chave `'—'` conta as que não casaram com nenhum CD cadastrado.
+   */
+  porCd: Record<string, number>;
 }

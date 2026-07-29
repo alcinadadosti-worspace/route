@@ -262,6 +262,17 @@ Uma decisão resolve todos os pedidos do cliente presos pela mesma pergunta. Qua
 
 ---
 
+### 8.5 CD de origem pelo emitente da nota
+A nota diz de qual filial ela saiu: o CNPJ do bloco `<emit>`. Cada CD em `config/cds` guarda o CNPJ da sua filial, e a importação resolve o `cdId` do pedido sozinha — o operador não precisa saber de cabeça de qual galpão sai cada nota. Emitente que não casa com nenhum CD deixa `cdId` nulo e a escolha segue manual, como sempre foi: nota de terceiro não pode travar a operação.
+
+O relatório de importação conta as notas por CD, e a montagem de rota **recusa misturar pedidos de CDs diferentes** (422): a mercadoria está em dois galpões e o motorista sai de um só — barato de barrar na tela, caro de descobrir com o caminhão carregado. Compara só o que se sabe; pedido sem CD reconhecido não entra na conta.
+
+**O CD escolhido pode divergir do emitente, e isso é permitido de propósito.** Verificado nas 10 notas reais da operação: todas emitidas pela filial de Palmeira dos Índios, entregues a clientes a 3 km do CD Penedo, com a rota publicada saindo de Penedo. O emitente diz quem **faturou**, que nem sempre é de onde o caminhão **parte**. Por isso a divergência é um aviso no painel, não um bloqueio, e o CD das notas é apenas pré-selecionado — o operador continua livre para trocar.
+
+Detalhe de quem for mexer nisto: o CNPJ do emitente também está **dentro da chave de acesso** (dígitos 7 a 20), então trocar o CNPJ num XML de teste sem casar as tags `<CNPJ>` corrompe a chave.
+
+---
+
 ## 9. Geocodificação e classificação de destino
 
 Pipeline executado na importação, nesta ordem:

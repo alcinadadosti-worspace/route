@@ -9,14 +9,19 @@ import type { EnderecoFiscal } from '@rota/shared';
  *
  * Uso:
  *   GOOGLE_APPLICATION_CREDENTIALS=... GOOGLE_MAPS_API_KEY=...
- *   npm run cadastrar-cd -w @rota/api -- <id> "<nome>" "<logradouro>" "<numero>" "<bairro>" "<municipio>" "<uf>" "<cep>"
+ *   npm run cadastrar-cd -w @rota/api -- <id> "<nome>" "<logradouro>" "<numero>" "<bairro>" "<municipio>" "<uf>" "<cep>" [lat] [lng] [cnpj]
+ *
+ * O `cnpj` (opcional) é o da filial que emite as notas deste CD: é o que
+ * permite à importação deduzir o CD de origem do pedido sozinha (seção 8.5).
  *
  * A coordenada vem da geocodificação; confira o pin e ajuste com
  * --lat/--lng manuais se necessário (últimos dois argumentos opcionais).
  */
 
-const [id, nome, logradouro, numero, bairro, municipio, uf, cep, latManual, lngManual] =
+const [id, nome, logradouro, numero, bairro, municipio, uf, cep, latManual, lngManual, cnpjArg] =
   process.argv.slice(2);
+/** CNPJ da filial que emite as notas deste CD — liga a NF-e ao CD (seção 8.5). */
+const cnpj = cnpjArg ? cnpjArg.replace(/\D/g, '') : undefined;
 
 if (!id || !nome || !logradouro || !municipio) {
   console.error(
@@ -68,6 +73,7 @@ await db
         nome,
         endereco: `${logradouro}, ${numero ?? 's/n'} — ${bairro ?? ''}, ${municipio}/${uf ?? 'AL'}`,
         coordenada,
+        ...(cnpj ? { cnpj } : {}),
       },
     },
     { merge: true },

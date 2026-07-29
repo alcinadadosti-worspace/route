@@ -78,6 +78,67 @@ test('cliente com coordenada confirmada gera pedido pronto_para_rota', async () 
   assert.equal(cliente.trilhaAtivaId, 'trilha-1');
 });
 
+// --- CD de origem pelo emitente da nota (seção 8.5) ---
+
+/**
+ * Troca o CNPJ do EMITENTE, preservando o resto da nota. Casa com as tags de
+ * propósito: o CNPJ também aparece dentro da chave de acesso (os dígitos 7 a 20
+ * da chave SÃO o CNPJ do emitente), e uma troca solta corromperia a chave.
+ */
+function xmlDoEmitente(cnpj: string, base = xml): string {
+  return base.replace('<CNPJ>14750618000155</CNPJ>', `<CNPJ>${cnpj}</CNPJ>`);
+}
+
+const CNPJ_PENEDO = '14750618000183';
+const CNPJ_PALMEIRA = '14750618000264';
+
+/** Repositório com os dois CDs reais, cada um com seu CNPJ. */
+function repoComCds(): RepositorioMemoria {
+  const repo = new RepositorioMemoria();
+  repo.cds = {
+    penedo: { nome: 'CD Penedo', coordenada: { lat: -10.28, lng: -36.56 }, cnpj: CNPJ_PENEDO },
+    palmeira: { nome: 'CD Palmeira', coordenada: { lat: -9.42, lng: -36.64 }, cnpj: CNPJ_PALMEIRA },
+  };
+  return repo;
+}
+
+test('o CD de origem sai do CNPJ do emitente, sem ninguém digitar', async () => {
+  const repo = repoComCds();
+
+  const relatorio = await importarXmls(
+    [{ nome: 'a.xml', conteudo: xmlDoEmitente(CNPJ_PALMEIRA) }],
+    repo,
+  );
+
+  assert.equal((await repo.listarPedidos())[0]!.cdId, 'palmeira');
+  assert.deepEqual(relatorio.porCd, { palmeira: 1 });
+});
+
+test('emitente desconhecido não inventa CD — o operador escolhe na mão', async () => {
+  const repo = repoComCds();
+
+  // A fixture vem com uma filial que não é nenhum dos dois CDs.
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+
+  assert.equal((await repo.listarPedidos())[0]!.cdId, null);
+  assert.deepEqual(relatorio.porCd, { '—': 1 });
+});
+
+test('relatório conta as notas por CD da remessa', async () => {
+  const repo = repoComCds();
+
+  const relatorio = await importarXmls(
+    [
+      { nome: 'a.xml', conteudo: xmlDoEmitente(CNPJ_PENEDO) },
+      { nome: 'b.xml', conteudo: xmlDoEmitente(CNPJ_PALMEIRA, xmlOutraChave()) },
+    ],
+    repo,
+  );
+
+  assert.equal(relatorio.importados, 2);
+  assert.deepEqual(relatorio.porCd, { penedo: 1, palmeira: 1 });
+});
+
 // --- Mudança de endereço do cadastro (seção 8.3) ---
 
 /** Cliente já cadastrado, com o endereço da nota alterado pelos `campos`. */

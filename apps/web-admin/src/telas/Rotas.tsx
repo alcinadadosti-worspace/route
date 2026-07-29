@@ -72,6 +72,30 @@ export function Rotas() {
   const todosProntosMarcados = prontos.length > 0 && prontos.every((p) => selecionados.has(p.id));
   const algumProntoMarcado = prontos.some((p) => selecionados.has(p.id));
 
+  // CD que os pedidos selecionados dizem ser a origem (seção 8.5) — vem do
+  // CNPJ do emitente da nota. Vazio quando não há consenso ou não se sabe.
+  const cdsSelecionados = useMemo(
+    () => [
+      ...new Set(
+        prontos.filter((p) => selecionados.has(p.id)).map((p) => p.cdId ?? null).filter(Boolean),
+      ),
+    ],
+    [prontos, selecionados],
+  );
+  const cdDasNotas = cdsSelecionados.length === 1 ? cdsSelecionados[0]! : null;
+  const misturaCds = cdsSelecionados.length > 1;
+
+  // Pré-seleciona o CD das notas: o operador não precisa saber de cabeça de
+  // qual galpão sai cada pedido. Continua podendo trocar — a nota diz quem
+  // FATUROU, e nem sempre é de onde a mercadoria fisicamente sai.
+  useEffect(() => {
+    if (cdDasNotas && cdDasNotas !== cdId) {
+      setCdId(cdDasNotas);
+      setPrevia(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cdDasNotas]);
+
   // Poda a seleção quando a lista de prontos muda (Atualizar/publicar): um id que
   // deixou de estar pronto não pode seguir selecionado e ir para a otimização.
   useEffect(() => {
@@ -252,6 +276,7 @@ export function Rotas() {
                   />
                 </th>
                 <th>Nota</th>
+                <th>CD</th>
                 <th>Cliente</th>
                 <th>Vol · Peso</th>
               </tr>
@@ -270,6 +295,7 @@ export function Rotas() {
                   <td className="mono">
                     {p.numeroNota}/{p.serie}
                   </td>
+                  <td>{p.cdId ? (cds[p.cdId]?.nome ?? p.cdId) : '—'}</td>
                   <td>
                     {clientes[p.clienteId]?.nome ?? `${p.clienteId.slice(0, 8)}…`}
                     {clientes[p.clienteId]?.statusMapeamento === 'aproximado' && (
@@ -294,10 +320,24 @@ export function Rotas() {
           </div>
         )}
 
+        {misturaCds && (
+          <div className="erro">
+            A seleção mistura pedidos de CDs diferentes ({cdsSelecionados.join(', ')}). A mercadoria
+            está em dois galpões e o motorista sai de um só — monte uma rota por CD.
+          </div>
+        )}
+        {cdDasNotas && cdDasNotas !== cdId && (
+          <div className="alerta">
+            As notas selecionadas foram emitidas por <strong>{cds[cdDasNotas]?.nome ?? cdDasNotas}</strong>,
+            mas a partida escolhida é <strong>{cds[cdId]?.nome ?? cdId}</strong>. Se a mercadoria sai
+            mesmo daqui, siga — a nota diz quem faturou, não necessariamente de onde o caminhão parte.
+          </div>
+        )}
+
         <div className="acoes-rota">
           <button
             className="primaria"
-            disabled={selecionados.size === 0 || !cdId || otimizando}
+            disabled={selecionados.size === 0 || !cdId || otimizando || misturaCds}
             onClick={() => void otimizar()}
           >
             {otimizando ? 'OTIMIZANDO…' : `OTIMIZAR ROTA (${selecionados.size})`}
