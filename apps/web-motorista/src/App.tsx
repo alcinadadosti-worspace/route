@@ -3,7 +3,7 @@ import {
   linkLigacao,
   linkWhatsApp,
   mesclarParametrosTrilha,
-  precisaMapearEmCampo,
+  paradaPrecisaMapear,
   type GeoPonto,
   type ResultadoEntrega,
 } from '@rota/shared';
@@ -190,9 +190,8 @@ export function App() {
                     ? ('insucesso' as const)
                     : // Destino sem ponto confiável (rural/aproximado) → 'trilha'
                       // (mapear em campo); geocodificado/mapeado é entrega normal.
-                      (p.precisaMapear ??
-                        (cliente != null && precisaMapearEmCampo(cliente.statusMapeamento)))
-                        ? ('trilha' as const)
+                      paradaPrecisaMapear(p.precisaMapear, cliente?.statusMapeamento)
+                      ? ('trilha' as const)
                       : ('pendente' as const),
               observacao: cliente?.observacoes || undefined,
               fotoPath: cliente?.fotoReferenciaPath ?? undefined,

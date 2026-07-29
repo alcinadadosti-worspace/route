@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { StyleSpecification } from 'maplibre-gl';
 import {
   distanciaEmMetros,
-  precisaMapearEmCampo,
+  paradaPrecisaMapear,
   rumoEmGraus,
   type GeoPonto,
   type ParadaRota,
@@ -67,9 +67,8 @@ export function Navegacao({
   const pinDoCliente = cliente?.coordenada ?? parada.coordenada;
   // Destino sem ponto confiável (rural/aproximado) grava trilha e confirma pin em
   // campo. Geocodificado (preciso) e já mapeado: navega até o pin e entrega, sem
-  // esse fluxo. Sem o doc do cliente (cache frio) trata como resolvido e não grava.
-  const precisaMapear =
-    parada.precisaMapear ?? (cliente != null && precisaMapearEmCampo(cliente.statusMapeamento));
+  // esse fluxo. Sem o doc do cliente (cache frio) vale a flag da rota publicada.
+  const precisaMapear = paradaPrecisaMapear(parada.precisaMapear, cliente?.statusMapeamento);
 
   useWakeLock(true);
   const { leitura, erro: erroGps } = usePosicao(true);
@@ -174,6 +173,18 @@ export function Navegacao({
     setPinConfirmado(true);
   }
 
+  /**
+   * Saída para quando o GPS não deu posição e o motorista não arrastou o pin:
+   * segue para a entrega SEM gravar pin. Confirmar aqui gravaria a coordenada
+   * aproximada do geocodificador com `statusMapeamento: 'mapeado'` — o ponto
+   * errado viraria definitivo e o app nunca mais pediria para mapear o cliente.
+   * Sem pin, ele continua 'aproximado' e é oferecido de novo na próxima visita.
+   */
+  function seguirSemPin() {
+    encerrarGravacao(true);
+    setPinConfirmado(true);
+  }
+
   const [insucessoAberto, setInsucessoAberto] = useState(false);
   function resolver(resultado: ResultadoEntrega) {
     if (gravando) encerrarGravacao(false);
@@ -268,12 +279,30 @@ export function Navegacao({
 
         {chegou && ajustandoPin && (
           <div className="nav-chegada">
-            <p className="nav-instrucao">
-              Arraste o pin no mapa até o ponto exato da entrega, se precisar.
-            </p>
-            <button className="confirmar" onClick={confirmarPinAqui}>
-              📍 Confirmar pin de entrega
-            </button>
+            {pinAjustado ? (
+              <>
+                <p className="nav-instrucao">
+                  Arraste o pin no mapa até o ponto exato da entrega, se precisar.
+                  {leitura && ` (GPS ±${Math.round(leitura.precisaoM)} m)`}
+                </p>
+                <button className="confirmar" onClick={confirmarPinAqui}>
+                  📍 Confirmar pin de entrega
+                </button>
+              </>
+            ) : (
+              // Sem leitura de GPS o pin no mapa ainda é o ponto aproximado do
+              // geocodificador: gravá-lo como confirmado seria mentira que fica.
+              <>
+                <p className="nav-instrucao">
+                  ⚠ Sem posição do GPS para marcar o pin. Arraste o pin no mapa até a porta do
+                  cliente, ou siga sem marcar — o ponto continua aproximado e o app pede de novo
+                  na próxima visita.
+                </p>
+                <button className="insucesso-botao" onClick={seguirSemPin}>
+                  Seguir sem marcar o pin
+                </button>
+              </>
+            )}
           </div>
         )}
 

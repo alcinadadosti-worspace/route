@@ -49,6 +49,25 @@ export function precisaMapearEmCampo(status: StatusMapeamento): boolean {
   return status === 'nao_mapeado' || status === 'aproximado';
 }
 
+/**
+ * A parada ainda exige mapeamento em campo? Quando o doc do cliente está no
+ * aparelho (o normal — a rota pré-carrega os dossiês), ele é a VERDADE: reflete
+ * o pin confirmado agora mesmo, aqui ou por outro motorista. A flag
+ * denormalizada na parada é o fallback para quando o doc não chegou — é só para
+ * isso que ela existe (seção 12, camada 2).
+ *
+ * Consultar a flag primeiro deixava a parada presa em "mapear no local" depois
+ * do pin confirmado: reentrar na navegação pedia o pin de novo e recomeçava a
+ * gravação da trilha, porque a flag da rota publicada nunca muda.
+ */
+export function paradaPrecisaMapear(
+  precisaMapearDaParada: boolean | undefined,
+  statusDoCliente: StatusMapeamento | null | undefined,
+): boolean {
+  if (statusDoCliente) return precisaMapearEmCampo(statusDoCliente);
+  return precisaMapearDaParada ?? false;
+}
+
 /** Caixa alta sem acentos, espaçamento colapsado — tolerante ao texto livre da NF-e. */
 export function normalizar(texto: string): string {
   return texto

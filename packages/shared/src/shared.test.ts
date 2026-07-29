@@ -2,7 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clienteIdDeDocumento, mascararDocumento } from './documento.js';
 import { normalizarTelefone, linkWhatsApp } from './telefone.js';
-import { ehEnderecoRural, enderecosDivergem, precisaMapearEmCampo } from './endereco.js';
+import {
+  ehEnderecoRural,
+  enderecosDivergem,
+  paradaPrecisaMapear,
+  precisaMapearEmCampo,
+} from './endereco.js';
 import { extrairPedidoELote } from './infcpl.js';
 import { codificarPolyline, decodificarPolyline } from './polyline.js';
 import { distanciaEmMetros, rumoEmGraus } from './geo.js';
@@ -30,6 +35,23 @@ test('pepper: id determinístico mas diferente do SHA-256 puro (não reversível
 test('máscara de CPF e CNPJ mostra apenas os dois últimos dígitos', () => {
   assert.equal(mascararDocumento('10000004782'), '***.***.***-82');
   assert.equal(mascararDocumento('14750618000155'), '**.***.***/****-55');
+});
+
+test('parada: o doc do cliente manda sobre a flag denormalizada da rota', () => {
+  // O caso que travava: rota publicada com precisaMapear=true e o motorista
+  // acabou de confirmar o pin — a parada não pode continuar pedindo mapeamento.
+  assert.equal(paradaPrecisaMapear(true, 'mapeado'), false);
+  assert.equal(paradaPrecisaMapear(true, 'geocodificado'), false);
+  assert.equal(paradaPrecisaMapear(true, 'aproximado'), true);
+  // Cliente que ficou aproximado depois da publicação volta a pedir o pin.
+  assert.equal(paradaPrecisaMapear(false, 'aproximado'), true);
+});
+
+test('parada: sem o doc do cliente no aparelho, vale a flag da rota (offline)', () => {
+  assert.equal(paradaPrecisaMapear(true, null), true);
+  assert.equal(paradaPrecisaMapear(false, null), false);
+  // Rota antiga, sem o campo denormalizado, e sem doc: não inventa mapeamento.
+  assert.equal(paradaPrecisaMapear(undefined, null), false);
 });
 
 test('máscara de documento malformado não expõe dígitos', () => {
