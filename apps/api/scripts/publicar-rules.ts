@@ -21,7 +21,26 @@ if (!conteudoSa && !caminhoSa) {
   process.exit(1);
 }
 
-const sa = JSON.parse(conteudoSa ?? (await readFile(caminhoSa!, 'utf8')));
+const sa = JSON.parse(conteudoSa ?? (await lerChave(caminhoSa!)));
+
+/**
+ * `npm run -w @rota/api` executa com o CWD em apps/api, então um
+ * GOOGLE_APPLICATION_CREDENTIALS relativo à raiz do repositório não é
+ * encontrado — o mesmo tropeço já corrigido no workflow do mapa. O erro cru do
+ * Node ("ENOENT: no such file") não conta essa parte.
+ */
+async function lerChave(caminho: string): Promise<string> {
+  try {
+    return await readFile(caminho, 'utf8');
+  } catch {
+    console.error(
+      `Não encontrei a chave em '${caminho}' (procurado a partir de ${process.cwd()}).\n` +
+        'Use CAMINHO ABSOLUTO em GOOGLE_APPLICATION_CREDENTIALS: o npm roda este ' +
+        'script com o diretório em apps/api, não na raiz do repositório.',
+    );
+    process.exit(1);
+  }
+}
 const projectId: string = sa.project_id;
 const credencial: Credential = conteudoSa ? cert(sa) : applicationDefault();
 const token = (await credencial.getAccessToken()).access_token;
