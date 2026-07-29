@@ -27,7 +27,16 @@ import { usePosicao } from './usePosicao';
 import { aplicarOrdemSugerida, ordenarPorProximidade } from './proximidade';
 import { formatarDistancia } from './formato';
 
-interface ParadaDemo {
+/**
+ * Parada como a tela do motorista precisa dela: a ParadaRota da rota publicada
+ * achatada com o que vem do dossiê do cliente.
+ *
+ * Não existe mais modo de demonstração. Ele foi útil na Fase 0, antes de haver
+ * rota real; com o sistema em operação, mostrar três clientes inventados quando
+ * não há rota publicada é pior que mostrar nada — o motorista não tem como
+ * saber, olhando a tela, que aquilo não é entrega de verdade.
+ */
+interface ParadaTela {
   ordem: number;
   cliente: string;
   endereco: string;
@@ -39,7 +48,6 @@ interface ParadaDemo {
   status: 'pendente' | 'entregue' | 'trilha' | 'insucesso';
   observacao?: string;
   fotoPath?: string;
-  /** Presentes apenas nas paradas de rota real (não demo). */
   pedidoId?: string;
   clienteId?: string;
   /** Minutos de direção acumulados desde o CD, calculados na publicação. */
@@ -47,57 +55,14 @@ interface ParadaDemo {
   avisadoEm?: string | null;
 }
 
-const CD_DEMO = { nome: 'CD ARAPIRACA', lat: -9.7515, lng: -36.6612 };
-
-/**
- * Dados de demonstração da Fase 0 — na Fase 3 esta tela passa a ler a rota
- * publicada do cache local do Firestore (seção 12, camada 2).
- */
-const PARADAS_DEMO: ParadaDemo[] = [
-  {
-    ordem: 1,
-    cliente: 'MARIA JOSE DA SILVA',
-    endereco: 'POVOADO BREJO DOS BOIS, 83 — ZONA RURAL, JUNQUEIRO/AL',
-    telefone: '+5582999887766',
-    coordenada: { lat: -9.956, lng: -36.493 },
-    itens: 10,
-    volumes: 1,
-    pesoKg: 3.113,
-    status: 'trilha',
-    observacao: 'Próx. à piscina · portão azul — primeira entrega: gravar trilha e pin',
-  },
-  {
-    ordem: 2,
-    cliente: 'JOSEFA OLIVEIRA SANTOS',
-    endereco: 'RUA DO COMERCIO, 45 — CENTRO, JUNQUEIRO/AL',
-    telefone: '+5582988776655',
-    coordenada: { lat: -9.925, lng: -36.477 },
-    itens: 4,
-    volumes: 1,
-    pesoKg: 1.82,
-    status: 'pendente',
-  },
-  {
-    ordem: 3,
-    cliente: 'ANA LUCIA FERREIRA',
-    endereco: 'AV PRINCIPAL, 210 — SAO SEBASTIAO/AL',
-    telefone: '+5582977665544',
-    coordenada: { lat: -9.856, lng: -36.556 },
-    itens: 7,
-    volumes: 2,
-    pesoKg: 4.6,
-    status: 'entregue',
-  },
-];
-
-const ICONE_STATUS: Record<ParadaDemo['status'], string> = {
+const ICONE_STATUS: Record<ParadaTela['status'], string> = {
   pendente: '●',
   entregue: '✔',
   trilha: '▲',
   insucesso: '✖',
 };
 
-const TEXTO_STATUS: Record<ParadaDemo['status'], string> = {
+const TEXTO_STATUS: Record<ParadaTela['status'], string> = {
   pendente: 'A entregar',
   entregue: 'Entregue',
   trilha: 'Mapear no local',
@@ -116,7 +81,7 @@ const ABAS_FILTRO: Array<{ id: Filtro; rotulo: string }> = [
 ];
 
 /** Quais status de parada compõem cada filtro (rural = as de "navegar e mapear"). */
-const STATUS_DO_FILTRO: Record<Exclude<Filtro, 'todas'>, ParadaDemo['status'][]> = {
+const STATUS_DO_FILTRO: Record<Exclude<Filtro, 'todas'>, ParadaTela['status'][]> = {
   a_entregar: ['pendente', 'trilha'],
   entregues: ['entregue'],
   insucessos: ['insucesso'],
@@ -177,15 +142,15 @@ export function App() {
     return () => window.removeEventListener('online', aoVoltarRede);
   }, [usuario]);
 
-  // Rota publicada para o motorista logado; sem rota, dados de demonstração.
-  // Identidade presa ao id da rota: cada snapshot renova o objeto `rota`, e um
-  // `cd` novo a cada confirmação recriaria o mapa da visão geral.
+  // CD de partida da rota publicada. Identidade presa ao id da rota: cada
+  // snapshot renova o objeto `rota`, e um `cd` novo a cada confirmação
+  // recriaria o mapa da visão geral.
   const cd = useMemo(
-    () => (rota ? { nome: rota.origemNome, ...rota.origemCoordenada } : CD_DEMO),
+    () => (rota ? { nome: rota.origemNome, ...rota.origemCoordenada } : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rota?.id],
   );
-  const paradas: ParadaDemo[] = useMemo(
+  const paradas: ParadaTela[] = useMemo(
     () =>
       rota
         ? rota.paradas.map((p, i) => {
@@ -217,7 +182,7 @@ export function App() {
               avisadoEm: p.avisadoEm ?? null,
             };
           })
-        : PARADAS_DEMO,
+        : [],
     [rota, dossies],
   );
   const [insucessoAberto, setInsucessoAberto] = useState<string | null>(null);
@@ -261,7 +226,7 @@ export function App() {
   const entregues = paradas.filter((p) => p.status === 'entregue').length;
 
   const contagem = useMemo((): Record<Filtro, number> => {
-    const conta = (fs: ParadaDemo['status'][]) => paradas.filter((p) => fs.includes(p.status)).length;
+    const conta = (fs: ParadaTela['status'][]) => paradas.filter((p) => fs.includes(p.status)).length;
     return {
       todas: paradas.length,
       a_entregar: conta(STATUS_DO_FILTRO.a_entregar),
@@ -391,7 +356,7 @@ export function App() {
           <div>
             <h1>Rota do dia</h1>
             <div className="dia">
-              {rota ? `${rota.data} · ${rota.origemNome.toUpperCase()}` : 'DEMONSTRAÇÃO'}
+              {rota ? `${rota.data} · ${rota.origemNome.toUpperCase()}` : 'SEM ROTA PUBLICADA'}
             </div>
           </div>
         </div>
@@ -409,10 +374,8 @@ export function App() {
         </div>
       </header>
 
-      {rota ? (
+      {rota && (
         <div className="faixa-rota">ROTA PUBLICADA · {rota.distanciaTotalKm} km · {Math.floor(rota.duracaoTotalMin / 60)}h{String(rota.duracaoTotalMin % 60).padStart(2, '0')}</div>
-      ) : (
-        <div className="faixa-demo">Demonstração — aguardando rota publicada para você</div>
       )}
 
       {mapaOffline.pronto && (mapaOffline.baixando != null || mapaOffline.atualizacao) && (
@@ -451,23 +414,43 @@ export function App() {
         </section>
       )}
 
-      {mapaOffline.pronto ? (
-        <Mapa
-          cd={cd}
-          paradas={pontosMapa}
-          polyline={rota?.polylinePlanejada}
-          estilo={estilo}
-          aoEscolherParada={setNavegandoPara}
-        />
-      ) : (
-        <div className="mapa" />
-      )}
+      {/* Sem rota não há o que desenhar: o mapa da visão geral existe para
+          mostrar as paradas do dia. */}
+      {rota &&
+        (mapaOffline.pronto && cd ? (
+          <Mapa
+            cd={cd}
+            paradas={pontosMapa}
+            polyline={rota.polylinePlanejada}
+            estilo={estilo}
+            aoEscolherParada={setNavegandoPara}
+          />
+        ) : (
+          <div className="mapa" />
+        ))}
+      {/* Estado do mapa embarcado: interessa mesmo sem rota, porque baixá-lo é
+          o que o motorista faz no Wi-Fi da base ANTES de sair. */}
       <div className="mapa-nota">
         {mapaOffline.versaoInstalada
           ? `Mapa embarcado de ${versaoLegivel(mapaOffline.versaoInstalada)} — navega sem sinal`
           : 'Basemap online — baixe o mapa offline para navegar sem sinal'}
       </div>
 
+      {!rota && (
+        <section className="sem-rota">
+          <div className="sem-rota-titulo">Nenhuma rota publicada para você</div>
+          <p>
+            Quando o escritório publicar a rota do dia, ela aparece aqui sozinha — e fica no
+            aparelho, para você seguir mesmo sem sinal.
+          </p>
+          <p className="sem-rota-dica">
+            Aproveite o Wi-Fi da base para baixar o mapa offline, se ainda não baixou.
+          </p>
+        </section>
+      )}
+
+      {rota && (
+      <>
       <div className="resumo">
         <div className="bloco">
           <div className="num">{paradas.length}</div>
@@ -571,10 +554,7 @@ export function App() {
                   {/* Aviso com a janela estimada — o que evita o "ausente".
                       A mensagem é montada na renderização para a janela ficar
                       sempre relativa a agora; o WhatsApp abre com o texto
-                      pronto e o motorista revisa antes de enviar. Só em rota
-                      real: na demonstração a janela sairia de um ETA que não
-                      existe, para um telefone inventado. */}
-                  {rota && (
+                      pronto e o motorista revisa antes de enviar. */}
                   <a
                     className={`avisar${p.avisadoEm ? ' feito' : ''}`}
                     href={linkWhatsApp(
@@ -589,42 +569,30 @@ export function App() {
                   >
                     {p.avisadoEm ? `✔ Avisado ${horaCurta(p.avisadoEm)}` : '📣 Avisar chegada'}
                   </a>
-                  )}
                 </>
               )}
-              {rota ? (
-                <>
-                  <button
-                    className="navegar"
-                    onClick={() => setNavegandoPara(p.pedidoId ?? null)}
-                  >
-                    🧭 Navegar{p.status === 'trilha' ? ' e mapear' : ''}
-                  </button>
-                  <button className="confirmar" onClick={() => resolver(p.pedidoId, 'entregue')}>
-                    ✔ Confirmar entrega
-                  </button>
-                  <button
-                    className="insucesso-botao"
-                    onClick={() =>
-                      setInsucessoAberto(insucessoAberto === p.pedidoId ? null : (p.pedidoId ?? null))
-                    }
-                  >
-                    ✖ Registrar insucesso
-                  </button>
-                  {insucessoAberto === p.pedidoId && (
-                    <div className="motivos">
-                      {MOTIVOS_INSUCESSO.map((m) => (
-                        <button key={m.resultado} onClick={() => resolver(p.pedidoId, m.resultado)}>
-                          {m.rotulo}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <button className="confirmar" onClick={() => navigator.vibrate?.(80)}>
-                  ✔ Confirmar entrega
-                </button>
+              <button className="navegar" onClick={() => setNavegandoPara(p.pedidoId ?? null)}>
+                🧭 Navegar{p.status === 'trilha' ? ' e mapear' : ''}
+              </button>
+              <button className="confirmar" onClick={() => resolver(p.pedidoId, 'entregue')}>
+                ✔ Confirmar entrega
+              </button>
+              <button
+                className="insucesso-botao"
+                onClick={() =>
+                  setInsucessoAberto(insucessoAberto === p.pedidoId ? null : (p.pedidoId ?? null))
+                }
+              >
+                ✖ Registrar insucesso
+              </button>
+              {insucessoAberto === p.pedidoId && (
+                <div className="motivos">
+                  {MOTIVOS_INSUCESSO.map((m) => (
+                    <button key={m.resultado} onClick={() => resolver(p.pedidoId, m.resultado)}>
+                      {m.rotulo}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -648,6 +616,8 @@ export function App() {
             )}
         </article>
       ))}
+      </>
+      )}
 
       <footer className="rodape">Offline-first · dados sincronizam ao reencontrar rede</footer>
     </div>

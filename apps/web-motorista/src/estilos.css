@@ -391,6 +391,33 @@
   background: color-mix(in srgb, var(--laranja-seg) 10%, var(--superficie));
 }
 
+/* Sem rota publicada — substituiu o antigo modo de demonstração */
+.sem-rota {
+  border: 1px dashed var(--borda);
+  border-radius: var(--raio);
+  padding: 24px 18px;
+  margin-bottom: 12px;
+  text-align: center;
+  color: var(--texto-2);
+}
+
+.sem-rota-titulo {
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ambar);
+  margin-bottom: 8px;
+}
+
+.sem-rota p {
+  margin: 6px 0 0;
+  font-size: 0.95rem;
+}
+
+.sem-rota-dica {
+  opacity: 0.8;
+}
+
 /* Aviso ao cliente pelo WhatsApp (seção 11.8) */
 .avisar {
   display: flex;

@@ -22,7 +22,7 @@ export type StatusParada = 'pendente' | 'entregue' | 'trilha' | 'insucesso';
 export interface ParadaOrdenavel {
   coordenada: GeoPonto;
   status: StatusParada;
-  /** Ausente nas paradas de demonstração; presente na rota real. */
+  /** Presente nas paradas de rota publicada. */
   pedidoId?: string;
 }
 

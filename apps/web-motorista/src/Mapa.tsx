@@ -9,7 +9,7 @@ export interface PontoMapa {
   cliente: string;
   coordenada: GeoPonto;
   status: 'pendente' | 'entregue' | 'trilha' | 'insucesso';
-  /** Ausente nas paradas de demonstração; sem ele não há para onde navegar. */
+  /** Sempre presente nas paradas de rota publicada; sem ele não há para onde navegar. */
   pedidoId?: string;
 }
 
