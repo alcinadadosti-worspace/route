@@ -8,6 +8,8 @@ export interface PontoMapa {
   cliente: string;
   coordenada: GeoPonto;
   status: 'pendente' | 'entregue' | 'trilha' | 'insucesso';
+  /** Ausente nas paradas de demonstração; sem ele não há para onde navegar. */
+  pedidoId?: string;
 }
 
 const COR_STATUS: Record<PontoMapa['status'], string> = {
@@ -27,14 +29,21 @@ export function Mapa({
   paradas,
   polyline,
   estilo,
+  aoEscolherParada,
 }: {
   cd: GeoPonto & { nome: string };
   paradas: PontoMapa[];
   /** Traçado planejado (encoded polyline). Sem ele, liga os pontos em linha reta. */
   polyline?: string;
   estilo: StyleSpecification;
+  /** Toque em "Navegar até aqui" no balão da parada — o mapa vira o seletor. */
+  aoEscolherParada?: (pedidoId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Por referência: o mapa é recriado quando as props mudam de identidade, e
+  // um callback novo a cada render do pai recriaria o MapLibre sem parar.
+  const aoEscolherRef = useRef(aoEscolherParada);
+  aoEscolherRef.current = aoEscolherParada;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -87,11 +96,7 @@ export function Mapa({
     for (const p of paradas) {
       new Marker({ color: COR_STATUS[p.status] })
         .setLngLat([p.coordenada.lng, p.coordenada.lat])
-        .setPopup(
-          new Popup({ offset: 24 }).setText(
-            `PARADA ${String(p.ordem).padStart(2, '0')} — ${p.cliente}`,
-          ),
-        )
+        .setPopup(new Popup({ offset: 24 }).setDOMContent(balaoDaParada(p, aoEscolherRef)))
         .addTo(mapa);
     }
 
@@ -103,4 +108,35 @@ export function Mapa({
   }, [cd, paradas, polyline, estilo]);
 
   return <div ref={containerRef} className="mapa" />;
+}
+
+/**
+ * Conteúdo do balão da parada: identificação e, quando ainda há o que entregar,
+ * o atalho para navegar direto dali — é o que faz do mapa um seletor de parada,
+ * sem obrigar o motorista a caçar o cartão certo numa lista de dez.
+ */
+function balaoDaParada(
+  p: PontoMapa,
+  aoEscolherRef: { current: ((pedidoId: string) => void) | undefined },
+): HTMLElement {
+  const conteudo = document.createElement('div');
+  conteudo.className = 'balao-parada';
+
+  const titulo = document.createElement('div');
+  titulo.className = 'balao-titulo';
+  titulo.textContent = `PARADA ${String(p.ordem).padStart(2, '0')}`;
+  const nome = document.createElement('div');
+  nome.textContent = p.cliente;
+  conteudo.append(titulo, nome);
+
+  const pendente = p.status === 'pendente' || p.status === 'trilha';
+  if (p.pedidoId && pendente) {
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'balao-navegar';
+    botao.textContent = '🧭 Navegar até aqui';
+    botao.addEventListener('click', () => aoEscolherRef.current?.(p.pedidoId!));
+    conteudo.appendChild(botao);
+  }
+  return conteudo;
 }

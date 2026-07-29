@@ -237,6 +237,7 @@ export function App() {
         cliente: p.cliente,
         coordenada: p.coordenada,
         status: p.status,
+        pedidoId: p.pedidoId,
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [chavePontos],
@@ -312,8 +313,30 @@ export function App() {
     rota && navegandoPara ? (rota.paradas.find((p) => p.pedidoId === navegandoPara) ?? null) : null;
 
   if (rota && paradaNavegando) {
+    // Demais paradas por entregar, na ordem publicada — o número no mapa é o
+    // mesmo do cartão, senão o motorista teria duas numerações para conciliar.
+    const outrasParadas = rota.paradas
+      .map((p, i) => ({ parada: p, ordem: i + 1 }))
+      .filter(
+        ({ parada: p }) =>
+          p.pedidoId !== paradaNavegando.pedidoId &&
+          p.status !== 'entregue' &&
+          p.status !== 'insucesso',
+      )
+      .map(({ parada: p, ordem }) => ({
+        pedidoId: p.pedidoId,
+        ordem,
+        nome: p.nome,
+        // Pin confirmado em campo na frente da coordenada da publicação —
+        // mesma precedência do destino atual, para o marcador não cair num
+        // ponto que já se sabe errado.
+        coordenada: dossies[p.clienteId]?.cliente?.coordenada ?? p.coordenada,
+      }));
     return (
       <Navegacao
+        // Trocar de parada REMONTA a tela: chegada, pin ajustado, gravação e
+        // traçado recalculado são estado DAQUELA parada e têm de zerar juntos.
+        key={paradaNavegando.pedidoId}
         rota={rota}
         parada={paradaNavegando}
         dossie={dossies[paradaNavegando.clienteId] ?? null}
@@ -321,6 +344,8 @@ export function App() {
         estilo={estilo}
         estiloKey={mapaOffline.urlFonte ?? 'online'}
         parametros={parametrosTrilha}
+        outrasParadas={outrasParadas}
+        aoTrocarParada={setNavegandoPara}
         aoResolver={(pedidoId, resultado) => resolver(pedidoId, resultado)}
         aoFechar={() => setNavegandoPara(null)}
       />
@@ -411,7 +436,13 @@ export function App() {
       )}
 
       {mapaOffline.pronto ? (
-        <Mapa cd={cd} paradas={pontosMapa} polyline={rota?.polylinePlanejada} estilo={estilo} />
+        <Mapa
+          cd={cd}
+          paradas={pontosMapa}
+          polyline={rota?.polylinePlanejada}
+          estilo={estilo}
+          aoEscolherParada={setNavegandoPara}
+        />
       ) : (
         <div className="mapa" />
       )}

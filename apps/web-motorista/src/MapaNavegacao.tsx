@@ -18,6 +18,14 @@ import { decodificarPolyline, type GeoPonto, type Trilha } from '@rota/shared';
  * Camadas: traçado planejado (contexto), trilha aprendida (destaca no
  * handoff), pin do destino (arrastável no ajuste) e posição do veículo.
  */
+/** Parada que não é o destino atual, mostrada no mapa para troca em um toque. */
+export interface OutraParada {
+  pedidoId: string;
+  ordem: number;
+  nome: string;
+  coordenada: GeoPonto;
+}
+
 export function MapaNavegacao({
   pin,
   polylinePlanejada,
@@ -27,6 +35,8 @@ export function MapaNavegacao({
   ajustandoPin,
   aoAjustarPin,
   estilo,
+  outrasParadas,
+  aoTrocarParada,
 }: {
   pin: GeoPonto;
   polylinePlanejada?: string;
@@ -36,6 +46,9 @@ export function MapaNavegacao({
   /** Pin arrastável (RF-07) — a câmera para de seguir o veículo. */
   ajustandoPin: boolean;
   aoAjustarPin: (p: GeoPonto) => void;
+  /** Demais paradas por entregar — tocar em uma troca o destino da navegação. */
+  outrasParadas: OutraParada[];
+  aoTrocarParada: (pedidoId: string) => void;
   /** Capturado na montagem. Se o estilo mudar (instalação do mapa offline no
    * meio da navegação), o pai remonta este componente via `key`, então não é
    * preciso reagir à prop aqui. */
@@ -114,6 +127,35 @@ export function MapaNavegacao({
     // Criação única: as props mudam via efeitos abaixo, sem recriar o mapa.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Demais paradas por entregar: um toque troca o destino sem voltar à lista.
+  // O callback vai por referência — recriar os marcadores a cada render do pai
+  // faria o marcador sumir debaixo do dedo no meio do toque.
+  const aoTrocarRef = useRef(aoTrocarParada);
+  aoTrocarRef.current = aoTrocarParada;
+  const chaveOutras = outrasParadas.map((p) => p.pedidoId).join('|');
+  useEffect(() => {
+    const mapa = mapaRef.current;
+    if (!mapa) return;
+    const marcadores = outrasParadas.map((p) => {
+      const elemento = document.createElement('button');
+      elemento.type = 'button';
+      elemento.className = 'marcador-outra-parada';
+      elemento.textContent = String(p.ordem).padStart(2, '0');
+      elemento.title = `Navegar até ${p.nome}`;
+      elemento.setAttribute('aria-label', `Navegar até a parada ${p.ordem}, ${p.nome}`);
+      elemento.addEventListener('click', (evento) => {
+        // Sem isto o clique também vira gesto de mapa e pausa o follow da câmera.
+        evento.stopPropagation();
+        aoTrocarRef.current(p.pedidoId);
+      });
+      return new Marker({ element: elemento })
+        .setLngLat([p.coordenada.lng, p.coordenada.lat])
+        .addTo(mapa);
+    });
+    return () => marcadores.forEach((m) => m.remove());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveOutras]);
 
   // Traçado planejado e trilha aprendida.
   useEffect(() => {

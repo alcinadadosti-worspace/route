@@ -324,6 +324,14 @@ A ordem publicada é calculada **uma vez, no escritório, partindo do CD**. Quan
 
 **As duas apenas sugerem: nada é gravado na rota.** O documento da rota é reescrito pelo app a cada confirmação de entrega (o array `paradas` inteiro) — se o servidor reescrevesse esse mesmo array, uma confirmação feita no mesmo instante seria apagada, e a ordem que o escritório publicou e acompanha mudaria sozinha. O número oficial da parada continua impresso no cartão, e a parada já resolvida nunca disputa "a próxima".
 
+### 11.6.1 O mapa como seletor de parada
+Escolher a próxima parada rolando uma lista de dez cartões é ruim dentro de um veículo. Os dois mapas passam a servir de seletor:
+
+- **visão geral:** tocar no marcador abre o balão com a identificação e, se ainda houver o que entregar ali, "Navegar até aqui";
+- **navegação:** as demais paradas por entregar aparecem como números tocáveis; um toque troca o destino sem voltar à lista. O número é o mesmo do cartão (a ordem publicada), para não existirem duas numerações a conciliar, e o marcador usa o pin confirmado em campo quando ele existe.
+
+Trocar de parada **remonta** a tela de navegação (`key` pelo pedidoId). Chegada, pin ajustado, gravação em curso e traçado recalculado são estado daquela parada e precisam zerar juntos — sem isso o cartão de chegada da parada anterior apareceria já aberto na parada nova. O custo é o mapa ser recriado na troca, o mesmo de hoje ao fechar e reabrir. Gravação em curso com pontos pede confirmação antes de ser descartada, como no fechar.
+
 ### 11.7 Desvio do traçado e recálculo (online)
 A polyline desenhada é calculada na publicação, saindo do CD. Quando o motorista sai dela — atalho que ele conhece, estrada interditada, ou simplesmente se perdeu — o app **detecta sozinho e sem rede**: distância do veículo até a polilinha (geometria pura, `distanciaAoTracadoEmMetros`), acima de `desvioMinimoM` (padrão 150 m, ajustável em `config/geral.trilha`).
 

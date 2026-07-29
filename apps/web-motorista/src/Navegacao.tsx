@@ -12,7 +12,7 @@ import {
   type ResultadoEntrega,
   type Rota,
 } from '@rota/shared';
-import { MapaNavegacao } from './MapaNavegacao';
+import { MapaNavegacao, type OutraParada } from './MapaNavegacao';
 import { DossieLocal } from './DossieLocal';
 import { useWakeLock } from './useWakeLock';
 import { usePosicao } from './usePosicao';
@@ -50,9 +50,14 @@ export function Navegacao({
   parametros,
   aoResolver,
   aoFechar,
+  outrasParadas,
+  aoTrocarParada,
 }: {
   rota: { id: string } & Rota;
   parada: ParadaRota;
+  /** Demais paradas por entregar, para trocar de destino pelo mapa. */
+  outrasParadas: OutraParada[];
+  aoTrocarParada: (pedidoId: string) => void;
   dossie: DossieCliente | null;
   uid: string;
   estilo: StyleSpecification;
@@ -252,14 +257,25 @@ export function Navegacao({
 
   // Fechar no meio de uma gravação descarta o rastro — nunca em silêncio.
   function fechar() {
-    if (
-      gravando &&
-      pontosGravados > 0 &&
-      !window.confirm('A gravação do caminho será descartada. Fechar mesmo assim?')
-    ) {
-      return;
-    }
+    if (!confirmarDescarteDaGravacao('Fechar')) return;
     aoFechar();
+  }
+
+  /**
+   * Trocar de parada pelo mapa. Vale a mesma proteção do fechar: o rastro
+   * gravado até aqui é do caminho DESTA parada e se perde na troca. O pai
+   * remonta a tela (key por pedidoId), então todo o estado de chegada, pin e
+   * recálculo zera junto — trocar sem isso mostraria o cartão de chegada da
+   * parada anterior na parada nova.
+   */
+  function trocarPara(pedidoId: string) {
+    if (!confirmarDescarteDaGravacao('Trocar de parada')) return;
+    aoTrocarParada(pedidoId);
+  }
+
+  function confirmarDescarteDaGravacao(acao: string): boolean {
+    if (!gravando || pontosGravados === 0) return true;
+    return window.confirm(`A gravação do caminho será descartada. ${acao} mesmo assim?`);
   }
 
   // A seta gira sempre pelo arco curto: interpolar 359°→1° pelo caminho
@@ -304,7 +320,14 @@ export function Navegacao({
         posicao={leitura}
         ajustandoPin={ajustandoPin}
         aoAjustarPin={setPinAjustado}
+        outrasParadas={outrasParadas}
+        aoTrocarParada={trocarPara}
       />
+      {outrasParadas.length > 0 && (
+        <div className="nav-dica-mapa">
+          Toque no número de outra parada no mapa para navegar até ela.
+        </div>
+      )}
 
       <div className="nav-painel">
         {erroGps && !leitura && <div className="nav-gps-erro">⚠ {erroGps}</div>}

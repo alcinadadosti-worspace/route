@@ -391,6 +391,54 @@
   background: color-mix(in srgb, var(--laranja-seg) 10%, var(--superficie));
 }
 
+/* O mapa como seletor de parada: balão da visão geral e números da navegação */
+.balao-parada {
+  display: grid;
+  gap: 6px;
+  min-width: 170px;
+  color: #121212;
+}
+
+.balao-titulo {
+  font-family: var(--fonte-mono);
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.balao-navegar {
+  min-height: var(--alvo-toque);
+  border: 1px solid var(--ambar);
+  border-radius: var(--raio);
+  background: var(--ambar);
+  /* Inverte com o tema: no Galpão o âmbar é claro e a superfície escura; no
+     Pátio, o contrário. Texto fixo escuro sumiria no dourado escuro do Pátio. */
+  color: var(--superficie);
+  font-family: var(--fonte-caps);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/* Alvo generoso: é toque de dedo em veículo, não clique de mouse. */
+.marcador-outra-parada {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 2px solid var(--ambar);
+  background: color-mix(in srgb, var(--superficie) 85%, transparent);
+  color: var(--ambar);
+  font-family: var(--fonte-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nav-dica-mapa {
+  font-size: 0.8rem;
+  color: var(--texto-2);
+  padding: 6px 14px 0;
+}
+
 /* Desvio do traçado e recálculo online (seção 11.6) */
 .nav-desvio {
   display: flex;
