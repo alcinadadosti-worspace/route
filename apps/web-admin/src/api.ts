@@ -101,6 +101,26 @@ export async function decidirMudancaEndereco(
   return post(`${BASE}/api/pedidos/${encodeURIComponent(pedidoId)}/mudanca-endereco`, { escolha });
 }
 
+/**
+ * Apaga uma nota importada por engano. A API recusa o que já saiu do
+ * escritório (em rota, entregue, insucesso) — o cliente e o que ele já
+ * ensinou sobre o local ficam.
+ */
+export async function apagarPedido(pedidoId: string): Promise<void> {
+  const resposta = await apiFetch(`${BASE}/api/pedidos/${encodeURIComponent(pedidoId)}`, {
+    method: 'DELETE',
+  });
+  if (resposta.ok) return;
+  const texto = await resposta.text();
+  let erro: string | undefined;
+  try {
+    erro = texto ? JSON.parse(texto).erro : undefined;
+  } catch {
+    erro = undefined;
+  }
+  throw new Error(erro ?? erroHttp(resposta.status));
+}
+
 async function post<T>(url: string, corpo: unknown): Promise<T> {
   const resposta = await apiFetch(url, {
     method: 'POST',

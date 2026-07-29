@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import {
   importarXmls,
+  apagarPedidoImportado,
   decidirEnderecoEntrega,
   decidirMudancaEndereco,
   type ArquivoXml,
@@ -160,6 +161,18 @@ export async function criarApp({
       return { status: resultado.status };
     },
   );
+
+  // Apagar nota importada por engano. Recusa o que já saiu do escritório —
+  // em rota, entregue ou com insucesso (ver apagarPedidoImportado).
+  app.delete('/api/pedidos/:chave', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
+    const { chave } = req.params as { chave: string };
+    if (!/^\d{44}$/.test(chave)) {
+      return reply.code(404).send({ erro: 'Pedido não encontrado' });
+    }
+    const resultado = await apagarPedidoImportado(repo, chave);
+    if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+    return { apagado: chave };
+  });
 
   app.get('/api/clientes', { config: { papeis: ESCRITORIO } }, async () => repo.listarClientes());
 

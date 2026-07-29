@@ -502,6 +502,37 @@ td input[type='checkbox'] {
   font-size: 0.9rem;
 }
 
+/* CD definido pelas notas — o seletor só reaparece se não houver consenso */
+.cd-definido {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cd-definido-fonte {
+  color: var(--texto-2);
+  font-size: 0.85rem;
+}
+
+.cd-definido button {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+}
+
+/* Apagar nota importada por engano */
+.apagar {
+  border-color: var(--borda);
+  color: var(--texto-2);
+  padding: 2px 9px;
+  line-height: 1.4;
+}
+
+.apagar:hover {
+  border-color: var(--vermelho-falha);
+  color: var(--vermelho-falha);
+}
+
 /* Dossiê do local no admin — foto de referência + observações do motorista */
 .dossie-bloco {
   display: flex;

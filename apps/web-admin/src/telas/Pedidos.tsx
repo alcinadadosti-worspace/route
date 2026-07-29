@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Pedido } from '@rota/shared';
-import { listarPedidos } from '../api';
+import { apagarPedido, listarPedidos } from '../api';
+
+/** Só o que ainda não saiu do escritório pode ser apagado (a API confere também). */
+const APAGAVEIS = new Set(['importado', 'pendente_de_mapeamento', 'pendente_de_decisao', 'pronto_para_rota']);
 
 const ROTULO_STATUS: Record<string, { texto: string; classe: string }> = {
   pendente_de_mapeamento: { texto: 'Pendente de mapeamento', classe: 'pendente' },
@@ -22,6 +25,21 @@ export function Pedidos() {
       .then(setPedidos)
       .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao listar'));
   }, []);
+
+  async function apagar(p: { id: string } & Pedido) {
+    // Some da tela para sempre: vale um passo de confirmação com o número da
+    // nota, para não apagar a linha de baixo por engano.
+    if (!window.confirm(`Apagar a nota ${p.numeroNota}/${p.serie}? A importação dela é desfeita.`)) {
+      return;
+    }
+    setErro(null);
+    try {
+      await apagarPedido(p.id);
+      setPedidos((atual) => atual.filter((outro) => outro.id !== p.id));
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha ao apagar');
+    }
+  }
 
   const q = filtro.trim();
   const filtrados = q
@@ -63,6 +81,7 @@ export function Pedidos() {
               <th>Vol · Peso</th>
               <th>Valor</th>
               <th>Status</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -89,6 +108,18 @@ export function Pedidos() {
                   </td>
                   <td>
                     <span className={`chip ${s.classe}`}>{s.texto}</span>
+                  </td>
+                  <td>
+                    {APAGAVEIS.has(p.status) && (
+                      <button
+                        className="apagar"
+                        title={`Apagar a nota ${p.numeroNota}`}
+                        aria-label={`Apagar a nota ${p.numeroNota}`}
+                        onClick={() => void apagar(p)}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </td>
                 </tr>
               );

@@ -1,7 +1,12 @@
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { importarXmls, decidirEnderecoEntrega, decidirMudancaEndereco } from './servico.js';
+import {
+  apagarPedidoImportado,
+  decidirEnderecoEntrega,
+  decidirMudancaEndereco,
+  importarXmls,
+} from './servico.js';
 import { RepositorioMemoria } from '../db/repositorio.js';
 import { parseNfe } from '../nfe/parser.js';
 import type { Cliente, EnderecoFiscal } from '@rota/shared';
@@ -76,6 +81,55 @@ test('cliente com coordenada confirmada gera pedido pronto_para_rota', async () 
   assert.equal(cliente.statusMapeamento, 'mapeado');
   assert.deepEqual(cliente.coordenada, { lat: -9.925, lng: -36.47 });
   assert.equal(cliente.trilhaAtivaId, 'trilha-1');
+});
+
+// --- Apagar nota importada por engano ---
+
+test('apaga a nota importada e preserva o cliente que ela criou', async () => {
+  const repo = new RepositorioMemoria();
+  await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  const pedido = (await repo.listarPedidos())[0]!;
+
+  const r = await apagarPedidoImportado(repo, pedido.id);
+
+  assert.ok(r.ok);
+  assert.equal((await repo.listarPedidos()).length, 0);
+  // O cliente fica: coordenada, pin e dossiê são sobre o LUGAR, não sobre a nota.
+  assert.equal((await repo.listarClientes()).length, 1);
+});
+
+test('reimportar o mesmo XML depois de apagar traz a nota de volta', async () => {
+  const repo = new RepositorioMemoria();
+  await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  const pedido = (await repo.listarPedidos())[0]!;
+  await apagarPedidoImportado(repo, pedido.id);
+
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+
+  assert.equal(relatorio.importados, 1);
+  assert.equal(relatorio.duplicados, 0);
+  assert.equal((await repo.listarPedidos()).length, 1);
+});
+
+test('nota que já saiu do escritório não pode ser apagada', async () => {
+  const repo = new RepositorioMemoria();
+  await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  const pedido = (await repo.listarPedidos())[0]!;
+
+  for (const status of ['em_rota', 'entregue', 'insucesso'] as const) {
+    await repo.salvarPedido(pedido.id, { ...pedido, status });
+    const r = await apagarPedidoImportado(repo, pedido.id);
+    assert.equal(r.ok, false, `${status} deveria ser recusado`);
+    if (!r.ok) assert.equal(r.status, 409);
+  }
+  assert.equal((await repo.listarPedidos()).length, 1, 'nada foi apagado');
+});
+
+test('apagar pedido inexistente é 404, não erro cru', async () => {
+  const repo = new RepositorioMemoria();
+  const r = await apagarPedidoImportado(repo, '0'.repeat(44));
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.status, 404);
 });
 
 // --- CD de origem pelo emitente da nota (seção 8.5) ---

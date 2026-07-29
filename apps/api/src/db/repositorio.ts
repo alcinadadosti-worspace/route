@@ -20,6 +20,7 @@ export interface Repositorio {
   salvarCliente(clienteId: string, cliente: Cliente): Promise<void>;
   obterPedido(chaveAcesso: string): Promise<Pedido | null>;
   salvarPedido(chaveAcesso: string, pedido: Pedido): Promise<void>;
+  apagarPedido(chaveAcesso: string): Promise<void>;
   listarClientes(): Promise<Array<{ id: string } & Cliente>>;
   listarPedidos(): Promise<Array<{ id: string } & Pedido>>;
   obterCds(): Promise<Record<string, CentroDistribuicao>>;
@@ -77,6 +78,10 @@ export class RepositorioMemoria implements Repositorio {
 
   async salvarPedido(chaveAcesso: string, pedido: Pedido): Promise<void> {
     this.pedidos.set(chaveAcesso, pedido);
+  }
+
+  async apagarPedido(chaveAcesso: string): Promise<void> {
+    this.pedidos.delete(chaveAcesso);
   }
 
   async listarClientes(): Promise<Array<{ id: string } & Cliente>> {

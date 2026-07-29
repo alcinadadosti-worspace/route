@@ -29,6 +29,8 @@ export function Rotas() {
   const [cds, setCds] = useState<Record<string, CentroDistribuicao>>({});
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [cdId, setCdId] = useState<string>('');
+  /** O operador pediu para trocar o CD que as notas definiram. */
+  const [trocandoCd, setTrocandoCd] = useState(false);
   const [retornaAoCd, setRetornaAoCd] = useState(true);
   const [previa, setPrevia] = useState<PreviaRota | null>(null);
   const [otimizando, setOtimizando] = useState(false);
@@ -93,6 +95,10 @@ export function Rotas() {
       setCdId(cdDasNotas);
       setPrevia(null);
     }
+    // Mudou a seleção de pedidos: a troca manual anterior era sobre OUTRAS
+    // notas, e manter o seletor aberto sugeriria uma decisão que não é mais a
+    // mesma.
+    setTrocandoCd(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cdDasNotas]);
 
@@ -224,23 +230,40 @@ export function Rotas() {
         <h2>Montagem de rota</h2>
 
         <div className="config-rota">
-          <fieldset>
-            <legend>CD de partida</legend>
-            {Object.entries(cds).map(([id, cd]) => (
-              <label key={id} className="opcao">
-                <input
-                  type="radio"
-                  name="cd"
-                  checked={cdId === id}
-                  onChange={() => {
-                    setCdId(id);
-                    setPrevia(null);
-                  }}
-                />
-                {cd.nome}
-              </label>
-            ))}
-          </fieldset>
+          {/* O CD sai das notas (CNPJ do emitente): quando elas concordam, não
+              há decisão a tomar e o seletor só atrapalha. Ele reaparece quando
+              o app não sabe — nenhuma nota reconhecida — ou quando o operador
+              pede para trocar, que o dado real mostra acontecer: a filial que
+              fatura nem sempre é o galpão de onde o caminhão sai. */}
+          {cdDasNotas && !trocandoCd ? (
+            <div className="cd-definido">
+              <div>
+                Partida: <strong>{cds[cdDasNotas]?.nome ?? cdDasNotas}</strong>
+              </div>
+              <div className="cd-definido-fonte">definido pelas notas selecionadas</div>
+              <button type="button" onClick={() => setTrocandoCd(true)}>
+                trocar
+              </button>
+            </div>
+          ) : (
+            <fieldset>
+              <legend>CD de partida</legend>
+              {Object.entries(cds).map(([id, cd]) => (
+                <label key={id} className="opcao">
+                  <input
+                    type="radio"
+                    name="cd"
+                    checked={cdId === id}
+                    onChange={() => {
+                      setCdId(id);
+                      setPrevia(null);
+                    }}
+                  />
+                  {cd.nome}
+                </label>
+              ))}
+            </fieldset>
+          )}
           <label className="opcao">
             <input
               type="checkbox"

@@ -57,6 +57,10 @@ class RepositorioFirestore implements Repositorio {
     await this.pedidos.doc(chaveAcesso).set(pedido);
   }
 
+  async apagarPedido(chaveAcesso: string): Promise<void> {
+    await this.pedidos.doc(chaveAcesso).delete();
+  }
+
   async listarClientes(): Promise<Array<{ id: string } & Cliente>> {
     const resposta = await this.clientes.get();
     return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Cliente) }));
