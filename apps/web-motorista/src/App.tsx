@@ -265,8 +265,10 @@ export function App() {
   );
 
   // Visão "mais perto de mim" (não altera a rota publicada). O GPS só liga
-  // quando o motorista pede — na lista, um watch permanente seria bateria à toa.
-  const { leitura: posicaoLista } = usePosicao(porProximidade);
+  // quando o motorista pede — na lista, um watch permanente seria bateria à toa
+  // — e desliga durante a navegação, que tem o watch dela: dois `watchPosition`
+  // no mesmo aparelho é o dobro de acordar o GPS sem nenhum ganho.
+  const { leitura: posicaoLista } = usePosicao(porProximidade && !navegandoPara);
   const posicao = useMemo(
     () => (posicaoLista ? { lat: posicaoLista.lat, lng: posicaoLista.lng } : null),
     [posicaoLista],

@@ -5,6 +5,7 @@ import {
   type ParadaPrevia,
   type PreviaRota,
 } from '@rota/shared';
+import { ordemRotaAberta } from './rota-aberta.js';
 import type { Repositorio } from '../db/repositorio.js';
 import type { ClienteOsrm } from './osrm.js';
 
@@ -152,13 +153,23 @@ export async function previaDeRota(
     polyline = resultado.polyline;
     distanciaTotalKm = resultado.distanciaKm;
     duracaoTotalMin = resultado.duracaoMin;
-  } else {
+  } else if (retornaAoCd) {
     const resultado = await osrm.trip(
       cd.coordenada,
       candidatas.map((c) => c.coordenada),
-      retornaAoCd,
+      true,
     );
     ordenadas = resultado.ordem.map((indice) => candidatas[indice]!);
+    polyline = resultado.polyline;
+    distanciaTotalKm = resultado.distanciaKm;
+    duracaoTotalMin = resultado.duracaoMin;
+  } else {
+    // Rota ABERTA: o /trip do OSRM não resolve (responde NotImplemented sem um
+    // fim fixo), então a ordem sai da matriz de durações — ver rota-aberta.ts.
+    // O traçado vem depois, com a sequência já decidida.
+    const duracoes = await osrm.table([cd.coordenada, ...candidatas.map((c) => c.coordenada)]);
+    ordenadas = ordemRotaAberta(duracoes).map((indice) => candidatas[indice]!);
+    const resultado = await osrm.route([cd.coordenada, ...ordenadas.map((c) => c.coordenada)]);
     polyline = resultado.polyline;
     distanciaTotalKm = resultado.distanciaKm;
     duracaoTotalMin = resultado.duracaoMin;

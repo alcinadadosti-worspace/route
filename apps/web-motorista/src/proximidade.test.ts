@@ -55,6 +55,20 @@ test('ordem por estrada manda quando veio da API, e anota a distância na tela',
   assert.ok(r.every((p) => typeof p.distanciaM === 'number'));
 });
 
+test('entregue depois do cálculo não fica encalhada no meio da ordem por estrada', () => {
+  const comEntregue: Array<ParadaOrdenavel & { nome: string }> = [
+    { nome: 'a', pedidoId: 'a', coordenada: { lat: -10.271, lng: -36.56 }, status: 'pendente' },
+    { nome: 'b', pedidoId: 'b', coordenada: { lat: -10.253, lng: -36.56 }, status: 'entregue' },
+    { nome: 'c', pedidoId: 'c', coordenada: { lat: -10.235, lng: -36.56 }, status: 'pendente' },
+  ];
+  // A API tinha devolvido a, b, c — b foi entregue depois disso.
+  const r = aplicarOrdemSugerida(comEntregue, ['a', 'b', 'c'], BASE);
+  assert.deepEqual(
+    r.map((p) => p.pedidoId),
+    ['a', 'c', 'b'],
+  );
+});
+
 test('parada fora da ordem sugerida vai para o fim, não some da tela', () => {
   const r = aplicarOrdemSugerida(PARADAS, ['b', 'a'], BASE);
   assert.deepEqual(

@@ -284,7 +284,8 @@ Pipeline executado na importação, nesta ordem:
 
 **Uso pela API:**
 
-- `GET /trip` — ordena as paradas (solução aproximada do caixeiro-viajante). Parâmetros: `source=first` (partida no CD escolhido), `roundtrip=true` por padrão — assume-se retorno ao CD de origem, desmarcável na montagem quando não for o caso —, coordenadas = CD + paradas. Adequado ao porte do problema (dezenas de paradas por dia); acima de ~50 paradas ou com janelas de horário/múltiplos veículos, o upgrade natural é o VROOM na frente do OSRM — fora do escopo v1, registrado como caminho de evolução.
+- `GET /trip` — ordena as paradas de uma rota FECHADA (`source=first` no CD escolhido, `roundtrip=true`, coordenadas = CD + paradas). Adequado ao porte do problema (dezenas de paradas por dia); acima de ~50 paradas ou com janelas de horário/múltiplos veículos, o upgrade natural é o VROOM na frente do OSRM — fora do escopo v1, registrado como caminho de evolução.
+- `GET /table` + solver próprio — para rota ABERTA (sem retorno ao CD, e a ordem sugerida em campo da seção 11.6). **O `/trip` não resolve esse caso:** verificado contra o serviço real, ele responde `NotImplemented` para `roundtrip=false` sem um fim fixo, e só aceita `destination=last` — que elegeria a última parada por acidente (a ordem em que o operador clicou). Então a matriz de durações vem do `/table` e a ordem sai de vizinho mais próximo + 2-opt (`rota-aberta.ts`). O custo é recalculado inteiro a cada candidato, e não pelo delta O(1) usual: aquele atalho supõe matriz simétrica, e duração de estrada não é.
 - `GET /route` — traçado e duração entre pontos, usado no detalhe por parada e em recálculos.
 - `GET /match` — map-matching de trilhas gravadas (seção 11).
 

@@ -166,7 +166,12 @@ export function Navegacao({
     () => (tracadoDesenhado ? decodificarPolyline(tracadoDesenhado) : []),
     [tracadoDesenhado],
   );
-  const desvioM = leitura ? distanciaAoTracadoEmMetros(leitura, pontosTracado) : null;
+  // Memorizado: o traçado tem milhares de pontos e a tela re-renderiza por
+  // muito mais que leitura de GPS (abrir dossiê, digitar observação).
+  const desvioM = useMemo(
+    () => (leitura ? distanciaAoTracadoEmMetros(leitura, pontosTracado) : null),
+    [leitura, pontosTracado],
+  );
   // Perto do destino o traçado acaba e a orientação passa a ser a seta (e a
   // trilha, quando existe): desvio ali é esperado, não é motivo de recálculo.
   const longeDoDestino = distanciaAoPin == null || distanciaAoPin > 400;

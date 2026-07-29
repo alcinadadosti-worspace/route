@@ -170,6 +170,7 @@ function brutaTeste(sobrescrever: Partial<TrilhaBruta> = {}): TrilhaBruta {
 function osrmQueCasa(casados: number): ClienteOsrm {
   return {
     trip: () => Promise.reject(new Error('não usado')),
+    table: () => Promise.reject(new Error('não usado')),
     route: () => Promise.reject(new Error('não usado')),
     async match(pontos): Promise<ResultadoMatch> {
       return {
@@ -259,6 +260,7 @@ test('gravação sem deslocamento é descartada sem chamar o OSRM', async () => 
 
   const osrm: ClienteOsrm = {
     trip: () => Promise.reject(new Error('não usado')),
+    table: () => Promise.reject(new Error('não usado')),
     route: () => Promise.reject(new Error('não usado')),
     match: () => Promise.reject(new Error('não deveria chamar')),
   };
@@ -300,6 +302,7 @@ test('erro no OSRM deixa a bruta pendente para a próxima tentativa', async () =
 
   const osrm: ClienteOsrm = {
     trip: () => Promise.reject(new Error('não usado')),
+    table: () => Promise.reject(new Error('não usado')),
     route: () => Promise.reject(new Error('não usado')),
     match: () => Promise.reject(new Error('OSRM dormindo (cold start)')),
   };

@@ -73,6 +73,10 @@ export function aplicarOrdemSugerida<T extends ParadaOrdenavel>(
   const posicaoNaOrdem = new Map(ordem.map((pedidoId, i) => [pedidoId, i]));
   const anotadas = anotar(paradas, posicao);
   return anotadas.sort((a, b) => {
+    // Mesma regra da ordenação por linha reta: quem já foi resolvido sai da
+    // disputa. A parada entregue DEPOIS do cálculo ainda consta da ordem que
+    // veio da API, e sem isto ficaria encalhada no meio das pendentes.
+    if (resolvida(a.status) !== resolvida(b.status)) return resolvida(a.status) ? 1 : -1;
     const ia = a.pedidoId ? posicaoNaOrdem.get(a.pedidoId) : undefined;
     const ib = b.pedidoId ? posicaoNaOrdem.get(b.pedidoId) : undefined;
     if (ia === undefined && ib === undefined) return 0;

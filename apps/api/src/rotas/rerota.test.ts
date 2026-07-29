@@ -83,6 +83,9 @@ function osrmFake(): ClienteOsrm & { pontos: Array<Array<{ lat: number; lng: num
     async trip() {
       throw new Error('não usado');
     },
+    async table() {
+      throw new Error('não usado');
+    },
     async match() {
       throw new Error('não usado');
     },

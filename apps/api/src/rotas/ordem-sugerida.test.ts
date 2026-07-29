@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { ParadaRota, Rota } from '@rota/shared';
+import type { GeoPonto, ParadaRota, Rota } from '@rota/shared';
 import { sugerirOrdemDeParadas } from './ordem-sugerida.js';
 import { RepositorioMemoria } from '../db/repositorio.js';
 import type { ClienteOsrm } from './osrm.js';
@@ -46,19 +46,22 @@ async function repoComRota(paradas: ParadaRota[], motoristaId = 'motorista-1') {
   return repo;
 }
 
-/** OSRM de teste: devolve a ordem invertida e registra o que recebeu. */
-function osrmFake(): ClienteOsrm & { chamadas: Array<{ cd: unknown; paradas: unknown[]; roundtrip: boolean }> } {
-  const chamadas: Array<{ cd: unknown; paradas: unknown[]; roundtrip: boolean }> = [];
+/**
+ * OSRM de teste: devolve a matriz de durações das paradas (que o teste põe
+ * numa reta de latitude), e registra os pontos recebidos. `trip` explode de
+ * propósito — rota aberta NÃO pode passar por lá, o serviço real responde
+ * NotImplemented.
+ */
+function osrmFake(): ClienteOsrm & { chamadas: GeoPonto[][] } {
+  const chamadas: GeoPonto[][] = [];
   return {
     chamadas,
-    async trip(cd, paradas, roundtrip) {
-      chamadas.push({ cd, paradas, roundtrip });
-      return {
-        ordem: paradas.map((_, i) => paradas.length - 1 - i),
-        polyline: '',
-        distanciaKm: 1,
-        duracaoMin: 1,
-      };
+    async table(pontos) {
+      chamadas.push(pontos);
+      return pontos.map((a) => pontos.map((b) => Math.abs(a.lat - b.lat) * 100_000));
+    },
+    async trip() {
+      throw new Error('rota aberta não pode usar /trip (NotImplemented no OSRM real)');
     },
     async route() {
       throw new Error('não usado');
@@ -80,10 +83,11 @@ test('sugere a ordem das paradas que faltam a partir da posição atual', async 
   const r = await sugerirOrdemDeParadas({ rotaId: ROTA_ID, origem: ORIGEM, uid: 'motorista-1' }, repo, osrm);
 
   assert.ok(r.ok);
-  assert.deepEqual(r.ordem, ['p3', 'p2', 'p1']);
-  // Parte de ONDE O MOTORISTA ESTÁ, e sem retorno à origem.
-  assert.deepEqual(osrm.chamadas[0]!.cd, ORIGEM);
-  assert.equal(osrm.chamadas[0]!.roundtrip, false);
+  // Paradas numa reta afastando-se da origem: visita da mais perto à mais longe.
+  assert.deepEqual(r.ordem, ['p1', 'p2', 'p3']);
+  // A matriz parte de ONDE O MOTORISTA ESTÁ, não do CD.
+  assert.deepEqual(osrm.chamadas[0]![0], ORIGEM);
+  assert.equal(osrm.chamadas[0]!.length, 4); // origem + 3 paradas
 });
 
 test('paradas já resolvidas ficam de fora da sugestão', async () => {
@@ -98,8 +102,8 @@ test('paradas já resolvidas ficam de fora da sugestão', async () => {
   const r = await sugerirOrdemDeParadas({ rotaId: ROTA_ID, origem: ORIGEM, uid: 'motorista-1' }, repo, osrm);
 
   assert.ok(r.ok);
-  assert.deepEqual(r.ordem, ['p4', 'p2']);
-  assert.equal(osrm.chamadas[0]!.paradas.length, 2);
+  assert.deepEqual(r.ordem, ['p2', 'p4']);
+  assert.equal(osrm.chamadas[0]!.length, 3); // origem + só as 2 pendentes
 });
 
 test('com uma parada só não chama o OSRM (que dorme e custa cold start)', async () => {
@@ -166,7 +170,7 @@ test('posição inválida é recusada antes de qualquer consulta', async () => {
 test('OSRM dormindo devolve 503 com mensagem, não 500 cru', async () => {
   const repo = await repoComRota([parada('p1', 'em_rota', -10.27), parada('p2', 'em_rota', -10.26)]);
   const osrm = osrmFake();
-  osrm.trip = async () => {
+  osrm.table = async () => {
     throw new Error('Roteirizador indisponível (pode estar acordando)');
   };
 

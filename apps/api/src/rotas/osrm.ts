@@ -38,7 +38,14 @@ export interface PontoMatch extends GeoPonto {
 }
 
 export interface ClienteOsrm {
+  /**
+   * `/trip`: só para rota FECHADA (volta ao ponto de partida). O OSRM responde
+   * `NotImplemented` para `roundtrip=false` sem fim fixo — rota aberta é
+   * resolvida com `table` + `ordemRotaAberta` (ver rota-aberta.ts).
+   */
   trip(cd: GeoPonto, paradas: GeoPonto[], roundtrip: boolean): Promise<ResultadoTrip>;
+  /** `/table`: matriz NxN de durações em segundos, na ordem dos pontos dados. */
+  table(pontos: GeoPonto[]): Promise<number[][]>;
   /** `/route`: traçado e estimativas para uma sequência FIXA de pontos (RF-12/RF-13). */
   route(pontos: GeoPonto[]): Promise<ResultadoRoute>;
   /** `/match`: classifica cada ponto do rastro como dentro ou fora da malha (RF-08). */
@@ -108,6 +115,21 @@ export function criarClienteOsrm(
         distanciaKm: Math.round((viagem.distance / 1000) * 10) / 10,
         duracaoMin: Math.round(viagem.duration / 60),
       };
+    },
+
+    async table(pontos) {
+      const coordenadas = pontos.map((p) => `${p.lng},${p.lat}`).join(';');
+      const resposta = await fetchOsrm(fetchFn, `${raiz}/table/v1/driving/${coordenadas}`);
+      if (!resposta.ok) throw new Error(`OSRM respondeu HTTP ${resposta.status}`);
+      const corpo: any = await resposta.json();
+      if (corpo?.code !== 'Ok' || !Array.isArray(corpo?.durations)) {
+        throw new Error(`OSRM não montou a matriz (${corpo?.code ?? 'sem resposta'})`);
+      }
+      // Par inalcançável vem como null: vira Infinity, NÃO 0 — `Number(null)` é
+      // zero e faria o otimizador tratar o impossível como o trecho mais barato.
+      return corpo.durations.map((linha: unknown[]) =>
+        linha.map((valor) => (valor == null ? Infinity : Number(valor))),
+      );
     },
 
     async route(pontos) {
