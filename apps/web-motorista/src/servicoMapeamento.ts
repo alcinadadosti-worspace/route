@@ -49,6 +49,36 @@ export function salvarTrilhaBruta(dados: {
 }
 
 /**
+ * Ordem sugerida das paradas que faltam, calculada por ESTRADA a partir de
+ * onde o motorista está (a ordem publicada parte do CD). Exige rede e acorda o
+ * OSRM — por isso é um botão, não algo automático. A resposta é só uma
+ * sugestão de exibição: nada na rota é alterado.
+ */
+export async function ordemSugerida(rotaId: string, origem: GeoPonto): Promise<string[]> {
+  const token = await auth.currentUser?.getIdToken();
+  const resposta = await fetch(`${API}/api/rotas/${encodeURIComponent(rotaId)}/ordem-sugerida`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ origem }),
+  });
+  // Corpo pode não ser JSON (502/504 do gateway no cold start do Render).
+  const texto = await resposta.text();
+  let dados: { ordem?: string[]; erro?: string } | null = null;
+  try {
+    dados = texto ? JSON.parse(texto) : null;
+  } catch {
+    dados = null;
+  }
+  if (!resposta.ok || !Array.isArray(dados?.ordem)) {
+    throw new Error(dados?.erro ?? `Não deu para calcular agora (HTTP ${resposta.status})`);
+  }
+  return dados.ordem;
+}
+
+/**
  * Cutuca o pós-processamento na API — melhor esforço: se estiver offline
  * agora, a próxima abertura do app com rede tenta de novo (o endpoint é
  * idempotente e barato sem pendências). Vai com o ID token do Firebase, que

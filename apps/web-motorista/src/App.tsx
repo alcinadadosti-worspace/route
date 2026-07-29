@@ -19,8 +19,14 @@ import { useMapaOffline } from './useMapaOffline';
 import { estiloMapa, type Tema } from './estiloMapa';
 import { tipoDeRede } from './mapaOffline';
 import { registrarResultado } from './servicoEntrega';
-import { dispararProcessamento } from './servicoMapeamento';
+import { dispararProcessamento, ordemSugerida } from './servicoMapeamento';
 import { processarFilaFotos } from './servicoFotos';
+import { usePosicao } from './usePosicao';
+import {
+  aplicarOrdemSugerida,
+  formatarDistancia,
+  ordenarPorProximidade,
+} from './proximidade';
 
 interface ParadaDemo {
   ordem: number;
@@ -206,6 +212,11 @@ export function App() {
   const [navegandoPara, setNavegandoPara] = useState<string | null>(null);
   const [dossieAberto, setDossieAberto] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>('todas');
+  const [porProximidade, setPorProximidade] = useState(false);
+  /** Ordem por estrada vinda da API (null = linha reta, o padrão offline). */
+  const [ordemEstrada, setOrdemEstrada] = useState<string[] | null>(null);
+  const [refinando, setRefinando] = useState(false);
+  const [erroOrdem, setErroOrdem] = useState<string | null>(null);
 
   function resolver(pedidoId: string | undefined, resultado: ResultadoEntrega) {
     if (!rota || !pedidoId || !usuario) return;
@@ -255,6 +266,40 @@ export function App() {
         : paradas.filter((p) => STATUS_DO_FILTRO[filtro].includes(p.status)),
     [paradas, filtro],
   );
+
+  // Visão "mais perto de mim" (não altera a rota publicada). O GPS só liga
+  // quando o motorista pede — na lista, um watch permanente seria bateria à toa.
+  const { leitura: posicaoLista } = usePosicao(porProximidade);
+  const posicao = useMemo(
+    () => (posicaoLista ? { lat: posicaoLista.lat, lng: posicaoLista.lng } : null),
+    [posicaoLista],
+  );
+  const paradasNaTela = useMemo(() => {
+    if (!porProximidade) return paradasFiltradas.map((p) => ({ ...p, distanciaM: null }));
+    return ordemEstrada
+      ? aplicarOrdemSugerida(paradasFiltradas, ordemEstrada, posicao)
+      : ordenarPorProximidade(paradasFiltradas, posicao);
+  }, [paradasFiltradas, porProximidade, ordemEstrada, posicao]);
+  // A primeira ainda por entregar é "a próxima" — só faz sentido com a lista
+  // realmente ordenada por distância (ou pela sugestão da estrada).
+  const proximaPedidoId =
+    porProximidade && posicao
+      ? (paradasNaTela.find((p) => p.status === 'pendente' || p.status === 'trilha')?.pedidoId ??
+        null)
+      : null;
+
+  async function refinarPorEstrada() {
+    if (!rota || !posicao) return;
+    setRefinando(true);
+    setErroOrdem(null);
+    try {
+      setOrdemEstrada(await ordemSugerida(rota.id, posicao));
+    } catch (e) {
+      setErroOrdem(e instanceof Error ? e.message : 'Não deu para calcular agora');
+    } finally {
+      setRefinando(false);
+    }
+  }
 
   if (carregando) {
     return <div className="tela-login"><div className="sub-login">CARREGANDO…</div></div>;
@@ -411,13 +456,53 @@ export function App() {
         ))}
       </nav>
 
-      {paradasFiltradas.length === 0 && (
+      <div className="ordenacao">
+        <button
+          className="aba-filtro"
+          aria-pressed={porProximidade}
+          aria-selected={porProximidade}
+          onClick={() => {
+            setPorProximidade(!porProximidade);
+            // A ordem por estrada foi calculada de onde o motorista ESTAVA:
+            // sair e voltar ao modo recomeça pela linha reta, que é sempre atual.
+            setOrdemEstrada(null);
+            setErroOrdem(null);
+          }}
+        >
+          📍 Mais perto de mim
+        </button>
+        {porProximidade && !posicao && <span className="ordenacao-aviso">procurando GPS…</span>}
+        {porProximidade && posicao && rota && (
+          <button className="aba-filtro" disabled={refinando} onClick={() => void refinarPorEstrada()}>
+            {refinando ? '🛣 calculando…' : ordemEstrada ? '🛣 por estrada ✔' : '🛣 refinar por estrada'}
+          </button>
+        )}
+      </div>
+      {porProximidade && (
+        <div className="ordenacao-nota">
+          {erroOrdem
+            ? `⚠ ${erroOrdem} — seguindo pela distância em linha reta.`
+            : ordemEstrada
+              ? 'Ordem por distância de estrada, a partir de onde você está.'
+              : 'Ordem por distância em linha reta (funciona sem sinal). A ordem oficial da rota não muda.'}
+        </div>
+      )}
+
+      {paradasNaTela.length === 0 && (
         <div className="vazio-filtro">Nenhuma parada neste filtro.</div>
       )}
 
-      {paradasFiltradas.map((p) => (
+      {paradasNaTela.map((p) => (
         <article key={p.ordem} className={`parada${p.status === 'trilha' ? ' rural' : ''}`}>
-          <div className="ordem">PARADA {String(p.ordem).padStart(2, '0')}</div>
+          <div className="ordem">
+            PARADA {String(p.ordem).padStart(2, '0')}
+            {p.distanciaM != null && (
+              <span className="parada-distancia">· {formatarDistancia(p.distanciaM)}</span>
+            )}
+            {p.pedidoId != null && p.pedidoId === proximaPedidoId && (
+              <span className="chip-proxima">PRÓXIMA</span>
+            )}
+          </div>
           <h2>{p.cliente}</h2>
           <div className="endereco">{p.endereco}</div>
           <div className="carga">

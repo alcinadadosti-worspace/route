@@ -346,6 +346,44 @@
   padding: 20px;
 }
 
+/* Ordenação por proximidade — visão do motorista, não altera a rota publicada */
+.ordenacao {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.ordenacao-aviso {
+  font-family: var(--fonte-mono);
+  font-size: 0.78rem;
+  color: var(--texto-2);
+}
+
+.ordenacao-nota {
+  font-size: 0.8rem;
+  color: var(--texto-2);
+  margin-bottom: 12px;
+}
+
+.parada-distancia {
+  margin-left: 6px;
+  color: var(--texto-2);
+}
+
+.chip-proxima {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ambar);
+  color: #121212;
+  font-family: var(--fonte-caps);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
 /* Zona rural (navegar e mapear) — card com destaque laranja bem visível. */
 .parada.rural {
   border-color: var(--laranja-seg);

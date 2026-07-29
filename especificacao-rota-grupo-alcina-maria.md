@@ -315,6 +315,16 @@ A trilha bruta (pontos + timestamps + accuracy) vai para a fila de sincronizaç�
 - **Trecho 2 — fora da malha:** trilha desenhada + seta de direção + distância em linha reta até o pin. Direção por `deviceorientationabsolute` (bússola) quando disponível; fallback: rumo derivado do deslocamento GPS (funciona sempre que o veículo está em movimento).
 - **Chegada:** raio de ~30 m do pin aciona o cartão de confirmação (RF-18).
 
+### 11.6 "Mais perto de mim" — reordenação em campo
+A ordem publicada é calculada **uma vez, no escritório, partindo do CD**. Quando o dia sai do plano — o motorista não saiu do CD, começou por outra parada, um cliente pediu para adiantar — o resto da rota fica desotimizado e nada recalcula sozinho. O app oferece então uma **visão** por proximidade, com duas fontes de ordem:
+
+- **linha reta (padrão, offline):** haversine da posição atual até cada parada, com a lista reordenada e a distância no cartão. Não é medida de quilometragem, é comparação — para escolher *qual* é a próxima, o erro da linha reta raramente inverte a resposta. Funciona sem sinal nenhum, que é o caso normal em campo;
+- **estrada (botão, online):** `POST /api/rotas/:rotaId/ordem-sugerida` manda a posição atual, a API roda o `/trip` do OSRM a partir dali sobre as paradas que faltam (`roundtrip=false` — o motorista quer terminar, não voltar) e devolve a ordem. Exige rede e acorda o OSRM; falha com mensagem e a lista continua na linha reta.
+
+**As duas apenas sugerem: nada é gravado na rota.** O documento da rota é reescrito pelo app a cada confirmação de entrega (o array `paradas` inteiro) — se o servidor reescrevesse esse mesmo array, uma confirmação feita no mesmo instante seria apagada, e a ordem que o escritório publicou e acompanha mudaria sozinha. O número oficial da parada continua impresso no cartão, e a parada já resolvida nunca disputa "a próxima".
+
+O que **não** existe (e não é acidente): recálculo automático ao desviar do traçado. O basemap embarcado é PMTiles, que é desenho e não grafo de roteirização — turn-by-turn com re-rota em campo exigiria um motor de rota com grafo no aparelho, outra arquitetura (RF-22 é a evolução registrada).
+
 ### 11.4 Ponto empírico que sustenta tudo isso
 O receptor GNSS do celular **não depende de internet** — rede só acelera o primeiro fix (A-GPS). Portanto gravação e navegação funcionam integralmente offline; o que a rede faz é sincronizar depois. É isso que torna a Starlink um conforto operacional na base, e não um pré-requisito do sistema em campo.
 

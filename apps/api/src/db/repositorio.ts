@@ -33,6 +33,7 @@ export interface Repositorio {
    * ainda `pronto_para_rota` (que entrariam numa segunda rota).
    */
   publicarRotaAtomica(rotaId: string, rota: Rota, pedidoIds: string[]): Promise<void>;
+  obterRota(rotaId: string): Promise<({ id: string } & Rota) | null>;
   listarRotas(): Promise<Array<{ id: string } & Rota>>;
   atualizarCliente(clienteId: string, campos: Partial<Cliente>): Promise<void>;
   salvarTrilhaBruta(id: string, bruta: TrilhaBruta): Promise<void>;
@@ -110,6 +111,11 @@ export class RepositorioMemoria implements Repositorio {
       const pedido = this.pedidos.get(id);
       if (pedido) this.pedidos.set(id, { ...pedido, status: 'em_rota', rotaId });
     }
+  }
+
+  async obterRota(rotaId: string): Promise<({ id: string } & Rota) | null> {
+    const rota = this.rotas.get(rotaId);
+    return rota ? { id: rotaId, ...rota } : null;
   }
 
   async listarRotas(): Promise<Array<{ id: string } & Rota>> {

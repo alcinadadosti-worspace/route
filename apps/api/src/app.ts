@@ -9,11 +9,19 @@ import {
 } from './importacao/servico.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
+import { sugerirOrdemDeParadas } from './rotas/ordem-sugerida.js';
 import { processarTrilhasBrutas, type RelatorioProcessamento } from './trilhas/processar.js';
 import type { Repositorio } from './db/repositorio.js';
 import type { Geocodificador } from './geocodificacao/google.js';
 import type { ClienteOsrm } from './rotas/osrm.js';
-import type { Autenticador } from './auth/autenticador.js';
+import type { Autenticador, UsuarioAutenticado } from './auth/autenticador.js';
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** Preenchido pelo hook de autenticação; null quando a API roda sem ela. */
+    usuario: UsuarioAutenticado | null;
+  }
+}
 
 export interface OpcoesApp {
   repo: Repositorio;
@@ -61,6 +69,7 @@ export async function criarApp({
   // gate por prefixo, embora case o handler — seria bypass total da auth.
   // OPTIONS passa (preflight CORS não leva Authorization). Sem autenticador a
   // API segue aberta — só em dev/CI sem credenciais, avisado no log da subida.
+  app.decorateRequest('usuario', null);
   if (autenticador) {
     app.addHook('onRequest', async (req, reply) => {
       if (req.method === 'OPTIONS') return;
@@ -70,6 +79,8 @@ export async function criarApp({
       if (!token) return reply.code(401).send({ erro: 'Autenticação necessária' });
       const usuario = await autenticador.verificar(token);
       if (!usuario) return reply.code(401).send({ erro: 'Token inválido ou expirado' });
+      // Handlers que decidem por DONO (não só por papel) leem daqui.
+      req.usuario = usuario;
       const papeis = (req.routeOptions?.config as ConfigRota | undefined)?.papeis;
       if (papeis && !papeis.includes(usuario.papel)) {
         return reply.code(403).send({ erro: 'Sem permissão para esta operação' });
@@ -169,6 +180,25 @@ export async function criarApp({
         .send({ erro: resultado.erro, pendentes: resultado.pendentes });
     }
     return { rotaId: resultado.rotaId, rota: resultado.rota };
+  });
+
+  // Ordem sugerida das paradas que faltam, a partir de onde o motorista ESTÁ
+  // (o app usa como visão; a ordem publicada não muda — ver ordem-sugerida.ts).
+  // Qualquer papel conhecido: quem chama é o motorista, e o handler confere que
+  // a rota é dele.
+  app.post('/api/rotas/:rotaId/ordem-sugerida', { config: { papeis: TODOS } }, async (req, reply) => {
+    if (!osrm) {
+      return reply.code(503).send({ erro: 'Roteirizador indisponível (OSRM_URL não configurada)' });
+    }
+    const { rotaId } = req.params as { rotaId: string };
+    const corpo = (req.body ?? {}) as { origem?: { lat: number; lng: number } };
+    const resultado = await sugerirOrdemDeParadas(
+      { rotaId, origem: corpo.origem, uid: req.usuario?.uid ?? null },
+      repo,
+      osrm,
+    );
+    if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+    return { ordem: resultado.ordem };
   });
 
   app.get('/api/trilhas', { config: { papeis: ESCRITORIO } }, async () => repo.listarTrilhas());

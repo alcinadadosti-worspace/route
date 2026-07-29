@@ -95,6 +95,11 @@ class RepositorioFirestore implements Repositorio {
     await lote.commit();
   }
 
+  async obterRota(rotaId: string): Promise<({ id: string } & Rota) | null> {
+    const doc = await this.db.collection('rotas').doc(rotaId).get();
+    return doc.exists ? { id: doc.id, ...(doc.data() as Rota) } : null;
+  }
+
   async listarRotas(): Promise<Array<{ id: string } & Rota>> {
     const resposta = await this.db.collection('rotas').orderBy('publicadaEm', 'desc').get();
     return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Rota) }));
