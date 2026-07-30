@@ -72,7 +72,7 @@ export function calcularProdutividade(
     pinsConfirmados: 0,
     trilhasGravadas: 0,
     itensEntregues: 0,
-    unidadesEntregues: 0,
+    produtosDistintos: 0,
     volumesEntregues: 0,
     pesoEntregueKg: 0,
     entregasSemCarga: 0,
@@ -109,7 +109,7 @@ export function calcularProdutividade(
       entregues: 0,
       insucessos: 0,
       itensEntregues: 0,
-      unidadesEntregues: 0,
+      produtosDistintos: 0,
       volumesEntregues: 0,
       pesoEntregueKg: 0,
       entregasSemCarga: 0,
@@ -138,10 +138,11 @@ export function calcularProdutividade(
       m.entregues += 1;
       daqui.entregues += 1;
       if (!parada) continue;
-      // Mercadoria que saiu do caminhão. `itens` são LINHAS da nota; `unidades`
-      // é a soma das quantidades — três vezes maior, nas notas reais.
-      daqui.itensEntregues += parada.itens.length;
-      daqui.unidadesEntregues += parada.itens.reduce(
+      // Mercadoria que saiu do caminhão. ITEM é a soma das quantidades (`qCom`),
+      // que é o que a operação chama de item; a contagem de linhas vai separada,
+      // porque é três vezes menor nas notas reais.
+      daqui.produtosDistintos += parada.itens.length;
+      daqui.itensEntregues += parada.itens.reduce(
         (soma, item) => soma + (Number.isFinite(item.quantidade) ? item.quantidade : 0),
         0,
       );
@@ -155,10 +156,12 @@ export function calcularProdutividade(
       }
     }
 
-    daqui.unidadesEntregues = Math.round(daqui.unidadesEntregues);
+    // `qCom` vem como '3.0000' e nunca fracionário nas 28.088 linhas reais; o
+    // arredondamento aqui só protege contra soma de ponto flutuante.
+    daqui.itensEntregues = Math.round(daqui.itensEntregues);
     daqui.pesoEntregueKg = Math.round(daqui.pesoEntregueKg * 1000) / 1000;
     m.itensEntregues += daqui.itensEntregues;
-    m.unidadesEntregues += daqui.unidadesEntregues;
+    m.produtosDistintos += daqui.produtosDistintos;
     m.volumesEntregues += daqui.volumesEntregues;
     m.pesoEntregueKg = Math.round((m.pesoEntregueKg + daqui.pesoEntregueKg) * 1000) / 1000;
     m.entregasSemCarga += daqui.entregasSemCarga;

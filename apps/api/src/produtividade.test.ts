@@ -232,9 +232,9 @@ test('rota sem nenhuma entrega ainda: aparece com volume, sem ritmo inventado', 
   assert.equal(m.minutosEmRota, null);
 });
 
-test('linha de nota e unidade são números DIFERENTES — não podem ser confundidos', () => {
-  // Nas notas reais a média é 8,3 linhas contra 24,1 unidades: chamar linha de
-  // "item" subestima o trabalho em três vezes.
+test('item é a soma das quantidades, não a contagem de linhas da nota', () => {
+  // Nas 3507 notas reais a média é 24,1 itens em 8,3 linhas: contar linha em vez
+  // de quantidade subestimaria o trabalho em três vezes.
   const r = calcularProdutividade(
     { desde: '2026-07-29', ate: '2026-07-29' },
     {
@@ -254,8 +254,8 @@ test('linha de nota e unidade são números DIFERENTES — não podem ser confun
 
   assert.ok(r.ok);
   const m = r.relatorio.motoristas[0]!;
-  assert.equal(m.itensEntregues, 4, '3 linhas + 1 linha');
-  assert.equal(m.unidadesEntregues, 26, '12+6+6+2');
+  assert.equal(m.itensEntregues, 26, 'qCom somado: 12+6+6+2');
+  assert.equal(m.produtosDistintos, 4, 'linhas de nota: 3 + 1');
 });
 
 test('mercadoria que NÃO foi entregue não entra na conta — voltou no caminhão', () => {
@@ -278,8 +278,8 @@ test('mercadoria que NÃO foi entregue não entra na conta — voltou no caminh�
 
   assert.ok(r.ok);
   const m = r.relatorio.motoristas[0]!;
-  assert.equal(m.itensEntregues, 1);
-  assert.equal(m.unidadesEntregues, 10);
+  assert.equal(m.produtosDistintos, 1);
+  assert.equal(m.itensEntregues, 10);
   assert.equal(m.volumesEntregues, 3);
   assert.equal(m.pesoEntregueKg, 5.5, 'os 900 kg recusados não podem contar como entregues');
 });
@@ -306,7 +306,7 @@ test('nota sem volume nem peso é contada à parte — o peso somado é só o de
   assert.ok(r.ok);
   const m = r.relatorio.motoristas[0]!;
   assert.equal(m.entregues, 2);
-  assert.equal(m.unidadesEntregues, 11, 'unidade é contada mesmo sem volume/peso na nota');
+  assert.equal(m.itensEntregues, 11, 'item é contado mesmo sem volume/peso na nota');
   assert.equal(m.volumesEntregues, 2);
   assert.equal(m.pesoEntregueKg, 4.5);
   assert.equal(m.entregasSemCarga, 1, 'sem este número o peso passaria por carga total do dia');
@@ -335,7 +335,7 @@ test('detalhe por rota: uma linha por rota, mais recente primeiro, somando o tot
     ['2026-07-28', '2026-07-20'],
   );
   assert.deepEqual(
-    m.rotas_detalhe.map((d) => d.unidadesEntregues),
+    m.rotas_detalhe.map((d) => d.itensEntregues),
     [1, 10],
   );
   assert.deepEqual(
@@ -345,8 +345,8 @@ test('detalhe por rota: uma linha por rota, mais recente primeiro, somando o tot
   // O detalhe tem de fechar com o total: se divergir, um dos dois está errado.
   const soma = (f: (d: (typeof m.rotas_detalhe)[number]) => number) =>
     m.rotas_detalhe.reduce((s, d) => s + f(d), 0);
+  assert.equal(soma((d) => d.produtosDistintos), m.produtosDistintos);
   assert.equal(soma((d) => d.itensEntregues), m.itensEntregues);
-  assert.equal(soma((d) => d.unidadesEntregues), m.unidadesEntregues);
   assert.equal(soma((d) => d.pesoEntregueKg), m.pesoEntregueKg);
   assert.equal(soma((d) => d.entregues), m.entregues);
 });
@@ -362,7 +362,7 @@ test('rota publicada e não executada aparece no detalhe com zero, não desapare
   assert.equal(detalhe.length, 1);
   assert.equal(detalhe[0]!.paradas, 2);
   assert.equal(detalhe[0]!.entregues, 0);
-  assert.equal(detalhe[0]!.unidadesEntregues, 0);
+  assert.equal(detalhe[0]!.itensEntregues, 0);
 });
 
 test('sincronização offline fora de ordem não vira intervalo negativo', () => {

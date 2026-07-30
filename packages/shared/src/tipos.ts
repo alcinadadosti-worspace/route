@@ -265,13 +265,19 @@ export interface ProdutividadeMotorista {
   pinsConfirmados: number;
   trilhasGravadas: number;
   /**
-   * Volume de mercadoria efetivamente entregue. `itens` conta LINHAS da nota e
-   * `unidades` soma as quantidades — não é a mesma coisa: nas notas reais a
-   * média é 8,3 linhas contra 24,1 unidades por nota, então chamar linha de
-   * "item" subestima o trabalho em três vezes.
+   * Mercadoria efetivamente entregue.
+   *
+   * `itensEntregues` é a SOMA DAS QUANTIDADES (`qCom` de cada linha da nota) —
+   * "item" no sentido que a operação usa: três frascos do mesmo desodorante são
+   * três itens. `produtosDistintos` é quantas LINHAS a nota tem. Os dois não se
+   * confundem porque nas 3507 notas reais a média é 24,1 itens em 8,3 linhas:
+   * contar linha em vez de quantidade subestimaria o trabalho em três vezes.
+   *
+   * Somar quantidades entre linhas só é legítimo porque `uCom` é `UN` nas 28.088
+   * linhas da base — não há caixa nem fardo se misturando à unidade.
    */
   itensEntregues: number;
-  unidadesEntregues: number;
+  produtosDistintos: number;
   volumesEntregues: number;
   pesoEntregueKg: number;
   /**
@@ -291,8 +297,9 @@ export interface ProdutividadeRota {
   paradas: number;
   entregues: number;
   insucessos: number;
+  /** Soma das quantidades; ver `ProdutividadeMotorista.itensEntregues`. */
   itensEntregues: number;
-  unidadesEntregues: number;
+  produtosDistintos: number;
   volumesEntregues: number;
   pesoEntregueKg: number;
   entregasSemCarga: number;

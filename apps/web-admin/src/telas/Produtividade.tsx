@@ -136,6 +136,10 @@ function Cartao({ m, nome }: { m: ProdutividadeMotorista; nome: string }) {
         <Metrica valor={`${executadas}/${m.paradasPlanejadas}`} rotulo="Paradas executadas" />
         <Metrica valor={conclusao == null ? '—' : `${conclusao}%`} rotulo="Conclusão" />
         <Metrica valor={m.entregues} rotulo="Entregues" />
+        {/* O que o escritório procura ao abrir a aba: quanta mercadoria passou
+            pela mão do motorista. Fica junto com "Entregues" porque é a mesma
+            pergunta em outra unidade — parada não diz se foi 1 item ou 653. */}
+        <Metrica valor={num(m.itensEntregues)} rotulo="Itens entregues" />
         <Metrica valor={m.insucessos} rotulo="Insucessos" />
         <Metrica valor={m.kmPlanejados} rotulo="km planejados" />
         <Metrica
@@ -146,24 +150,27 @@ function Cartao({ m, nome }: { m: ProdutividadeMotorista; nome: string }) {
       </div>
 
       {/* Mercadoria que efetivamente saiu do caminhão. Fica em bloco próprio
-          porque "20 paradas" e "480 unidades" medem coisas diferentes: uma
-          parada pode ser uma caixa ou um palete. */}
+          porque "20 paradas" e "480 itens" medem coisas diferentes: uma parada
+          pode ser um frasco ou 653 deles (a maior linha da base real). */}
       <div className="produtividade-linha carga">
-        <strong>Mercadoria entregue:</strong> {num(m.unidadesEntregues)} unidade(s) em{' '}
-        {num(m.itensEntregues)} linha(s) de nota
+        <strong>Mercadoria entregue:</strong> {num(m.itensEntregues)} item(ns) em{' '}
+        {num(m.produtosDistintos)} produto(s) distinto(s)
         {m.volumesEntregues > 0 && ` · ${num(m.volumesEntregues)} volume(s)`}
         {m.pesoEntregueKg > 0 && ` · ${kg(m.pesoEntregueKg)}`}
         <div className="produtividade-nota">
-          <strong>Unidade</strong> é a soma das quantidades; <strong>linha de nota</strong> é quantos
-          produtos distintos. Nas notas desta operação a média é 8 linhas contra 24 unidades por
-          nota — por isso os dois números aparecem.
+          <strong>Item</strong> é a soma das quantidades da nota (
+          <span className="mono">qCom</span>): três frascos do mesmo desodorante contam três.{' '}
+          <strong>Produtos distintos</strong> é quantas linhas a nota tem. Nesta base a média é 24
+          itens em 8 linhas por nota — os dois aparecem para não se confundirem. Toda a base é
+          vendida em <span className="mono">UN</span>, sem caixa nem fardo, então a soma dá um número
+          comparável entre motoristas.
           {m.entregasSemCarga > 0 && (
             <>
               {' '}
               Já <strong>volume e peso são parciais</strong>: em {m.entregasSemCarga} das{' '}
               {m.entregues} entregas a nota não trouxe nenhum dos dois (o ERP emissor manda zerado),
               e há nota que informa um sem o outro. O que está somado é a parte declarada — não a
-              carga real do período. Unidades e linhas, sim, saem de toda nota.
+              carga real do período. Itens e produtos, sim, saem de toda nota.
             </>
           )}
         </div>
@@ -217,8 +224,9 @@ function TabelaRotas({ rotas }: { rotas: ProdutividadeRota[] }) {
             <th>Dia</th>
             <th>Rota</th>
             <th>Paradas</th>
-            <th>Unidades</th>
-            <th>Linhas</th>
+            <th>Itens</th>
+            <th>Itens/entrega</th>
+            <th>Produtos</th>
             <th>Volumes</th>
             <th>Peso</th>
             <th>km</th>
@@ -238,15 +246,20 @@ function TabelaRotas({ rotas }: { rotas: ProdutividadeRota[] }) {
                 <td className="mono">
                   {r.entregues + r.insucessos}/{r.paradas}
                 </td>
-                <td className="mono">{num(r.unidadesEntregues)}</td>
                 <td className="mono">{num(r.itensEntregues)}</td>
+                {/* Uma rota de 400 itens em 20 paradas não é a mesma coisa que
+                    400 numa só: é isto que separa carga pesada de rota grande. */}
+                <td className="mono">
+                  {r.entregues > 0 ? Math.round(r.itensEntregues / r.entregues) : '—'}
+                </td>
+                <td className="mono">{num(r.produtosDistintos)}</td>
                 <td className="mono">{r.volumesEntregues || '—'}</td>
                 <td className="mono">{r.pesoEntregueKg > 0 ? kg(r.pesoEntregueKg) : '—'}</td>
                 <td className="mono">{r.kmPlanejados}</td>
               </tr>
               {r.entregasSemCarga > 0 && (
                 <tr className="nota-linha">
-                  <td colSpan={8}>
+                  <td colSpan={9}>
                     {r.entregasSemCarga} de {r.entregues} entrega(s) desta rota sem volume nem peso
                     na nota — as colunas Volumes e Peso ficam abaixo do que saiu de fato.
                   </td>
