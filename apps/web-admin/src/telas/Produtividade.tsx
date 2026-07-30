@@ -126,7 +126,23 @@ export function Produtividade() {
   );
 }
 
-function Cartao({ m, nome }: { m: ProdutividadeMotorista; nome: string }) {
+function Cartao({ m: bruto, nome }: { m: ProdutividadeMotorista; nome: string }) {
+  /**
+   * Painel e API sobem SEPARADOS no Render, e um deploy pode falhar sozinho —
+   * já aconteceu. Com o painel novo contra a API antiga, `itensEntregues` e
+   * `rotas_detalhe` vêm ausentes e `undefined.toLocaleString()` derrubaria a aba
+   * inteira em tela branca. Faltando o campo, mostra zero: número velho é
+   * ruim, tela quebrada é pior.
+   */
+  const m: ProdutividadeMotorista = {
+    ...bruto,
+    itensEntregues: bruto.itensEntregues ?? 0,
+    produtosDistintos: bruto.produtosDistintos ?? 0,
+    volumesEntregues: bruto.volumesEntregues ?? 0,
+    pesoEntregueKg: bruto.pesoEntregueKg ?? 0,
+    entregasSemCarga: bruto.entregasSemCarga ?? 0,
+    rotas_detalhe: bruto.rotas_detalhe ?? [],
+  };
   const executadas = m.entregues + m.insucessos;
   const conclusao = m.paradasPlanejadas > 0 ? Math.round((executadas / m.paradasPlanejadas) * 100) : null;
   const motivos = Object.entries(m.porMotivo);
