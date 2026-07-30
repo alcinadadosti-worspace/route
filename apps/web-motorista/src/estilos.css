@@ -1005,3 +1005,67 @@
   line-height: 1.4;
   color: var(--ambar);
 }
+
+/* Abas de rota: abertas (o trabalho) e fechadas (o histórico). */
+.abas-rota {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.aba-rota {
+  flex: 1;
+  min-height: var(--alvo-toque);
+  font-size: 0.9rem;
+  padding: 0 12px;
+}
+
+.aba-rota[aria-selected='true'] {
+  background: var(--ambar);
+  border-color: var(--ambar);
+  color: #121212;
+  font-weight: 700;
+}
+
+/* Qual rota, quando há mais de uma na aba. Rola na horizontal para não empurrar
+   a lista de paradas para baixo da dobra. */
+.seletor-rota {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 10px;
+}
+
+.chip-rota {
+  min-height: var(--alvo-toque);
+  padding: 0 14px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.chip-rota.ativa {
+  border-color: var(--ambar);
+  color: var(--ambar);
+}
+
+.vazio-rota {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--texto-2);
+}
+
+/* Fechar a rota é o último ato do dia: largura toda, no fim da rolagem, longe
+   do polegar que estava confirmando entregas. */
+.fechar-rota,
+.reabrir-rota {
+  width: 100%;
+  min-height: var(--alvo-toque);
+  margin-top: 20px;
+  font-weight: 700;
+}
+
+.fechar-rota {
+  border-color: var(--ambar);
+  color: var(--ambar);
+}

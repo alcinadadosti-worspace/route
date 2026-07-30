@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import type { Rota } from '@rota/shared';
 import { db } from './firebase';
-import { escolherRotaAtiva, rotasAbertasEmEspera } from './rotaAtiva';
+import { escolherRotaAtiva } from './rotaAtiva';
 
 /**
  * Rota do dia do motorista logado (RF-16): assinatura em tempo real da rota
@@ -10,19 +10,20 @@ import { escolherRotaAtiva, rotasAbertasEmEspera } from './rotaAtiva';
  * resposta continua disponível offline.
  */
 export function useRotaDoDia(uid: string | null) {
-  const [rota, setRota] = useState<({ id: string } & Rota) | null>(null);
   /**
-   * Outras rotas ABERTAS dele que não estão na tela. O app mostra uma só; sem
-   * este aviso, uma segunda rota publicada no meio do dia ficava invisível com
-   * os pedidos presos em `em_rota`, e ninguém percebia.
+   * TODAS as rotas da janela — abertas e fechadas. O app mostra uma por vez,
+   * mas quem escolhe é o motorista: ele tem abas de abertas e de fechadas.
+   * `rota` é só a escolha PADRÃO, para ele não ter de escolher nada no dia
+   * normal de uma rota só.
    */
-  const [emEspera, setEmEspera] = useState<Array<{ id: string } & Rota>>([]);
+  const [rotas, setRotas] = useState<Array<{ id: string } & Rota>>([]);
+  const [rota, setRota] = useState<({ id: string } & Rota) | null>(null);
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
     if (!uid) {
+      setRotas([]);
       setRota(null);
-      setEmEspera([]);
       setCarregando(false);
       return;
     }
@@ -41,17 +42,18 @@ export function useRotaDoDia(uid: string | null) {
     return onSnapshot(
       consulta,
       (resposta) => {
-        const rotas = resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Rota) }));
+        const todas = resposta.docs
+          .map((d) => ({ id: d.id, ...(d.data() as Rota) }))
+          .filter((r) => r.status !== 'rascunho');
+        setRotas(todas);
         // A regra de escolha vive em `rotaAtiva.ts`, com teste: é ela que
-        // decide o que acontece quando existe mais de uma rota aberta.
-        const escolhida = escolherRotaAtiva(rotas);
-        setRota(escolhida);
-        setEmEspera(rotasAbertasEmEspera(rotas, escolhida));
+        // decide qual rota abre sozinha quando há mais de uma.
+        setRota(escolherRotaAtiva(todas));
         setCarregando(false);
       },
       () => setCarregando(false),
     );
   }, [uid]);
 
-  return { rota, emEspera, carregando };
+  return { rotas, rota, carregando };
 }

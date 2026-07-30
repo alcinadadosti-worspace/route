@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Rota } from '@rota/shared';
-import { escolherRotaAtiva, rotasAbertasEmEspera } from './rotaAtiva.js';
+import {
+  escolherRotaAtiva,
+  paradasPorResolver,
+  rotasAbertasEmEspera,
+  separarRotas,
+} from './rotaAtiva.js';
 
 function rota(
   id: string,
@@ -80,4 +85,34 @@ test('rascunho nunca chega ao motorista', () => {
   const rascunho = rota('r1', '2026-07-30', 'rascunho', null);
   assert.equal(escolherRotaAtiva([rascunho]), null);
   assert.deepEqual(rotasAbertasEmEspera([rascunho], null), []);
+});
+
+test('abas: abertas e fechadas, cada uma da mais recente para a mais antiga', () => {
+  const lista = [
+    rota('r1', '2026-07-28', 'concluida', '2026-07-28T07:00:00-03:00'),
+    rota('r2', '2026-07-30', 'publicada', '2026-07-30T07:00:00-03:00'),
+    rota('r3', '2026-07-29', 'concluida', '2026-07-29T07:00:00-03:00'),
+    rota('r4', '2026-07-30', 'em_execucao', '2026-07-30T06:00:00-03:00'),
+    rota('r5', '2026-07-30', 'rascunho', null),
+  ];
+  const { abertas, fechadas } = separarRotas(lista);
+  assert.deepEqual(abertas.map((r) => r.id), ['r2', 'r4'], 'rascunho fica de fora');
+  assert.deepEqual(fechadas.map((r) => r.id), ['r3', 'r1'], 'histórico: o último dia no topo');
+});
+
+test('paradas por resolver ignora o que já foi entregue ou deu insucesso', () => {
+  const r = rota('r1', '2026-07-30', 'em_execucao', '2026-07-30T07:00:00-03:00');
+  r.paradas = [
+    { status: 'entregue' },
+    { status: 'insucesso' },
+    { status: 'em_rota' },
+    { status: 'em_rota' },
+  ] as never;
+  assert.equal(paradasPorResolver(r), 2, 'é o número que o aviso de fechar precisa dizer');
+});
+
+test('rota inteira resolvida não tem nada por resolver', () => {
+  const r = rota('r1', '2026-07-30', 'em_execucao', '2026-07-30T07:00:00-03:00');
+  r.paradas = [{ status: 'entregue' }, { status: 'insucesso' }] as never;
+  assert.equal(paradasPorResolver(r), 0);
 });

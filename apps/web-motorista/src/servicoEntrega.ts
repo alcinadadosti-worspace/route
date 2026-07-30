@@ -78,6 +78,33 @@ export function registrarAviso(rota: { id: string } & Rota, pedidoId: string): v
   );
 }
 
+/**
+ * Fecha a rota por decisão do motorista — não só quando a última parada é
+ * confirmada. Quem sabe que o dia acabou é ele: deu a hora, o tempo fechou, a
+ * estrada do povoado alagou. Paradas não resolvidas ficam como estão, e o
+ * escritório vê no acompanhamento.
+ *
+ * Vai pela fila offline como o resto: fechar a rota sem sinal, no fim da linha,
+ * é o caso NORMAL aqui, não a exceção.
+ */
+export function fecharRota(rotaId: string): void {
+  updateDoc(doc(db, 'rotas', rotaId), {
+    status: 'concluida',
+    concluidaEm: new Date().toISOString(),
+  }).catch((erro) => console.error('Falha ao fechar a rota', erro));
+}
+
+/**
+ * Desfaz o fechamento. Existe porque a alternativa é um beco: fechada por
+ * engano com paradas por entregar, o motorista não teria como voltar a
+ * entregá-las — e as regras já permitem `em_execucao`.
+ */
+export function reabrirRota(rotaId: string): void {
+  updateDoc(doc(db, 'rotas', rotaId), { status: 'em_execucao', concluidaEm: null }).catch((erro) =>
+    console.error('Falha ao reabrir a rota', erro),
+  );
+}
+
 function posicaoAtual(): Promise<GeoPonto | null> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);

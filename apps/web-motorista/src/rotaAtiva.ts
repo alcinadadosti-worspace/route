@@ -46,3 +46,27 @@ export function rotasAbertasEmEspera<T extends { id: string } & Rota>(
     (r) => r.status !== 'rascunho' && r.status !== 'concluida' && r.id !== (atual?.id ?? ''),
   );
 }
+
+export type AbaRota = 'abertas' | 'fechadas';
+
+/**
+ * As duas listas do motorista. ABERTAS primeiro pela data mais próxima de hoje
+ * (é o trabalho); FECHADAS em ordem inversa, que é como se lê histórico — o
+ * último dia no topo.
+ */
+export function separarRotas<T extends { id: string } & Rota>(
+  rotas: T[],
+): Record<AbaRota, T[]> {
+  const validas = rotas.filter((r) => r.status !== 'rascunho');
+  const porDataDesc = (a: T, b: T) =>
+    b.data.localeCompare(a.data) || (b.publicadaEm ?? '').localeCompare(a.publicadaEm ?? '');
+  return {
+    abertas: validas.filter((r) => r.status !== 'concluida').sort(porDataDesc),
+    fechadas: validas.filter((r) => r.status === 'concluida').sort(porDataDesc),
+  };
+}
+
+/** Quanto falta numa rota — o número que decide o texto do aviso de fechar. */
+export function paradasPorResolver(rota: Rota): number {
+  return rota.paradas.filter((p) => p.status !== 'entregue' && p.status !== 'insucesso').length;
+}

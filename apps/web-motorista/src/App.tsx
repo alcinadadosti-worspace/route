@@ -21,7 +21,8 @@ import { useConfigGeral } from './useConfigGeral';
 import { useMapaOffline } from './useMapaOffline';
 import { estiloMapa, type Tema } from './estiloMapa';
 import { tipoDeRede } from './mapaOffline';
-import { registrarAviso, registrarResultado } from './servicoEntrega';
+import { fecharRota, reabrirRota, registrarAviso, registrarResultado } from './servicoEntrega';
+import { paradasPorResolver, separarRotas, type AbaRota } from './rotaAtiva';
 import { dispararProcessamento, ordemSugerida } from './servicoMapeamento';
 import { processarFilaFotos } from './servicoFotos';
 import { usePosicao } from './usePosicao';
@@ -110,7 +111,25 @@ function versaoLegivel(versao: string): string {
 export function App() {
   const [tema, setTema] = useState<Tema>('galpao');
   const { usuario, carregando, entrar, sair } = useAutenticacao();
-  const { rota, emEspera } = useRotaDoDia(usuario?.uid ?? null);
+  const { rotas, rota: rotaPadrao } = useRotaDoDia(usuario?.uid ?? null);
+  /** Aba de rotas e rota escolhida à mão; null = a que abre sozinha. */
+  const [abaRota, setAbaRota] = useState<AbaRota>('abertas');
+  const [rotaEscolhidaId, setRotaEscolhidaId] = useState<string | null>(null);
+  const listas = useMemo(() => separarRotas(rotas), [rotas]);
+  /**
+   * A rota na tela. A escolha à mão só vale se pertencer à ABA ABERTA — senão
+   * abrir "Fechadas" mostraria a rota aberta que estava selecionada. Sem
+   * escolha válida, cai na primeira da aba (nas abertas, na automática, que é a
+   * regra testada em rotaAtiva.ts).
+   */
+  const rota = useMemo(() => {
+    const escolhida = rotas.find((r) => r.id === rotaEscolhidaId);
+    const daAba = listas[abaRota];
+    if (escolhida && daAba.some((r) => r.id === escolhida.id)) return escolhida;
+    if (abaRota === 'abertas') return rotaPadrao ?? daAba[0] ?? null;
+    return daAba[0] ?? null;
+  }, [rotas, rotaEscolhidaId, rotaPadrao, listas, abaRota]);
+  const rotaFechada = rota?.status === 'concluida';
   const dossies = useClientesDaRota(rota);
   const config = useConfigGeral(usuario?.uid ?? null);
   const mapaOffline = useMapaOffline(config);
@@ -197,6 +216,34 @@ export function App() {
   const [ordemEstrada, setOrdemEstrada] = useState<string[] | null>(null);
   const [refinando, setRefinando] = useState(false);
   const [erroOrdem, setErroOrdem] = useState<string | null>(null);
+
+  /**
+   * Fechar é decisão dele, a qualquer momento — mas com o número na frente:
+   * "fechar com 4 por entregar" é uma escolha diferente de "fechar tudo feito",
+   * e o aviso tem de dizer qual das duas ele está tomando.
+   */
+  function fechar() {
+    if (!rota) return;
+    const faltam = paradasPorResolver(rota);
+    const texto =
+      faltam > 0
+        ? `Fechar a rota com ${faltam} parada(s) POR ENTREGAR?\n\n` +
+          'Elas ficam sem registro de entrega e o escritório vai ter de resolver. ' +
+          'A rota vai para o histórico — você pode reabrir depois, se foi engano.'
+        : 'Fechar a rota? Tudo foi resolvido. Ela vai para o histórico, na aba Fechadas.';
+    if (!window.confirm(texto)) return;
+    fecharRota(rota.id);
+    setAbaRota('fechadas');
+    setRotaEscolhidaId(rota.id);
+  }
+
+  function reabrir() {
+    if (!rota) return;
+    if (!window.confirm('Reabrir esta rota e voltar a entregar?')) return;
+    reabrirRota(rota.id);
+    setAbaRota('abertas');
+    setRotaEscolhidaId(rota.id);
+  }
 
   function resolver(pedidoId: string | undefined, resultado: ResultadoEntrega) {
     if (!rota || !pedidoId || !usuario) return;
@@ -453,7 +500,7 @@ export function App() {
           : 'Basemap online — baixe o mapa offline para navegar sem sinal'}
       </div>
 
-      {!rota && (
+      {rotas.length === 0 && (
         <section className="sem-rota">
           <div className="sem-rota-titulo">Nenhuma rota publicada para você</div>
           <p>
@@ -466,18 +513,78 @@ export function App() {
         </section>
       )}
 
+      {/* As abas ficam FORA do bloco da rota: com a aba vazia (só fechadas, ou
+          só abertas) não pode sumir a navegação, senão ele fica preso numa
+          lista vazia sem como voltar. */}
+      {rotas.length > 0 && (
+        <>
+          <nav className="abas-rota" role="tablist" aria-label="Rotas">
+            {(['abertas', 'fechadas'] as const).map((id) => (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={abaRota === id}
+                className="aba-rota"
+                onClick={() => {
+                  setAbaRota(id);
+                  // Escolha à mão zerada: a rota da aba anterior não é desta.
+                  setRotaEscolhidaId(null);
+                  setParadaFocada(null);
+                }}
+              >
+                {id === 'abertas' ? 'Rotas abertas' : 'Fechadas'}{' '}
+                <span className="aba-contagem">{listas[id].length}</span>
+              </button>
+            ))}
+          </nav>
+
+          {/* O seletor só aparece quando há escolha a fazer — numa rota só, ele
+              seria ruído entre o motorista e o trabalho. */}
+          {listas[abaRota].length > 1 && (
+            <div className="seletor-rota">
+              {listas[abaRota].map((r) => {
+                const feitas = r.paradas.filter(
+                  (p) => p.status === 'entregue' || p.status === 'insucesso',
+                ).length;
+                return (
+                  <button
+                    key={r.id}
+                    className={`chip-rota${rota?.id === r.id ? ' ativa' : ''}`}
+                    aria-pressed={rota?.id === r.id}
+                    onClick={() => {
+                      setRotaEscolhidaId(r.id);
+                      setParadaFocada(null);
+                    }}
+                  >
+                    {r.data.slice(8, 10)}/{r.data.slice(5, 7)} · {feitas}/{r.paradas.length}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {listas[abaRota].length === 0 && (
+            <div className="vazio-rota">
+              {abaRota === 'abertas'
+                ? 'Nenhuma rota aberta agora — o que você fechou está na aba Fechadas.'
+                : 'Nenhuma rota fechada nos últimos 7 dias.'}
+            </div>
+          )}
+        </>
+      )}
+
       {rota && (
       <>
-      {/* Outra rota aberta que NÃO está nesta tela. Sem este aviso ela ficava
-          invisível — o escritório publicou, os pedidos foram para `em_rota` e o
-          motorista nunca soube que existia. Ela aparece sozinha quando esta
-          terminar; até lá, pelo menos ele sabe. */}
-      {emEspera.length > 0 && (
+      {rotaFechada && (
         <div className="aviso-outra-rota">
-          ⚠ Você tem mais {emEspera.length === 1 ? 'uma rota' : `${emEspera.length} rotas`} em
-          aberto ({emEspera.reduce((n, r) => n + r.paradas.length, 0)} paradas) que não está nesta
-          tela. Ela abre assim que esta for concluída — se for para trocar agora, fale com o
-          escritório.
+          ✔ Rota fechada{rota?.concluidaEm ? ` às ${horaCurta(rota.concluidaEm)}` : ''}. Você está
+          vendo o histórico — não dá para confirmar entrega aqui.
+          {paradasPorResolver(rota!) > 0 && (
+            <>
+              {' '}
+              Ficaram <strong>{paradasPorResolver(rota!)}</strong> parada(s) sem resolver.
+            </>
+          )}
         </div>
       )}
 
@@ -582,7 +689,10 @@ export function App() {
             {ICONE_STATUS[p.status]} {TEXTO_STATUS[p.status]}
           </span>
 
-          {(p.status === 'pendente' || p.status === 'trilha') && (
+          {/* Rota fechada é histórico: sem botão de confirmar, senão o registro
+              de entrega nasceria depois do fechamento e o relatório do dia
+              mudaria sozinho. Para voltar a entregar, reabra a rota. */}
+          {!rotaFechada && (p.status === 'pendente' || p.status === 'trilha') && (
             <div className="acoes">
               {p.telefone && (
                 <>
@@ -656,6 +766,19 @@ export function App() {
             )}
         </article>
       ))}
+
+      {/* Fechar fica DEPOIS de tudo, no fim da rolagem: é o último ato do dia, e
+          longe do polegar que está confirmando entregas. */}
+      {rota && !rotaFechada && (
+        <button className="fechar-rota" onClick={fechar}>
+          🏁 Fechar esta rota
+        </button>
+      )}
+      {rota && rotaFechada && paradasPorResolver(rota) > 0 && (
+        <button className="reabrir-rota" onClick={reabrir}>
+          ↺ Reabrir rota
+        </button>
+      )}
       </>
       )}
 
