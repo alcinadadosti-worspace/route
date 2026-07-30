@@ -230,12 +230,19 @@ export function Rotas() {
         <h2>Montagem de rota</h2>
 
         <div className="config-rota">
-          {/* O CD sai das notas (CNPJ do emitente): quando elas concordam, não
-              há decisão a tomar e o seletor só atrapalha. Ele reaparece quando
-              o app não sabe — nenhuma nota reconhecida — ou quando o operador
-              pede para trocar, que o dado real mostra acontecer: a filial que
-              fatura nem sempre é o galpão de onde o caminhão sai. */}
-          {cdDasNotas && !trocandoCd ? (
+          {/* Nada selecionado: não há o que configurar nem de onde deduzir o
+              CD. Mostrar a escolha aqui é pedir uma decisão que não serve para
+              nada ainda — o operador escolhe os pedidos primeiro.
+              Com seleção, o CD sai das notas (CNPJ do emitente) e não há
+              decisão a tomar. O seletor só aparece quando o app NÃO SABE
+              (nenhuma nota reconhecida) ou quando o operador pede para trocar —
+              o dado real mostra que a filial que fatura nem sempre é o galpão
+              de onde o caminhão sai. */}
+          {selecionados.size === 0 ? (
+            <div className="cd-definido-fonte">
+              Selecione os pedidos abaixo — o CD de partida vem das notas.
+            </div>
+          ) : cdDasNotas && !trocandoCd ? (
             <div className="cd-definido">
               <div>
                 Partida: <strong>{cds[cdDasNotas]?.nome ?? cdDasNotas}</strong>
@@ -247,7 +254,7 @@ export function Rotas() {
             </div>
           ) : (
             <fieldset>
-              <legend>CD de partida</legend>
+              <legend>CD de partida{cdsSelecionados.length === 0 ? ' (nota não reconhecida)' : ''}</legend>
               {Object.entries(cds).map(([id, cd]) => (
                 <label key={id} className="opcao">
                   <input

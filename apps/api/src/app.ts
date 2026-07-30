@@ -6,6 +6,7 @@ import {
   apagarPedidoImportado,
   decidirEnderecoEntrega,
   decidirMudancaEndereco,
+  refazerPontoDoCliente,
   type ArquivoXml,
 } from './importacao/servico.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
@@ -175,6 +176,25 @@ export async function criarApp({
   });
 
   app.get('/api/clientes', { config: { papeis: ESCRITORIO } }, async () => repo.listarClientes());
+
+  // RF-23: descarta o ponto do cliente e reclassifica pelo endereço atual.
+  // Fecha o beco sem saída do pin errado — uma vez `mapeado`, o app do
+  // motorista não oferece mais o ajuste (ver refazerPontoDoCliente).
+  app.post(
+    '/api/clientes/:clienteId/refazer-ponto',
+    { config: { papeis: ESCRITORIO } },
+    async (req, reply) => {
+      const { clienteId } = req.params as { clienteId: string };
+      // O clienteId é hash hex de 64 e vira caminho de documento: validar aqui
+      // fecha a injeção de caminho, como no rotaId e na chave do pedido.
+      if (!/^[0-9a-f]{64}$/.test(clienteId)) {
+        return reply.code(404).send({ erro: 'Cliente não encontrado' });
+      }
+      const resultado = await refazerPontoDoCliente(repo, clienteId, geocodificador);
+      if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+      return { status: resultado.status };
+    },
+  );
 
   app.get('/api/cds', { config: { papeis: ESCRITORIO } }, async () => repo.obterCds());
 

@@ -68,7 +68,7 @@ class RepositorioFirestore implements Repositorio {
 
   async listarPedidos(): Promise<Array<{ id: string } & Pedido>> {
     const resposta = await this.pedidos.orderBy('emitidoEm', 'desc').get();
-    return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Pedido) }));
+    return resposta.docs.map((d) => ({ ...(d.data() as Pedido), id: d.id }));
   }
 
   async obterCds(): Promise<Record<string, CentroDistribuicao>> {

@@ -121,6 +121,15 @@ export async function apagarPedido(pedidoId: string): Promise<void> {
   throw new Error(erro ?? erroHttp(resposta.status));
 }
 
+/**
+ * RF-23: descarta o ponto do cliente e reclassifica pelo endereço atual. É a
+ * saída para pin marcado no lugar errado — depois de `mapeado`, o app do
+ * motorista não oferece mais o ajuste. Preserva foto e observações do local.
+ */
+export async function refazerPontoDoCliente(clienteId: string): Promise<{ status: string }> {
+  return post(`${BASE}/api/clientes/${encodeURIComponent(clienteId)}/refazer-ponto`, {});
+}
+
 async function post<T>(url: string, corpo: unknown): Promise<T> {
   const resposta = await apiFetch(url, {
     method: 'POST',

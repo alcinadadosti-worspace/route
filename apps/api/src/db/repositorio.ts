@@ -89,7 +89,10 @@ export class RepositorioMemoria implements Repositorio {
   }
 
   async listarPedidos(): Promise<Array<{ id: string } & Pedido>> {
-    return [...this.pedidos].map(([id, p]) => ({ id, ...p }));
+    // A CHAVE manda: `{ ...p, id }` e não `{ id, ...p }` — um documento que
+    // carregasse um campo `id` sobrescreveria a chave e a listagem devolveria
+    // o id errado, que é dificílimo de perceber depois.
+    return [...this.pedidos].map(([id, p]) => ({ ...p, id }));
   }
 
   async obterCds(): Promise<Record<string, CentroDistribuicao>> {

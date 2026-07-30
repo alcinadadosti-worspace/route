@@ -464,6 +464,57 @@ export async function decidirMudancaEndereco(
 }
 
 /**
+ * Refaz o ponto de um cliente a pedido do escritório (RF-23). Existe porque
+ * havia um beco sem saída: uma vez `mapeado`, o pin não tem correção. O app do
+ * motorista só oferece o ajuste para destino `aproximado`/`nao_mapeado`, então
+ * um pin marcado no lugar errado — um teste feito dentro do CD, um toque torto
+ * em movimento — virava o ponto oficial de entrega daquele cliente para sempre.
+ *
+ * Descarta coordenada, autoria e trilha, e reclassifica pelo endereço atual
+ * (geocodifica se der; senão volta para mapeamento em campo). **Preserva o
+ * dossiê**: pin errado não invalida a foto da fachada nem as observações do
+ * local — quem descarta o dossiê é a mudança de endereço (seção 8.3), porque
+ * ali o LUGAR mudou.
+ */
+export async function refazerPontoDoCliente(
+  repo: Repositorio,
+  clienteId: string,
+  geocodificador: Geocodificador | null = null,
+): Promise<ResultadoDecisao> {
+  const cliente = await repo.obterCliente(clienteId);
+  if (!cliente) return { ok: false, status: 404, erro: 'Cliente não encontrado' };
+
+  const limpeza = {
+    coordenada: null,
+    statusMapeamento: 'nao_mapeado',
+    mapeadoPor: null,
+    mapeadoEm: null,
+    trilhaAtivaId: null,
+  } satisfies Partial<Cliente>;
+  await repo.atualizarCliente(clienteId, limpeza);
+  if (cliente.trilhaAtivaId) await repo.atualizarTrilha(cliente.trilhaAtivaId, { ativa: false });
+
+  const status = await classificarDestino(
+    clienteId,
+    { ...cliente, ...limpeza },
+    repo,
+    geocodificador,
+    null,
+  );
+
+  // Os pedidos ainda não roteirizados seguem o ponto: sem isto, um pedido
+  // continuaria marcado "pronto para rota" apontando para um cliente que
+  // acabou de ficar sem coordenada, e só a montagem da rota reclamaria.
+  for (const { id, ...pedido } of await repo.listarPedidos()) {
+    if (pedido.clienteId !== clienteId) continue;
+    if (pedido.status !== 'pronto_para_rota' && pedido.status !== 'pendente_de_mapeamento') continue;
+    if (pedido.status !== status) await repo.salvarPedido(id, { ...pedido, status });
+  }
+
+  return { ok: true, status };
+}
+
+/**
  * Solta os pedidos que estavam presos SÓ pela revisão do ponto (seção 8.3) —
  * inclusive o que motivou a decisão. Uma remessa com várias notas do mesmo
  * cliente faz a pergunta uma vez, não uma por nota. Quem ainda deve a decisão

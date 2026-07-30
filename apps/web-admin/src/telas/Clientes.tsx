@@ -1,7 +1,10 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { normalizar, type Cliente, type Pedido } from '@rota/shared';
-import { listarClientes, listarPedidos } from '../api';
+import { listarClientes, listarPedidos, refazerPontoDoCliente } from '../api';
 import { FotoReferencia } from '../FotoReferencia';
+
+/** Status em que há um ponto para refazer (RF-23). */
+const TEM_PONTO = new Set(['mapeado', 'geocodificado', 'aproximado']);
 
 const ROTULO_MAPEAMENTO: Record<string, { texto: string; classe: string }> = {
   nao_mapeado: { texto: 'Não mapeado', classe: 'pendente' },
@@ -45,6 +48,28 @@ export function Clientes() {
     }
     return mapa;
   }, [pedidos]);
+
+  async function refazerPonto(c: { id: string } & Cliente) {
+    if (
+      !window.confirm(
+        `Descartar o ponto de ${c.nome}?\n\n` +
+          'A coordenada, a autoria do pin e a trilha aprendida são apagadas, e o endereço é ' +
+          'geocodificado de novo. Sem resultado, o destino volta para mapeamento em campo. ' +
+          'A foto e as observações do local são preservadas.',
+      )
+    ) {
+      return;
+    }
+    setErro(null);
+    try {
+      await refazerPontoDoCliente(c.id);
+      const [cs, ps] = await Promise.all([listarClientes(), listarPedidos()]);
+      setClientes(cs);
+      setPedidos(ps);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha ao refazer o ponto');
+    }
+  }
 
   const q = normalizar(filtro.trim());
   const filtrados = q ? clientes.filter((c) => normalizar(c.nome).includes(q)) : clientes;
@@ -103,6 +128,22 @@ export function Clientes() {
                     </td>
                     <td>
                       <span className={`chip ${s.classe}`}>{s.texto}</span>
+                      {/* Saída para pin no lugar errado: depois de `mapeado` o
+                          app do motorista não oferece mais o ajuste, e sem isto
+                          o ponto errado seria definitivo. */}
+                      {TEM_PONTO.has(c.statusMapeamento) && (
+                        <button
+                          className="apagar"
+                          style={{ marginLeft: 8 }}
+                          title="Descartar o ponto e reclassificar pelo endereço"
+                          onClick={(evento) => {
+                            evento.stopPropagation();
+                            void refazerPonto(c);
+                          }}
+                        >
+                          ↺
+                        </button>
+                      )}
                     </td>
                     <td className="mono">{meus.length > 0 ? `${meus.length} ${aberto ? '▲' : '▾'}` : '—'}</td>
                   </tr>

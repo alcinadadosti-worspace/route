@@ -6,6 +6,7 @@ import {
   decidirEnderecoEntrega,
   decidirMudancaEndereco,
   importarXmls,
+  refazerPontoDoCliente,
 } from './servico.js';
 import { RepositorioMemoria } from '../db/repositorio.js';
 import { parseNfe } from '../nfe/parser.js';
@@ -81,6 +82,92 @@ test('cliente com coordenada confirmada gera pedido pronto_para_rota', async () 
   assert.equal(cliente.statusMapeamento, 'mapeado');
   assert.deepEqual(cliente.coordenada, { lat: -9.925, lng: -36.47 });
   assert.equal(cliente.trilhaAtivaId, 'trilha-1');
+});
+
+// --- Refazer o ponto do cliente (RF-23) ---
+
+test('refazer o ponto descarta pin e trilha, mas PRESERVA o dossiê', async () => {
+  const repo = new RepositorioMemoria();
+  const clienteId = await comClienteExistente(repo, {
+    trilhaAtivaId: 'trilha-1',
+    fotoReferenciaPath: 'clientes/x/referencia.jpg',
+    observacoes: 'portão azul',
+  });
+  await repo.salvarTrilha('trilha-1', {
+    clienteId,
+    polyline: 'abc',
+    pontoEntrada: { lat: -9.9, lng: -36.4 },
+    distanciaM: 100,
+    precisaoMediaM: 8,
+    ativa: true,
+    gravadaPor: 'motorista-1',
+    gravadaEm: '2026-03-01T10:00:00-03:00',
+    versao: 1,
+  });
+
+  const r = await refazerPontoDoCliente(repo, clienteId);
+
+  assert.ok(r.ok);
+  const cliente = (await repo.obterCliente(clienteId))!;
+  assert.equal(cliente.coordenada, null);
+  assert.equal(cliente.statusMapeamento, 'nao_mapeado');
+  assert.equal(cliente.mapeadoPor, null);
+  assert.equal(cliente.trilhaAtivaId, null);
+  assert.equal(await repo.obterTrilhaAtiva(clienteId), null);
+  // Pin errado não invalida o que se sabe sobre o LUGAR.
+  assert.equal(cliente.fotoReferenciaPath, 'clientes/x/referencia.jpg');
+  assert.equal(cliente.observacoes, 'portão azul');
+});
+
+test('refazer o ponto reaproveita a geocodificação quando o endereço resolve', async () => {
+  const repo = new RepositorioMemoria();
+  const clienteId = await comClienteExistente(repo);
+
+  const r = await refazerPontoDoCliente(repo, clienteId, {
+    async geocodificar() {
+      return { coordenada: { lat: -9.88, lng: -36.44 }, precisa: true, municipioConfere: true };
+    },
+  });
+
+  assert.ok(r.ok);
+  assert.equal(r.status, 'pronto_para_rota');
+  const cliente = (await repo.obterCliente(clienteId))!;
+  assert.equal(cliente.statusMapeamento, 'geocodificado');
+  assert.deepEqual(cliente.coordenada, { lat: -9.88, lng: -36.44 });
+});
+
+test('refazer o ponto sincroniza os pedidos ainda não roteirizados', async () => {
+  const repo = new RepositorioMemoria();
+  const clienteId = await comClienteExistente(repo);
+  // Um pedido pronto (pelo pin antigo) e um já em rota, que não deve mudar.
+  await importarXmls([{ nome: 'a.xml', conteudo: xml }], repo);
+  // O `id` sai do objeto antes de gravar: guardá-lo DENTRO do documento faria a
+  // listagem devolver o id errado (o campo sobrescreve a chave).
+  const { id: idPronto, ...dados } = (await repo.listarPedidos())[0]!;
+  await repo.salvarPedido(idPronto, { ...dados, status: 'pronto_para_rota' });
+  await repo.salvarPedido('em-rota', { ...dados, status: 'em_rota' });
+
+  // Endereço rural que não geocodifica → volta para mapeamento em campo.
+  await refazerPontoDoCliente(repo, clienteId);
+
+  const pedidos = await repo.listarPedidos();
+  assert.equal(
+    pedidos.find((p) => p.id === idPronto)!.status,
+    'pendente_de_mapeamento',
+    'pedido pronto tem de acompanhar o ponto, senão a tela mente',
+  );
+  assert.equal(
+    pedidos.find((p) => p.id === 'em-rota')!.status,
+    'em_rota',
+    'pedido já em rota não pode ser mexido pelas costas do motorista',
+  );
+});
+
+test('refazer o ponto de cliente inexistente é 404', async () => {
+  const repo = new RepositorioMemoria();
+  const r = await refazerPontoDoCliente(repo, 'a'.repeat(64));
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.status, 404);
 });
 
 // --- Apagar nota importada por engano ---
