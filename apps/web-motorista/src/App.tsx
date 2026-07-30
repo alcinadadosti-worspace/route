@@ -99,7 +99,7 @@ const MOTIVOS_INSUCESSO: Array<{ resultado: ResultadoEntrega; rotulo: string }> 
 /** ISO → `08h15`, para o motorista ver de relance quando avisou o cliente. */
 function horaCurta(iso: string): string {
   const data = new Date(iso);
-  return `${data.getHours()}h${String(data.getMinutes()).padStart(2, '0')}`;
+  return `${String(data.getHours()).padStart(2, '0')}h${String(data.getMinutes()).padStart(2, '0')}`;
 }
 
 /** `20260723` → `23/07/2026` — a versão do mapa é a data do extrato OSM. */

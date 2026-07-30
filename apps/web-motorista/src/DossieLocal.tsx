@@ -85,6 +85,10 @@ export function FotoReferencia({ caminho, alt }: { caminho: string; alt: string 
 
   useEffect(() => {
     let ativo = true;
+    // Zera antes de resolver: reaproveitado com outro `caminho`, o componente
+    // mostraria a foto do cliente ANTERIOR até a URL nova chegar — e esta foto é
+    // como o motorista reconhece a casa. A errada faz ele bater no portão errado.
+    setUrl(null);
     const resolver = () => {
       getDownloadURL(ref(storage, caminho))
         .then((u) => {

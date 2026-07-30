@@ -104,12 +104,12 @@ export function mensagemDeChegada(
   minutosRestantes: number | null,
   parametros: ParametrosAviso,
 ): string {
+  // ARREDONDA ANTES de decidir o texto. Com 1,4 min o teste `<= 1` não pegava e
+  // a mensagem saía "em uns 1 minutos" — no WhatsApp do cliente, em português
+  // torto. É o número exibido que tem de mandar na escolha da frase.
+  const minutos = minutosRestantes == null ? null : Math.round(minutosRestantes);
   const quando =
-    minutosRestantes == null
-      ? 'em instantes'
-      : minutosRestantes <= 1
-        ? 'agora'
-        : `em uns ${Math.round(minutosRestantes)} minutos`;
+    minutos == null ? 'em instantes' : minutos <= 1 ? 'agora' : `em uns ${minutos} minutos`;
   return parametros.textoChegando.replaceAll('{quando}', quando);
 }
 

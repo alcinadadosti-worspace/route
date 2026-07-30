@@ -22,6 +22,7 @@ import { usePosicao } from './usePosicao';
 import { useBussola } from './useBussola';
 import { GravadorTrilha } from './gravadorTrilha';
 import { confirmarPin, recalcularTracado, salvarTrilhaBruta } from './servicoMapeamento';
+import { registrarAviso } from './servicoEntrega';
 import { formatarDistancia } from './formato';
 import { indicesDasParadas, trechoDaParada } from './trechos';
 import type { DossieCliente } from './useClientesDaRota';
@@ -177,6 +178,8 @@ export function Navegacao({
   } | null>(null);
   const [recalculando, setRecalculando] = useState(false);
   const [erroRerota, setErroRerota] = useState<string | null>(null);
+  /** Quando o recálculo foi pedido — a duração dele vale a partir DALI. */
+  const rerotaEmRef = useRef(0);
   /**
    * O caminho desta parada — e só dela. A rota publicada é uma polyline do dia
    * inteiro; desenhá-la aqui mostra um emaranhado em vez da estrada até este
@@ -224,7 +227,10 @@ export function Navegacao({
     setErroRerota(null);
     setTentativaEm(Date.now());
     recalcularTracado(rota.id, parada.pedidoId, { lat: leitura.lat, lng: leitura.lng })
-      .then((novo) => setRerota(novo))
+      .then((novo) => {
+        rerotaEmRef.current = Date.now();
+        setRerota(novo);
+      })
       .catch((erro: unknown) =>
         setErroRerota(erro instanceof Error ? erro.message : 'Não deu para recalcular'),
       )
@@ -319,8 +325,22 @@ export function Navegacao({
 
   /** ~2 km em linha reta: daqui "em instantes" descreve a realidade. */
   const RAIO_AVISO_CHEGADA_M = 2000;
+  /**
+   * Minutos que ainda dá para PROMETER ao cliente.
+   *
+   * `rerota.duracaoMin` é do ponto onde o recálculo foi pedido, e o recálculo só
+   * acontece quando o motorista sai do traçado — pode ter sido 30 km atrás.
+   * Rodando dentro do traçado, o que sobra é a duração menos o tempo decorrido.
+   * Vencida a estimativa, devolve null: aí só resta "em instantes", e só se o
+   * destino estiver de fato perto.
+   */
+  function minutosDoAviso(): number | null {
+    if (rerota?.duracaoMin == null || !rerotaEmRef.current) return null;
+    const restante = rerota.duracaoMin - (Date.now() - rerotaEmRef.current) / 60_000;
+    return restante > 0 ? restante : null;
+  }
   const podeAvisarChegada =
-    rerota?.duracaoMin != null || (distanciaAoPin != null && distanciaAoPin <= RAIO_AVISO_CHEGADA_M);
+    minutosDoAviso() != null || (distanciaAoPin != null && distanciaAoPin <= RAIO_AVISO_CHEGADA_M);
 
   const rotuloModo = chegou
     ? 'VOCÊ CHEGOU'
@@ -412,15 +432,29 @@ export function Navegacao({
             honesto. Para o resto do dia existe o aviso com janela, na lista. */}
         {!chegou && parada.telefone && podeAvisarChegada && (
           <a
-            className="avisar"
+            className={`avisar${parada.avisadoEm ? ' feito' : ''}`}
             href={linkWhatsApp(
               parada.telefone,
-              mensagemDeChegada(rerota?.duracaoMin ?? null, parametrosAviso),
+              mensagemDeChegada(minutosDoAviso(), parametrosAviso),
             )}
             target="_blank"
             rel="noreferrer"
+            onClick={(evento) => {
+              // O minuto é refeito NO TOQUE: a tela fica aberta rodando e o
+              // href do render envelhece junto com a estimativa.
+              evento.currentTarget.href = linkWhatsApp(
+                parada.telefone!,
+                mensagemDeChegada(minutosDoAviso(), parametrosAviso),
+              );
+              // E REGISTRA. Sem isto, o aviso mandado daqui — que é a tela onde
+              // o motorista está justamente quando se aproxima — não deixava
+              // rastro: a coluna "Avisados" do escritório e o par
+              // avisados/não-avisados da produtividade perdiam o caminho mais
+              // usado, e o laço que justifica o aviso não fechava.
+              registrarAviso(rota, parada.pedidoId);
+            }}
           >
-            📣 Avisar que estou chegando
+            {parada.avisadoEm ? '✔ Cliente avisado' : '📣 Avisar que estou chegando'}
           </a>
         )}
 

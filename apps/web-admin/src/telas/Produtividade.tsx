@@ -35,6 +35,11 @@ function num(valor: number): string {
   return valor.toLocaleString('pt-BR');
 }
 
+/** Idem para a quilometragem, que passa de mil num mês: 1.284,6 e não 1284.6. */
+function km(valor: number): string {
+  return valor.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+}
+
 function kg(valor: number): string {
   return `${valor.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg`;
 }
@@ -141,7 +146,7 @@ function Cartao({ m, nome }: { m: ProdutividadeMotorista; nome: string }) {
             pergunta em outra unidade — parada não diz se foi 1 item ou 653. */}
         <Metrica valor={num(m.itensEntregues)} rotulo="Itens entregues" />
         <Metrica valor={m.insucessos} rotulo="Insucessos" />
-        <Metrica valor={m.kmPlanejados} rotulo="km planejados" />
+        <Metrica valor={km(m.kmPlanejados)} rotulo="km planejados" />
         <Metrica
           valor={m.minutosPorParadaMediana == null ? '—' : `${m.minutosPorParadaMediana} min`}
           rotulo="Por parada (mediana)"
@@ -255,7 +260,7 @@ function TabelaRotas({ rotas }: { rotas: ProdutividadeRota[] }) {
                 <td className="mono">{num(r.produtosDistintos)}</td>
                 <td className="mono">{r.volumesEntregues || '—'}</td>
                 <td className="mono">{r.pesoEntregueKg > 0 ? kg(r.pesoEntregueKg) : '—'}</td>
-                <td className="mono">{r.kmPlanejados}</td>
+                <td className="mono">{km(r.kmPlanejados)}</td>
               </tr>
               {r.entregasSemCarga > 0 && (
                 <tr className="nota-linha">

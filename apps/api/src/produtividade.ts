@@ -96,9 +96,11 @@ export function calcularProdutividade(
   const intervalosPorMotorista = new Map<string, number[]>();
   const jornadaPorMotorista = new Map<string, number>();
   for (const rota of rotas) {
-    const daRota = dados.entregas
-      .filter((e) => e.rotaId === rota.id)
-      .sort((a, b) => a.confirmadaEm.localeCompare(b.confirmadaEm));
+    const daRota = umaPorParada(
+      dados.entregas
+        .filter((e) => e.rotaId === rota.id)
+        .sort((a, b) => a.confirmadaEm.localeCompare(b.confirmadaEm)),
+    );
 
     const m = de(rota.motoristaId);
     const paradaPorPedido = new Map(rota.paradas.map((p) => [p.pedidoId, p]));
@@ -141,9 +143,12 @@ export function calcularProdutividade(
       // Mercadoria que saiu do caminhão. ITEM é a soma das quantidades (`qCom`),
       // que é o que a operação chama de item; a contagem de linhas vai separada,
       // porque é três vezes menor nas notas reais.
-      daqui.produtosDistintos += parada.itens.length;
-      daqui.itensEntregues += parada.itens.reduce(
-        (soma, item) => soma + (Number.isFinite(item.quantidade) ? item.quantidade : 0),
+      // `?? []` porque um único doc de rota sem `itens` derrubaria a aba INTEIRA
+      // com um TypeError — falha desproporcional ao defeito.
+      const itens = parada.itens ?? [];
+      daqui.produtosDistintos += itens.length;
+      daqui.itensEntregues += itens.reduce(
+        (soma, item) => soma + (Number.isFinite(item?.quantidade) ? item.quantidade : 0),
         0,
       );
       if (temCarga(parada.volumes, parada.pesoBrutoKg)) {
@@ -227,6 +232,26 @@ export function calcularProdutividade(
         .sort((a, b) => b.entregues - a.entregues || a.motoristaId.localeCompare(b.motoristaId)),
     },
   };
+}
+
+/**
+ * Uma parada só pode ser entregue uma vez, mas a coleção `entregas` não garante
+ * isso: os documentos têm ID AUTOMÁTICO e as regras os fazem imutáveis (nem o
+ * escritório apaga). O app do motorista barra o toque duplo pelo status da
+ * parada no cache local, só que dois aparelhos com a mesma rota, ou um cache
+ * perdido, criam o segundo registro — e ele fica lá para sempre.
+ *
+ * Duplicata inflaria TUDO de uma vez: entregues, itens, peso, e ainda um
+ * intervalo de zero minuto na mediana, fazendo o motorista parecer mais rápido
+ * do que é. Fica a ÚLTIMA confirmação, que é a que casa com o status gravado na
+ * parada (a última escrita da rota é a que vence).
+ */
+function umaPorParada(ordenadas: Entrega[]): Entrega[] {
+  const porPedido = new Map<string, Entrega>();
+  for (const e of ordenadas) porPedido.set(e.pedidoId, e);
+  return ordenadas.length === porPedido.size
+    ? ordenadas
+    : [...porPedido.values()].sort((a, b) => a.confirmadaEm.localeCompare(b.confirmadaEm));
 }
 
 function diferencaEmMinutos(inicio: string, fim: string): number {

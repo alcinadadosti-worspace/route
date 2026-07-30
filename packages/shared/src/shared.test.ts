@@ -92,6 +92,11 @@ test('mensagem do dia embute a janela; a de chegada, o tempo restante', () => {
   assert.match(mensagemDeChegada(1, PARAMETROS_AVISO_PADRAO), /agora/);
   // Sem sinal não há estimativa de estrada: não inventa número.
   assert.match(mensagemDeChegada(null, PARAMETROS_AVISO_PADRAO), /em instantes/);
+  // O OSRM devolve minuto FRACIONÁRIO. 1,4 arredonda para 1, e "em uns 1
+  // minutos" é português torto indo para o cliente — vira "agora".
+  assert.match(mensagemDeChegada(1.4, PARAMETROS_AVISO_PADRAO), /agora/);
+  assert.match(mensagemDeChegada(1.6, PARAMETROS_AVISO_PADRAO), /em uns 2 minutos/);
+  assert.match(mensagemDeChegada(9.6, PARAMETROS_AVISO_PADRAO), /em uns 10 minutos/);
 });
 
 test('config torta não vira mensagem em branco no WhatsApp do cliente', () => {

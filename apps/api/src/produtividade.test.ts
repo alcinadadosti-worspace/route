@@ -365,6 +365,79 @@ test('rota publicada e não executada aparece no detalhe com zero, não desapare
   assert.equal(detalhe[0]!.itensEntregues, 0);
 });
 
+test('entrega duplicada não infla número nenhum — a coleção permite duplicata', () => {
+  // `entregas` tem ID automático e é imutável pelas regras: dois aparelhos com a
+  // mesma rota criam dois registros da mesma parada, e ninguém apaga depois.
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    {
+      ...SEM_NADA,
+      rotas: [
+        rota('r1', '2026-07-29', [
+          parada('p1', null, { quantidades: [10], volumes: 2, pesoBrutoKg: 5 }),
+          parada('p2', null, { quantidades: [4], volumes: 1, pesoBrutoKg: 3 }),
+        ]),
+      ],
+      entregas: [
+        entrega('r1', 'p1', 'entregue', '2026-07-29T08:00:00-03:00'),
+        entrega('r1', 'p1', 'entregue', '2026-07-29T08:00:30-03:00'), // duplicata
+        entrega('r1', 'p2', 'entregue', '2026-07-29T09:00:00-03:00'),
+      ],
+    },
+  );
+
+  assert.ok(r.ok);
+  const m = r.relatorio.motoristas[0]!;
+  assert.equal(m.entregues, 2, 'duas paradas entregues, não três');
+  assert.equal(m.itensEntregues, 14);
+  assert.equal(m.pesoEntregueKg, 8);
+  assert.equal(m.volumesEntregues, 3);
+  // O intervalo de 30 s da duplicata faria a mediana cair para ~0 e o motorista
+  // parecer três vezes mais rápido do que é.
+  assert.equal(m.minutosPorParadaMediana, 60);
+});
+
+test('insucesso duplicado também não conta duas vezes por motivo', () => {
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    {
+      ...SEM_NADA,
+      rotas: [rota('r1', '2026-07-29', [parada('p1')])],
+      entregas: [
+        entrega('r1', 'p1', 'ausente', '2026-07-29T08:00:00-03:00'),
+        entrega('r1', 'p1', 'ausente', '2026-07-29T08:00:10-03:00'),
+      ],
+    },
+  );
+
+  assert.ok(r.ok);
+  const m = r.relatorio.motoristas[0]!;
+  assert.equal(m.insucessos, 1);
+  assert.deepEqual(m.porMotivo, { ausente: 1 });
+  assert.equal(m.ausenciasNaoAvisados, 1);
+});
+
+test('rota sem o campo itens não derruba a aba inteira', () => {
+  // Doc antigo ou escrito por script: `itens` ausente. Vale devolver zero, não
+  // um 500 que apaga o relatório de todos os motoristas.
+  const semItens = parada('p1');
+  delete (semItens as { itens?: unknown }).itens;
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    {
+      ...SEM_NADA,
+      rotas: [rota('r1', '2026-07-29', [semItens])],
+      entregas: [entrega('r1', 'p1', 'entregue', '2026-07-29T08:00:00-03:00')],
+    },
+  );
+
+  assert.ok(r.ok);
+  const m = r.relatorio.motoristas[0]!;
+  assert.equal(m.entregues, 1);
+  assert.equal(m.itensEntregues, 0);
+  assert.equal(m.produtosDistintos, 0);
+});
+
 test('sincronização offline fora de ordem não vira intervalo negativo', () => {
   const r = calcularProdutividade(
     { desde: '2026-07-29', ate: '2026-07-29' },

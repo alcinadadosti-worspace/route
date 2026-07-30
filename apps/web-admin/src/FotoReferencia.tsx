@@ -11,6 +11,11 @@ export function FotoReferencia({ caminho, alt }: { caminho: string; alt: string 
 
   useEffect(() => {
     let ativo = true;
+    // Limpa ANTES de resolver a nova: reaproveitado com outro `caminho` (a lista
+    // filtrada troca quem ocupa a posição), o componente ficava mostrando a foto
+    // do cliente ANTERIOR até a URL nova chegar — e aqui a foto é a referência
+    // de qual casa é, então mostrar a errada engana de verdade.
+    setUrl(null);
     getDownloadURL(ref(storage, caminho))
       .then((u) => ativo && setUrl(u))
       .catch(() => {});
