@@ -166,6 +166,14 @@ export interface ParadaRota {
    * demorasse a mandar.
    */
   confirmadaEm?: string | null;
+  /**
+   * Chegada ao cliente, detectada sozinha na navegação (permanência a <100 m do
+   * pin por 30 s — ver chegada.ts no app do motorista). É o que separa VIAGEM
+   * de ATENDIMENTO na produtividade. Ausente em rotas antigas e quando o
+   * motorista não navegou até a parada — nesses casos a produtividade volta a
+   * mostrar só o tempo somado, como antes.
+   */
+  chegouEm?: string | null;
 }
 
 /** `rotas/{rotaId}` — seção 7.3. */
@@ -303,6 +311,14 @@ export interface ProdutividadeMotorista {
   pinsConfirmados: number;
   trilhasGravadas: number;
   /**
+   * Mediana de minutos entre a chegada detectada (`chegouEm`) e a confirmação —
+   * o ATENDIMENTO puro, sem a viagem. Null quando nenhuma parada da janela tem
+   * chegada registrada (rotas antigas, ou paradas sem navegação aberta).
+   */
+  minutosAtendimentoMediana: number | null;
+  /** Quantas paradas tinham chegada registrada — qualifica a mediana acima. */
+  chegadasRegistradas: number;
+  /**
    * Mercadoria efetivamente entregue.
    *
    * `itensEntregues` é a SOMA DAS QUANTIDADES (`qCom` de cada linha da nota) —
@@ -344,10 +360,25 @@ export interface ProdutividadeRota {
   kmPlanejados: number;
 }
 
+/**
+ * Cliente que mais dá "ausente" na janela — o alvo prioritário do aviso de
+ * chegada e da combinação de horário. A leitura que importa é o par: ausência
+ * COM aviso enviado sugere horário ruim; SEM aviso, sugere começar a avisar.
+ */
+export interface AusenciaPorCliente {
+  clienteId: string;
+  nome: string;
+  ausencias: number;
+  /** Dessas ausências, em quantas o cliente tinha sido avisado pelo WhatsApp. */
+  avisadas: number;
+}
+
 export interface RelatorioProdutividade {
   desde: string;
   ate: string;
   motoristas: ProdutividadeMotorista[];
+  /** Top 5 — o ranking é sobre o CLIENTE, não sobre o motorista. */
+  ausenciasPorCliente: AusenciaPorCliente[];
 }
 
 /**

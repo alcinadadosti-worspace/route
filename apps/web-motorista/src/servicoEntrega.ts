@@ -83,6 +83,22 @@ export function registrarResultado(
 }
 
 /**
+ * Grava a chegada detectada na parada (seção 11.9). Mesma mecânica do aviso:
+ * escreve o array de paradas a partir do snapshot atual, pela fila offline.
+ * Idempotente por fora: quem já tem `chegouEm` não é reescrito — a PRIMEIRA
+ * chegada é a que vale, senão reabrir a navegação na porta moveria o tempo.
+ */
+export function registrarChegada(rota: { id: string } & Rota, pedidoId: string): void {
+  if (rota.paradas.find((p) => p.pedidoId === pedidoId)?.chegouEm) return;
+  const paradas = rota.paradas.map((p) =>
+    p.pedidoId === pedidoId ? { ...p, chegouEm: new Date().toISOString() } : p,
+  );
+  updateDoc(doc(db, 'rotas', rota.id), { paradas }).catch((erro) =>
+    console.error('Falha ao registrar a chegada', erro),
+  );
+}
+
+/**
  * Marca na parada que o RECIBO da entrega foi mandado ao cliente. Mesma
  * mecânica do aviso de chegada, e pelo mesmo motivo: `entregas` é imutável, e
  * o recibo é mandado depois de confirmar.
@@ -140,7 +156,13 @@ export function reabrirRota(rotaId: string): void {
   );
 }
 
-function posicaoAtual(): Promise<GeoPonto | null> {
+/**
+ * Posição de agora, melhor esforço: null quando o GPS falha ou demora — quem
+ * chama decide o que fazer sem posição. Exportada porque a guarda de distância
+ * da confirmação usa a mesma leitura (com `maximumAge`, a segunda chamada sai
+ * do cache do aparelho — não custa outra espera).
+ */
+export function posicaoAtual(): Promise<GeoPonto | null> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(

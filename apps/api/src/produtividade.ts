@@ -71,6 +71,8 @@ export function calcularProdutividade(
     ausenciasNaoAvisados: 0,
     pinsConfirmados: 0,
     trilhasGravadas: 0,
+    minutosAtendimentoMediana: null,
+    chegadasRegistradas: 0,
     itensEntregues: 0,
     produtosDistintos: 0,
     volumesEntregues: 0,
@@ -95,6 +97,10 @@ export function calcularProdutividade(
   // 2. O que veio das entregas: resultado e ritmo.
   const intervalosPorMotorista = new Map<string, number[]>();
   const jornadaPorMotorista = new Map<string, number>();
+  /** Atendimento puro (chegada → confirmação), só onde a chegada foi gravada. */
+  const atendimentosPorMotorista = new Map<string, number[]>();
+  /** Ausências por CLIENTE — o ranking é sobre quem recebe, não sobre quem entrega. */
+  const ausenciasPorClienteMapa = new Map<string, { ausencias: number; avisadas: number }>();
   for (const rota of rotas) {
     const daRota = umaPorParada(
       dados.entregas
@@ -126,6 +132,20 @@ export function calcularProdutividade(
 
     for (const entrega of daRota) {
       const parada = paradaPorPedido.get(entrega.pedidoId);
+
+      // Atendimento: chegada gravada → confirmação, para QUALQUER resultado —
+      // num "ausente", é o tempo até desistir, que também é atendimento. O
+      // guard de negativo cobre a fila offline sincronizando fora de ordem.
+      if (parada?.chegouEm) {
+        const atendimento = diferencaEmMinutos(parada.chegouEm, entrega.confirmadaEm);
+        if (atendimento >= 0) {
+          const lista = atendimentosPorMotorista.get(rota.motoristaId) ?? [];
+          lista.push(atendimento);
+          atendimentosPorMotorista.set(rota.motoristaId, lista);
+          m.chegadasRegistradas += 1;
+        }
+      }
+
       if (entrega.resultado !== 'entregue') {
         m.insucessos += 1;
         daqui.insucessos += 1;
@@ -133,6 +153,13 @@ export function calcularProdutividade(
         if (entrega.resultado === 'ausente') {
           if (parada?.avisadoEm) m.ausenciasAvisados += 1;
           else m.ausenciasNaoAvisados += 1;
+          const doCliente = ausenciasPorClienteMapa.get(entrega.clienteId) ?? {
+            ausencias: 0,
+            avisadas: 0,
+          };
+          doCliente.ausencias += 1;
+          if (parada?.avisadoEm) doCliente.avisadas += 1;
+          ausenciasPorClienteMapa.set(entrega.clienteId, doCliente);
         }
         continue;
       }
@@ -198,6 +225,9 @@ export function calcularProdutividade(
   for (const [motoristaId, minutos] of jornadaPorMotorista) {
     de(motoristaId).minutosEmRota = minutos;
   }
+  for (const [motoristaId, atendimentos] of atendimentosPorMotorista) {
+    de(motoristaId).minutosAtendimentoMediana = mediana(atendimentos);
+  }
 
   // 3. Conhecimento acrescentado. A janela aqui é a data do PRÓPRIO registro:
   // mapear não pertence a uma rota, pertence ao dia.
@@ -216,11 +246,24 @@ export function calcularProdutividade(
     }
   }
 
+  // Top 5 clientes por ausência. Cap deliberado: o objetivo é dizer ONDE mirar
+  // o aviso e a combinação de horário primeiro, não listar a base inteira.
+  const nomePorCliente = new Map(dados.clientes.map((c) => [c.id, c.nome]));
+  const ausenciasPorCliente = [...ausenciasPorClienteMapa.entries()]
+    .map(([clienteId, a]) => ({
+      clienteId,
+      nome: nomePorCliente.get(clienteId) ?? clienteId.slice(0, 8),
+      ...a,
+    }))
+    .sort((x, y) => y.ausencias - x.ausencias || x.nome.localeCompare(y.nome))
+    .slice(0, 5);
+
   return {
     ok: true,
     relatorio: {
       desde: entrada.desde,
       ate: entrada.ate,
+      ausenciasPorCliente,
       // Quem mais entregou primeiro; empate resolvido pelo nome, para a ordem
       // não dançar entre duas cargas da mesma tela.
       motoristas: [...porMotorista.values()]

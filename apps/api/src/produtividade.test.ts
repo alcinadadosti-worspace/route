@@ -9,6 +9,7 @@ function parada(
   pedidoId: string,
   avisadoEm: string | null = null,
   carga: { quantidades?: number[]; volumes?: number; pesoBrutoKg?: number } = {},
+  chegouEm: string | null = null,
 ): ParadaRota {
   return {
     pedidoId,
@@ -28,6 +29,7 @@ function parada(
     distanciaKm: 1,
     status: 'em_rota',
     avisadoEm,
+    chegouEm,
   };
 }
 
@@ -454,4 +456,177 @@ test('sincronização offline fora de ordem não vira intervalo negativo', () =>
 
   assert.ok(r.ok);
   assert.equal(r.relatorio.motoristas[0]!.minutosPorParadaMediana, 60);
+});
+
+test('atendimento: mediana só das paradas com chegada registrada', () => {
+  // p1: chegou 08:00, confirmou 08:10 → 10 min. p2: chegou 08:30, confirmou
+  // 08:50 → 20 min. p3 sem chegada: não entra — é viagem+atendimento misturados.
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    {
+      ...SEM_NADA,
+      rotas: [
+        rota('r1', '2026-07-29', [
+          parada('p1', null, {}, '2026-07-29T08:00:00-03:00'),
+          parada('p2', null, {}, '2026-07-29T08:30:00-03:00'),
+          parada('p3'),
+        ]),
+      ],
+      entregas: [
+        entrega('r1', 'p1', 'entregue', '2026-07-29T08:10:00-03:00'),
+        entrega('r1', 'p2', 'entregue', '2026-07-29T08:50:00-03:00'),
+        entrega('r1', 'p3', 'entregue', '2026-07-29T09:30:00-03:00'),
+      ],
+    },
+  );
+
+  assert.ok(r.ok);
+  const m = r.relatorio.motoristas[0]!;
+  assert.equal(m.minutosAtendimentoMediana, 15, 'mediana de 10 e 20');
+  assert.equal(m.chegadasRegistradas, 2, 'p3 não conta — sem chegada gravada');
+});
+
+test('chegada depois da confirmação (fila fora de ordem) não vira atendimento', () => {
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    {
+      ...SEM_NADA,
+      rotas: [rota('r1', '2026-07-29', [parada('p1', null, {}, '2026-07-29T09:00:00-03:00')])],
+      entregas: [entrega('r1', 'p1', 'entregue', '2026-07-29T08:00:00-03:00')],
+    },
+  );
+
+  assert.ok(r.ok);
+  const m = r.relatorio.motoristas[0]!;
+  assert.equal(m.minutosAtendimentoMediana, null);
+  assert.equal(m.chegadasRegistradas, 0);
+});
+
+test('atendimento conta também no insucesso — é o tempo até desistir', () => {
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    {
+      ...SEM_NADA,
+      rotas: [rota('r1', '2026-07-29', [parada('p1', null, {}, '2026-07-29T08:00:00-03:00')])],
+      entregas: [entrega('r1', 'p1', 'ausente', '2026-07-29T08:05:00-03:00')],
+    },
+  );
+
+  assert.ok(r.ok);
+  assert.equal(r.relatorio.motoristas[0]!.minutosAtendimentoMediana, 5);
+});
+
+test('ausências por cliente: agrega entre rotas, conta avisadas, ordena e corta em 5', () => {
+  const clienteDoc = (id: string, nome: string): { id: string } & Cliente => ({
+    id,
+    nome,
+    documentoMascarado: '***',
+    telefone: null,
+    email: null,
+    enderecoFiscal: {
+      logradouro: 'R',
+      numero: '1',
+      bairro: 'B',
+      municipio: 'M',
+      uf: 'AL',
+      cep: '57200000',
+    },
+    coordenada: { lat: -10.28, lng: -36.56 },
+    statusMapeamento: 'geocodificado',
+    trilhaAtivaId: null,
+    mapeadoPor: null,
+    mapeadoEm: null,
+    fotoReferenciaPath: null,
+    observacoes: '',
+  });
+  const paradaDe = (pedidoId: string, clienteId: string, avisadoEm: string | null = null) => ({
+    ...parada(pedidoId, avisadoEm),
+    clienteId,
+  });
+  const entregaDe = (
+    rotaId: string,
+    pedidoId: string,
+    clienteId: string,
+    resultado: Entrega['resultado'],
+    quando: string,
+  ): Entrega => ({ ...entrega(rotaId, pedidoId, resultado, quando), clienteId });
+
+  // ANA falha 3x (1 avisada), BIA 2x, CLARA/DUDA/EVA/FLORA 1x cada → o corte em
+  // 5 derruba FLORA (empate em 1 resolvido pelo nome). GIL entregue e HELO
+  // recusa NÃO entram: o ranking é de ausência, não de insucesso.
+  const r = calcularProdutividade(
+    { desde: '2026-07-01', ate: '2026-07-31' },
+    {
+      ...SEM_NADA,
+      clientes: [
+        clienteDoc('c-ana', 'ANA'),
+        clienteDoc('c-bia', 'BIA'),
+        clienteDoc('c-clara', 'CLARA'),
+        clienteDoc('c-duda', 'DUDA'),
+        clienteDoc('c-eva', 'EVA'),
+        clienteDoc('c-flora', 'FLORA'),
+      ],
+      rotas: [
+        rota('r1', '2026-07-20', [
+          paradaDe('a1', 'c-ana', '2026-07-20T07:00:00-03:00'),
+          paradaDe('a2', 'c-ana'),
+          paradaDe('b1', 'c-bia'),
+          paradaDe('c1', 'c-clara'),
+          paradaDe('d1', 'c-duda'),
+        ]),
+        rota('r2', '2026-07-21', [
+          paradaDe('a3', 'c-ana'),
+          paradaDe('b2', 'c-bia'),
+          paradaDe('e1', 'c-eva'),
+          paradaDe('f1', 'c-flora'),
+          paradaDe('g1', 'c-gil'),
+          paradaDe('h1', 'c-helo'),
+        ]),
+      ],
+      entregas: [
+        entregaDe('r1', 'a1', 'c-ana', 'ausente', '2026-07-20T08:00:00-03:00'),
+        entregaDe('r1', 'a2', 'c-ana', 'ausente', '2026-07-20T08:10:00-03:00'),
+        entregaDe('r1', 'b1', 'c-bia', 'ausente', '2026-07-20T08:20:00-03:00'),
+        entregaDe('r1', 'c1', 'c-clara', 'ausente', '2026-07-20T08:30:00-03:00'),
+        entregaDe('r1', 'd1', 'c-duda', 'ausente', '2026-07-20T08:40:00-03:00'),
+        entregaDe('r2', 'a3', 'c-ana', 'ausente', '2026-07-21T08:00:00-03:00'),
+        entregaDe('r2', 'b2', 'c-bia', 'ausente', '2026-07-21T08:10:00-03:00'),
+        entregaDe('r2', 'e1', 'c-eva', 'ausente', '2026-07-21T08:20:00-03:00'),
+        entregaDe('r2', 'f1', 'c-flora', 'ausente', '2026-07-21T08:30:00-03:00'),
+        entregaDe('r2', 'g1', 'c-gil', 'entregue', '2026-07-21T08:40:00-03:00'),
+        entregaDe('r2', 'h1', 'c-helo', 'recusa', '2026-07-21T08:50:00-03:00'),
+      ],
+    },
+  );
+
+  assert.ok(r.ok);
+  const ranking = r.relatorio.ausenciasPorCliente;
+  assert.deepEqual(
+    ranking.map((a) => [a.nome, a.ausencias]),
+    [
+      ['ANA', 3],
+      ['BIA', 2],
+      ['CLARA', 1],
+      ['DUDA', 1],
+      ['EVA', 1],
+    ],
+    'ordenado por ausências, empate pelo nome, corte em 5',
+  );
+  assert.equal(ranking[0]!.avisadas, 1, 'uma das ausências de ANA tinha aviso enviado');
+  assert.equal(ranking[1]!.avisadas, 0);
+});
+
+test('cliente ausente sem cadastro na base usa o começo do id como nome', () => {
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    {
+      ...SEM_NADA,
+      rotas: [rota('r1', '2026-07-29', [parada('p1')])],
+      entregas: [entrega('r1', 'p1', 'ausente', '2026-07-29T08:00:00-03:00')],
+    },
+  );
+
+  assert.ok(r.ok);
+  // O helper gera clienteId `cliente-p1`; sem doc, o nome cai para os 8 primeiros.
+  assert.equal(r.relatorio.ausenciasPorCliente[0]!.nome, 'cliente-');
 });

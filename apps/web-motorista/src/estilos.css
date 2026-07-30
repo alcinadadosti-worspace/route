@@ -1150,3 +1150,10 @@
   font-size: 0.9rem;
   color: var(--verde-maq);
 }
+
+/* Chegada gravada — a certeza de que o carimbo aconteceu sem ele fazer nada. */
+.nav-chegada {
+  font-size: 0.8rem;
+  color: var(--verde-maq);
+  margin-top: 2px;
+}

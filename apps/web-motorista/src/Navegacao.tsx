@@ -22,7 +22,8 @@ import { usePosicao } from './usePosicao';
 import { useBussola } from './useBussola';
 import { GravadorTrilha } from './gravadorTrilha';
 import { confirmarPin, recalcularTracado, salvarTrilhaBruta } from './servicoMapeamento';
-import { registrarAviso } from './servicoEntrega';
+import { registrarAviso, registrarChegada } from './servicoEntrega';
+import { criarDetectorChegada } from './chegada';
 import { formatarDistancia } from './formato';
 import { indicesDasParadas, trechoDaParada } from './trechos';
 import type { DossieCliente } from './useClientesDaRota';
@@ -154,6 +155,23 @@ export function Navegacao({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [distanciaAoPin, chegou]);
+
+  /**
+   * Chegada GRAVADA (seção 11.9) — diferente do `chegou` da tela: aquele é UI
+   * (30 m, dispara no primeiro contato); este exige permanência a 100 m por
+   * 30 s e vira `chegouEm` na parada — o carimbo que separa viagem de
+   * atendimento na produtividade. Um detector por parada: a tela remonta por
+   * `key={pedidoId}`, então o ref zera junto, que é o comportamento certo.
+   */
+  const detectorChegadaRef = useRef(criarDetectorChegada());
+  useEffect(() => {
+    if (!leitura) return;
+    if (parada.status !== 'em_rota' || parada.chegouEm) return;
+    if (detectorChegadaRef.current.registrar(distanciaAoPin, leitura.precisaoM, Date.now())) {
+      registrarChegada(rota, parada.pedidoId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leitura]);
 
   // Ajuste do pin (RF-07): marcador arrastável a partir da posição atual.
   const [pinAjustado, setPinAjustado] = useState<GeoPonto | null>(null);
@@ -421,6 +439,17 @@ export function Navegacao({
           <div>
             <div className="nav-distancia">{formatarDistancia(distanciaAoPin)}</div>
             <div className="nav-modo">{rotuloModo}</div>
+            {/* O carimbo que separa viagem de atendimento — mostrar dá ao
+                motorista a certeza de que registrou sem ele fazer nada. */}
+            {parada.chegouEm && (
+              <div className="nav-chegada">
+                ✔ chegada registrada às{' '}
+                {new Date(parada.chegouEm).toLocaleTimeString('pt-BR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </div>
+            )}
           </div>
         </div>
 

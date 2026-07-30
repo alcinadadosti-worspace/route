@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  distanciaEmMetros,
   linkLigacao,
   linkWhatsApp,
   mensagemDeRecibo,
@@ -25,6 +26,7 @@ import { estiloMapa, type Tema } from './estiloMapa';
 import { tipoDeRede } from './mapaOffline';
 import {
   fecharRota,
+  posicaoAtual,
   reabrirRota,
   registrarAviso,
   registrarRecibo,
@@ -281,7 +283,19 @@ export function App() {
     setRotaEscolhidaId(rota.id);
   }
 
-  function resolver(
+  /**
+   * Guarda de distância (seção 11.9): confirmar a 3 km do ponto do cliente é,
+   * quase sempre, parada errada ou esquecimento — e é exatamente o caso que
+   * gera briga depois ("ausente" dado de longe). O mercado BLOQUEIA fora da
+   * geofência; aqui só AVISA, por duas razões desta operação: o pin pode estar
+   * errado (é ele que o motorista corrige em campo) e o app não pode travar
+   * entrega quando o GPS falha — sem posição, segue sem pergunta.
+   */
+  const LIMIAR_GUARDA_M = 250;
+  /** Confirmações em andamento — o await do GPS abre janela para toque duplo. */
+  const confirmandoRef = useRef<Set<string>>(new Set());
+
+  async function resolver(
     pedidoId: string | undefined,
     resultado: ResultadoEntrega,
     comprovante: { recebidoPor?: string | null; foto?: Blob | null } = {},
@@ -290,9 +304,35 @@ export function App() {
     const parada = rota.paradas.find((p) => p.pedidoId === pedidoId);
     // Parada já resolvida não gera segunda entrega (proteção contra toque duplo).
     if (!parada || parada.status === 'entregue' || parada.status === 'insucesso') return;
-    registrarResultado(rota, parada, resultado, usuario.uid, comprovante);
-    setInsucessoAberto(null);
-    setComprovanteDe(null);
+    if (confirmandoRef.current.has(pedidoId)) return;
+    confirmandoRef.current.add(pedidoId);
+    try {
+      // Destino "a mapear" tem pin sabidamente grosseiro (aproximado no
+      // município): cobrar distância dele seria alarme falso em toda entrega.
+      const pinConfiavel =
+        paradas.find((pt) => pt.pedidoId === pedidoId)?.status !== 'trilha';
+      if (pinConfiavel) {
+        const posicao = await posicaoAtual();
+        const distancia = posicao ? distanciaEmMetros(posicao, parada.coordenada) : null;
+        if (distancia != null && distancia > LIMIAR_GUARDA_M) {
+          const acao =
+            resultado === 'entregue' ? 'Confirmar a entrega' : 'Registrar o insucesso';
+          if (
+            !window.confirm(
+              `Você está a ${formatarDistancia(distancia)} do ponto deste cliente.\n\n` +
+                `${acao} mesmo assim?`,
+            )
+          ) {
+            return;
+          }
+        }
+      }
+      registrarResultado(rota, parada, resultado, usuario.uid, comprovante);
+      setInsucessoAberto(null);
+      setComprovanteDe(null);
+    } finally {
+      confirmandoRef.current.delete(pedidoId);
+    }
   }
 
   // O componente Mapa recria o MapLibre quando as props mudam de identidade;

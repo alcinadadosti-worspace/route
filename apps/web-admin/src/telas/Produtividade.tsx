@@ -113,13 +113,47 @@ export function Produtividade() {
         <Cartao key={m.motoristaId} m={m} nome={nomes[m.motoristaId] ?? m.motoristaId.slice(0, 8)} />
       ))}
 
+      {/* O ranking é sobre o CLIENTE, não sobre o motorista: é onde o aviso de
+          chegada e a combinação de horário devem mirar primeiro. */}
+      {(relatorio?.ausenciasPorCliente ?? []).length > 0 && (
+        <div className="produtividade">
+          <div className="produtividade-nome">Clientes com mais ausências</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Ausências</th>
+                <th>Tinha sido avisado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {relatorio!.ausenciasPorCliente.map((a) => (
+                <tr key={a.clienteId}>
+                  <td>{a.nome}</td>
+                  <td className="mono">{a.ausencias}</td>
+                  <td className="mono">
+                    {a.avisadas}/{a.ausencias}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="produtividade-nota">
+            Ausência <strong>com</strong> aviso enviado sugere horário ruim — vale combinar uma
+            janela com o cliente. <strong>Sem</strong> aviso, sugere começar a avisar: é o insucesso
+            mais caro da operação, e o mais evitável.
+          </div>
+        </div>
+      )}
+
       {relatorio && relatorio.motoristas.length > 0 && (
         <div className="alerta">
           <strong>Como ler isto.</strong> Entregas por hora não mede esforço: seis entregas na zona
           rural de Junqueiro podem custar mais que quinze em Penedo — compare junto com a
-          quilometragem. O tempo por parada soma <em>viagem + atendimento</em>, porque a hora de
-          chegada no cliente ainda não é registrada. E o tempo em rota subestima: o trecho do CD até
-          a primeira parada não entra, por não haver hora de saída.
+          quilometragem. O tempo por parada soma <em>viagem + atendimento</em>; o{' '}
+          <em>Atendimento</em> separa os dois, mas só nas paradas em que a chegada foi registrada
+          automaticamente (navegação aberta ao se aproximar do cliente). E o tempo em rota
+          subestima: o trecho do CD até a primeira parada não entra, por não haver hora de saída.
         </div>
       )}
     </section>
@@ -142,6 +176,8 @@ function Cartao({ m: bruto, nome }: { m: ProdutividadeMotorista; nome: string })
     pesoEntregueKg: bruto.pesoEntregueKg ?? 0,
     entregasSemCarga: bruto.entregasSemCarga ?? 0,
     rotas_detalhe: bruto.rotas_detalhe ?? [],
+    minutosAtendimentoMediana: bruto.minutosAtendimentoMediana ?? null,
+    chegadasRegistradas: bruto.chegadasRegistradas ?? 0,
   };
   const executadas = m.entregues + m.insucessos;
   const conclusao = m.paradasPlanejadas > 0 ? Math.round((executadas / m.paradasPlanejadas) * 100) : null;
@@ -166,6 +202,28 @@ function Cartao({ m: bruto, nome }: { m: ProdutividadeMotorista; nome: string })
         <Metrica
           valor={m.minutosPorParadaMediana == null ? '—' : `${m.minutosPorParadaMediana} min`}
           rotulo="Por parada (mediana)"
+        />
+        {/* O KPI canônico de last-mile: de tudo que ele TENTOU, quanto entregou.
+            Diferente de "Conclusão", que mede quanto do plano foi executado.
+            Hoje toda tentativa é a primeira (não há reentrega); quando o
+            reagendamento existir, esta conta muda para a 1ª de cada pedido. */}
+        <Metrica
+          valor={executadas > 0 ? `${Math.round((m.entregues / executadas) * 100)}%` : '—'}
+          rotulo="Sucesso 1ª tentativa"
+        />
+        {/* Eficiência de rota: quanto de estrada custa cada entrega. PLANEJADOS,
+            porque km rodados não são medidos — o rótulo não pode sugerir mais. */}
+        <Metrica
+          valor={m.entregues > 0 ? km(m.kmPlanejados / m.entregues) : '—'}
+          rotulo="km planejados / entrega"
+        />
+        {/* Só das paradas com chegada detectada na navegação (chegouEm): é o
+            ATENDIMENTO puro, sem a viagem que o "Por parada" mistura. */}
+        <Metrica
+          valor={
+            m.minutosAtendimentoMediana == null ? '—' : `${m.minutosAtendimentoMediana} min`
+          }
+          rotulo={`Atendimento (${m.chegadasRegistradas} chegadas)`}
         />
         <Metrica valor={horas(m.minutosEmRota)} rotulo="Em rota" />
       </div>
