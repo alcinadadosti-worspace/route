@@ -7,22 +7,46 @@ import {
 } from 'firebase/auth';
 import { auth } from './firebase';
 
+/** Papéis que a API aceita nas rotas do painel (ESCRITORIO, em app.ts). */
+const ESCRITORIO = ['admin', 'operador'];
+
 /** Sessão do usuário — login por e-mail/senha, contas criadas pelo admin (seção 2). */
 export function useAutenticacao() {
   const [usuario, setUsuario] = useState<User | null>(null);
   const [carregando, setCarregando] = useState(true);
+  /**
+   * O papel vem do custom claim — a MESMA fonte que a API consulta. O painel
+   * aceitava qualquer conta logada e só quebrava depois, uma requisição por vez:
+   * uma conta de motorista entrava, via todas as abas e tomava 403 em tudo, com
+   * mensagem que não dizia que o problema era a conta. Saber o papel aqui
+   * permite dizer isso de uma vez, na cara.
+   */
+  const [papel, setPapel] = useState<string | null>(null);
 
   useEffect(
     () =>
       onAuthStateChanged(auth, (u) => {
         setUsuario(u);
-        setCarregando(false);
+        if (!u) {
+          setPapel(null);
+          setCarregando(false);
+          return;
+        }
+        u.getIdTokenResult()
+          .then((r) => setPapel(typeof r.claims.papel === 'string' ? r.claims.papel : ''))
+          // Sem conseguir ler o claim, não trava o painel: a API continua sendo
+          // a autoridade — isto aqui é só para explicar melhor.
+          .catch(() => setPapel(null))
+          .finally(() => setCarregando(false));
       }),
     [],
   );
 
   return {
     usuario,
+    papel,
+    /** null = não deu para saber; aí não bloqueia, quem decide é a API. */
+    ehEscritorio: papel == null ? null : ESCRITORIO.includes(papel),
     carregando,
     entrar: (email: string, senha: string) => signInWithEmailAndPassword(auth, email, senha),
     sair: () => signOut(auth),

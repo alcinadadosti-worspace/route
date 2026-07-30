@@ -10,6 +10,13 @@ import { useAutenticacao } from './useAutenticacao';
 
 type Aba = 'importacao' | 'decisoes' | 'rotas' | 'pedidos' | 'clientes' | 'produtividade';
 
+/** Papel do custom claim em português — o operador não lê enum. */
+const ROTULO_PAPEL: Record<string, string> = {
+  admin: 'administrador',
+  operador: 'operador',
+  motorista: 'motorista',
+};
+
 const ABAS: Array<{ id: Aba; rotulo: string }> = [
   { id: 'importacao', rotulo: 'Importação' },
   { id: 'decisoes', rotulo: 'Decisões' },
@@ -21,7 +28,7 @@ const ABAS: Array<{ id: Aba; rotulo: string }> = [
 
 export function App() {
   const [aba, setAba] = useState<Aba>('importacao');
-  const { usuario, carregando, entrar, sair } = useAutenticacao();
+  const { usuario, papel, ehEscritorio, carregando, entrar, sair } = useAutenticacao();
 
   if (carregando) {
     return <div className="tela-login"><div className="sub">CARREGANDO…</div></div>;
@@ -29,6 +36,34 @@ export function App() {
 
   if (!usuario) {
     return <Login entrar={entrar} />;
+  }
+
+  /**
+   * Conta sem papel de escritório: o painel ABRIA e cada ação morria em 403,
+   * com mensagem que não dizia que o problema era a conta. Diz agora, uma vez,
+   * antes de deixar tentar — é a diferença entre "o sistema não funciona" e
+   * "entrei com a conta errada".
+   */
+  if (ehEscritorio === false) {
+    return (
+      <div className="tela-login">
+        <img src="/logo.png" className="logo-marca" alt="Grupo Alcina Maria" />
+        <h1>Sem acesso ao painel</h1>
+        <div className="erro" style={{ maxWidth: 460, textAlign: 'left' }}>
+          A conta <span className="mono">{usuario.email}</span> está cadastrada como{' '}
+          <strong>{papel ? ROTULO_PAPEL[papel] ?? papel : 'sem papel definido'}</strong>. O painel do
+          escritório exige <strong>admin</strong> ou <strong>operador</strong>.
+          {papel === 'motorista' && (
+            <>
+              {' '}
+              Esta é a conta do app de entrega — para importar notas e montar rotas, entre com a
+              conta do escritório.
+            </>
+          )}
+        </div>
+        <button onClick={() => void sair()}>Entrar com outra conta</button>
+      </div>
+    );
   }
 
   return (
@@ -42,7 +77,12 @@ export function App() {
           </div>
         </div>
         <div className="topo-direita">
-          <span className="sub mono">{usuario.email}</span>
+          {/* Com quem está logado E em que papel: duas contas no mesmo
+              navegador é o normal aqui, e o e-mail sozinho não avisa qual. */}
+          <span className="sub mono">
+            {usuario.email}
+            {papel && ` · ${ROTULO_PAPEL[papel] ?? papel}`}
+          </span>
           <button onClick={() => void sair()}>Sair</button>
         </div>
       </header>

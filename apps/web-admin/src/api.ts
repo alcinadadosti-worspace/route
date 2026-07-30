@@ -29,7 +29,9 @@ export async function importarXmls(arquivos: File[]): Promise<RelatorioImportaca
   const form = new FormData();
   for (const arquivo of arquivos) form.append('arquivos', arquivo, arquivo.name);
   const resposta = await apiFetch(`${BASE}/api/importacoes`, { method: 'POST', body: form });
-  if (!resposta.ok) throw new Error(`Importação falhou (HTTP ${resposta.status})`);
+  // Era a ÚNICA chamada que não passava por `erroHttp`: um 403 aparecia como
+  // "Importação falhou (HTTP 403)", que não diz que o problema é a conta.
+  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
   return resposta.json();
 }
 
@@ -195,7 +197,9 @@ async function post<T>(url: string, corpo: unknown): Promise<T> {
 /** Mensagem amigável por status — não culpa "a API caiu" num 401/403 de auth. */
 function erroHttp(status: number): string {
   if (status === 401) return 'Sessão expirada — entre novamente.';
-  if (status === 403) return 'Sem permissão para esta operação.';
+  if (status === 403) {
+    return 'Sem permissão: esta conta não é de escritório. Saia e entre com a conta do escritório.';
+  }
   if (status >= 500) return `Serviço indisponível (HTTP ${status}) — pode estar reiniciando.`;
   return `Falha na requisição (HTTP ${status}).`;
 }
