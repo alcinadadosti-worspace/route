@@ -1,0 +1,48 @@
+import type { Rota } from '@rota/shared';
+
+/**
+ * Qual rota o motorista vê, entre as que a consulta trouxe (últimos 7 dias, só
+ * dele). O app mostra UMA — a tela é para dirigir, não para escolher.
+ *
+ * Estava inline no hook e sem teste, justamente a regra em que mais importa
+ * saber a resposta exata: "publiquei outra rota para ele no meio da primeira,
+ * e agora?".
+ *
+ * A ordem de decisão:
+ *  1. rota ATIVA (não concluída) ganha de concluída — terminado o dia, ele
+ *     continua vendo o resumo do que fez, mas nunca no lugar de trabalho aberto;
+ *  2. entre ativas, a data mais RECENTE — uma rota de ontem esquecida em
+ *     execução não pode segurar a de hoje para sempre;
+ *  3. empate na data: a JÁ INICIADA (`em_execucao`) vem primeiro — publicar a
+ *     segunda rota do dia não pode esconder aquela que ele está no meio de
+ *     executar, com paradas entregues e o resto por entregar;
+ *  4. ainda empatado (as duas só publicadas, nenhuma iniciada): a publicada por
+ *     último. É o caso em que a rota nova SUBSTITUI a anterior na tela dele.
+ */
+export function escolherRotaAtiva<T extends { id: string } & Rota>(rotas: T[]): T | null {
+  const validas = rotas.filter((r) => r.status !== 'rascunho');
+  const ativas = validas.filter((r) => r.status !== 'concluida');
+  const candidatas = [...(ativas.length > 0 ? ativas : validas)];
+  candidatas.sort(
+    (a, b) =>
+      b.data.localeCompare(a.data) ||
+      Number(b.status === 'em_execucao') - Number(a.status === 'em_execucao') ||
+      (b.publicadaEm ?? '').localeCompare(a.publicadaEm ?? ''),
+  );
+  return candidatas[0] ?? null;
+}
+
+/**
+ * Rotas ABERTAS que ficaram para trás — publicadas ou em execução e que não são
+ * a que ele está vendo. Existir mais de uma não é erro (o escritório pode
+ * publicar duas de propósito), mas ficar invisível é: a rota some do aparelho
+ * com os pedidos ainda em `em_rota`, e ninguém percebe.
+ */
+export function rotasAbertasEmEspera<T extends { id: string } & Rota>(
+  rotas: T[],
+  atual: T | null,
+): T[] {
+  return rotas.filter(
+    (r) => r.status !== 'rascunho' && r.status !== 'concluida' && r.id !== (atual?.id ?? ''),
+  );
+}

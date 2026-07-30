@@ -110,7 +110,7 @@ function versaoLegivel(versao: string): string {
 export function App() {
   const [tema, setTema] = useState<Tema>('galpao');
   const { usuario, carregando, entrar, sair } = useAutenticacao();
-  const { rota } = useRotaDoDia(usuario?.uid ?? null);
+  const { rota, emEspera } = useRotaDoDia(usuario?.uid ?? null);
   const dossies = useClientesDaRota(rota);
   const config = useConfigGeral(usuario?.uid ?? null);
   const mapaOffline = useMapaOffline(config);
@@ -468,6 +468,19 @@ export function App() {
 
       {rota && (
       <>
+      {/* Outra rota aberta que NÃO está nesta tela. Sem este aviso ela ficava
+          invisível — o escritório publicou, os pedidos foram para `em_rota` e o
+          motorista nunca soube que existia. Ela aparece sozinha quando esta
+          terminar; até lá, pelo menos ele sabe. */}
+      {emEspera.length > 0 && (
+        <div className="aviso-outra-rota">
+          ⚠ Você tem mais {emEspera.length === 1 ? 'uma rota' : `${emEspera.length} rotas`} em
+          aberto ({emEspera.reduce((n, r) => n + r.paradas.length, 0)} paradas) que não está nesta
+          tela. Ela abre assim que esta for concluída — se for para trocar agora, fale com o
+          escritório.
+        </div>
+      )}
+
       <div className="resumo">
         <div className="bloco">
           <div className="num">{paradas.length}</div>

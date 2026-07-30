@@ -247,6 +247,31 @@ export function Rotas() {
 
   async function publicar() {
     if (!previa || !motoristaId) return;
+
+    /**
+     * O motorista já tem rota aberta? O app dele mostra UMA rota. Se a atual
+     * ainda não foi iniciada, a nova toma a tela e a anterior fica invisível
+     * com os pedidos presos em `em_rota`. Se ele já começou, é o contrário: a
+     * nova é que espera. Nos dois casos alguém precisa saber ANTES.
+     */
+    const abertas = rotas.filter(
+      (r) => r.motoristaId === motoristaId && r.status !== 'concluida' && r.status !== 'rascunho',
+    );
+    if (abertas.length > 0) {
+      const iniciada = abertas.some((r) => r.status === 'em_execucao');
+      const paradasAbertas = abertas.reduce(
+        (n, r) => n + r.paradas.filter((p) => p.status === 'em_rota').length,
+        0,
+      );
+      const consequencia = iniciada
+        ? 'Como ele JÁ COMEÇOU aquela rota, o app continua mostrando a atual — esta nova só aparece quando a primeira for concluída.'
+        : 'Como ele ainda NÃO COMEÇOU aquela rota, o app vai passar a mostrar esta nova, e a anterior some da tela dele (os pedidos seguem reservados nela).';
+      const texto =
+        `${nomeDoUsuario(motoristaId)} já tem ${abertas.length} rota(s) em aberto, ` +
+        `com ${paradasAbertas} parada(s) por entregar.\n\n${consequencia}\n\nPublicar assim mesmo?`;
+      if (!window.confirm(texto)) return;
+    }
+
     setPublicando(true);
     setErro(null);
     try {

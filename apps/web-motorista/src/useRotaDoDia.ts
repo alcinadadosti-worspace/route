@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import type { Rota } from '@rota/shared';
 import { db } from './firebase';
+import { escolherRotaAtiva, rotasAbertasEmEspera } from './rotaAtiva';
 
 /**
  * Rota do dia do motorista logado (RF-16): assinatura em tempo real da rota
@@ -10,11 +11,18 @@ import { db } from './firebase';
  */
 export function useRotaDoDia(uid: string | null) {
   const [rota, setRota] = useState<({ id: string } & Rota) | null>(null);
+  /**
+   * Outras rotas ABERTAS dele que não estão na tela. O app mostra uma só; sem
+   * este aviso, uma segunda rota publicada no meio do dia ficava invisível com
+   * os pedidos presos em `em_rota`, e ninguém percebia.
+   */
+  const [emEspera, setEmEspera] = useState<Array<{ id: string } & Rota>>([]);
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
     if (!uid) {
       setRota(null);
+      setEmEspera([]);
       setCarregando(false);
       return;
     }
@@ -33,31 +41,17 @@ export function useRotaDoDia(uid: string | null) {
     return onSnapshot(
       consulta,
       (resposta) => {
-        const rotas = resposta.docs
-          .map((d) => ({ id: d.id, ...(d.data() as Rota) }))
-          .filter((r) => r.status !== 'rascunho');
-        // A rota ATIVA mais recente (a do dia quando existe; senão a de ontem
-        // ainda em andamento). Sem nenhuma ativa, a mais recente já concluída —
-        // ao fim do dia o motorista continua vendo o resumo do que fez.
-        const ativas = rotas.filter((r) => r.status !== 'concluida');
-        const candidatas = ativas.length > 0 ? ativas : rotas;
-        candidatas.sort(
-          (a, b) =>
-            b.data.localeCompare(a.data) ||
-            // Empate na data: a rota JÁ INICIADA vem primeiro. Publicar a
-            // segunda rota do dia não pode esconder a que o motorista está no
-            // meio de executar (com paradas entregues e o resto por entregar).
-            // A data continua mandando antes disso, senão uma rota de ontem
-            // esquecida em execução seguraria a de hoje para sempre.
-            Number(b.status === 'em_execucao') - Number(a.status === 'em_execucao') ||
-            (b.publicadaEm ?? '').localeCompare(a.publicadaEm ?? ''),
-        );
-        setRota(candidatas[0] ?? null);
+        const rotas = resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Rota) }));
+        // A regra de escolha vive em `rotaAtiva.ts`, com teste: é ela que
+        // decide o que acontece quando existe mais de uma rota aberta.
+        const escolhida = escolherRotaAtiva(rotas);
+        setRota(escolhida);
+        setEmEspera(rotasAbertasEmEspera(rotas, escolhida));
         setCarregando(false);
       },
       () => setCarregando(false),
     );
   }, [uid]);
 
-  return { rota, carregando };
+  return { rota, emEspera, carregando };
 }

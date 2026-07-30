@@ -992,3 +992,16 @@
   background: var(--ambar);
   transition: width 300ms ease-out;
 }
+
+/* Rota aberta que NÃO está na tela (o app mostra uma só). Faixa de atenção no
+   topo da lista: o motorista precisa saber que existe trabalho que ele não vê. */
+.aviso-outra-rota {
+  border: 1px solid var(--ambar);
+  border-left-width: 6px;
+  border-radius: var(--raio);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: var(--ambar);
+}
