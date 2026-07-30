@@ -49,10 +49,20 @@ export function trechoDaParada(
 ): GeoPonto[] {
   if (posicao < 0 || posicao >= indices.length || tracado.length === 0) return tracado;
   const fim = indices[posicao]!;
-  const inicio = posicao === 0 ? 0 : indices[posicao - 1]!;
+
+  // Paradas no MESMO vértice (dois clientes no mesmo endereço, ou muito
+  // próximos) dariam um trecho de um ponto só — linha invisível justamente na
+  // parada que o motorista escolheu olhar. Acontece de verdade: na rota de
+  // produção, duas paradas casaram no vértice 234. Então volta-se até a última
+  // parada em vértice DIFERENTE, mostrando a estrada que traz até aqui.
+  let anterior = posicao - 1;
+  while (anterior >= 0 && indices[anterior] === fim) anterior--;
+  const inicio = anterior < 0 ? 0 : indices[anterior]!;
+
   const trecho = tracado.slice(inicio, fim + 1);
   if (trecho.length >= 2) return trecho;
-  // Emenda degenerada (duas paradas no mesmo vértice, ou a primeira em cima do
-  // CD): estica um vértice para trás para haver linha.
-  return tracado.slice(Math.max(0, fim - 1), fim + 1);
+  // Sobrou um vértice só: a parada casou no PRIMEIRO ponto do traçado, então
+  // não há para onde voltar — estica para frente. (Esticar para trás aqui
+  // devolvia o mesmo ponto e a linha continuava invisível.)
+  return tracado.slice(fim, fim + 2);
 }

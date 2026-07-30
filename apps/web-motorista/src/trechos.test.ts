@@ -40,10 +40,20 @@ test('estrada que volta: a parada não casa com um vértice anterior', () => {
   assert.deepEqual(trecho[trecho.length - 1], vaiEVolta[indices[1]!]);
 });
 
-test('duas paradas no mesmo vértice ainda desenham linha', () => {
-  const indices = indicesDasParadas(TRACADO, [TRACADO[4]!, TRACADO[4]!]);
-  assert.deepEqual(indices, [4, 4]);
-  const trecho = trechoDaParada(TRACADO, indices, 1);
+test('paradas no mesmo vértice: o trecho volta até a última parada diferente', () => {
+  // Três clientes: dois deles no MESMO ponto (vértice 4).
+  const indices = indicesDasParadas(TRACADO, [TRACADO[2]!, TRACADO[4]!, TRACADO[4]!]);
+  assert.deepEqual(indices, [2, 4, 4]);
+
+  // A terceira parada casa no mesmo vértice da segunda: o trecho dela não pode
+  // ser um ponto só — volta até a parada anterior em vértice diferente (2).
+  const trecho = trechoDaParada(TRACADO, indices, 2);
+  assert.deepEqual(trecho, TRACADO.slice(2, 5));
+});
+
+test('cadeia de paradas no mesmo vértice volta até o início do traçado', () => {
+  const indices = [0, 0, 0];
+  const trecho = trechoDaParada(TRACADO, indices, 2);
   assert.ok(trecho.length >= 2, 'trecho de um ponto só não desenharia nada no mapa');
 });
 

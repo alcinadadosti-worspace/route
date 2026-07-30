@@ -413,17 +413,27 @@
   color: var(--ambar);
 }
 
-/* Ver só o caminho até esta parada, direto do cartão. */
+/* Ver só o caminho até esta parada, direto do cartão. Alvo de 40px: menor que
+   os 48px das ações principais, porque é secundário, mas longe dos ~20px que
+   eu havia deixado — dedo em veículo balançando não acerta chip minúsculo. */
 .ver-caminho {
-  margin-left: 8px;
-  padding: 2px 10px;
-  min-height: 0;
+  margin-left: 10px;
+  padding: 0 14px;
+  min-height: 40px;
   border-color: var(--borda);
   color: var(--texto-2);
   font-family: var(--fonte-mono);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   text-transform: none;
   letter-spacing: 0;
+}
+
+/* O número e o botão na mesma linha, alinhados pelo centro. */
+.parada .ordem {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .ver-caminho.ativo {

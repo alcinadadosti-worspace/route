@@ -189,6 +189,10 @@ export function Navegacao({
    * rota nova a partir de onde o motorista está faz mais sentido.
    */
   const indiceDaParada = rota.paradas.findIndex((p) => p.pedidoId === parada.pedidoId);
+  // Chave estável: cada snapshot da rota (confirmação, aviso) devolve um array
+  // `paradas` NOVO, e depender da identidade dele refaria o recorte de 1200
+  // vértices a cada escrita. O que importa é quais paradas são, não o objeto.
+  const chaveParadas = rota.paradas.map((p) => p.pedidoId).join('|');
   const pontosTracado = useMemo(() => {
     if (rerota) return decodificarPolyline(rerota.polyline);
     const linha = rota.polylinePlanejada ? decodificarPolyline(rota.polylinePlanejada) : [];
@@ -198,7 +202,8 @@ export function Navegacao({
       rota.paradas.map((p) => p.coordenada),
     );
     return trechoDaParada(linha, indices, indiceDaParada);
-  }, [rerota, rota.polylinePlanejada, rota.paradas, indiceDaParada]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rerota, rota.polylinePlanejada, chaveParadas, indiceDaParada]);
   // Memorizado: o traçado tem milhares de pontos e a tela re-renderiza por
   // muito mais que leitura de GPS (abrir dossiê, digitar observação).
   const desvioM = useMemo(
