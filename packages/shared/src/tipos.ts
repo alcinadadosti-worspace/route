@@ -357,4 +357,11 @@ export interface RelatorioImportacao {
    * A chave `'—'` conta as que não casaram com nenhum CD cadastrado.
    */
   porCd: Record<string, number>;
+  /**
+   * Notas que chegaram sem volume nem peso. Não é defeito do parser: o ERP
+   * emissor manda `<vol>` com `qVol=0` e `pesoB=0.000`, ou omite o bloco. Vale
+   * contar porque quem carrega o caminhão precisa desse número — e o conserto
+   * é no ERP, não aqui.
+   */
+  semCarga: number;
 }

@@ -50,6 +50,32 @@ export function precisaMapearEmCampo(status: StatusMapeamento): boolean {
 }
 
 /**
+ * Carga da nota em texto — "1 vol · 3,113 kg".
+ *
+ * Cerca de um terço das notas reais chega com `qVol=0` e `pesoB=0.000`: o ERP
+ * emissor preenche a estrutura com zeros. Mostrar "0 vol · 0.000 kg" se lê como
+ * "não tem nada para levar", ou como defeito do sistema. Cada parte só aparece
+ * quando existe de verdade; não havendo nenhuma, diz que a NOTA não informou —
+ * o problema é de lá, e quem carrega o caminhão precisa saber disso.
+ */
+export function formatarCarga(volumes: number, pesoBrutoKg: number): string {
+  const partes: string[] = [];
+  if (Number.isFinite(volumes) && volumes > 0) partes.push(`${volumes} vol`);
+  if (Number.isFinite(pesoBrutoKg) && pesoBrutoKg > 0) {
+    partes.push(`${pesoBrutoKg.toFixed(3).replace('.', ',')} kg`);
+  }
+  return partes.length > 0 ? partes.join(' · ') : 'vol/peso não informado';
+}
+
+/** A nota trouxe alguma informação de carga? */
+export function temCarga(volumes: number, pesoBrutoKg: number): boolean {
+  return (
+    (Number.isFinite(volumes) && volumes > 0) ||
+    (Number.isFinite(pesoBrutoKg) && pesoBrutoKg > 0)
+  );
+}
+
+/**
  * A parada ainda exige mapeamento em campo? Quando o doc do cliente está no
  * aparelho (o normal — a rota pré-carrega os dossiês), ele é a VERDADE: reflete
  * o pin confirmado agora mesmo, aqui ou por outro motorista. A flag

@@ -5,8 +5,10 @@ import { normalizarTelefone, linkWhatsApp } from './telefone.js';
 import {
   ehEnderecoRural,
   enderecosDivergem,
+  formatarCarga,
   paradaPrecisaMapear,
   precisaMapearEmCampo,
+  temCarga,
 } from './endereco.js';
 import { extrairPedidoELote } from './infcpl.js';
 import { codificarPolyline, decodificarPolyline } from './polyline.js';
@@ -139,6 +141,22 @@ test('validação de coordenada barra null, NaN e faixa impossível', () => {
   assert.equal(validarGeoPonto({ lat: NaN, lng: -36.56 }), null);
   assert.equal(validarGeoPonto({ lat: 91, lng: -36.56 }), null);
   assert.equal(validarGeoPonto({ lat: -10.28, lng: 181 }), null);
+});
+
+test('carga zerada na nota não vira "0 vol · 0.000 kg" na tela', () => {
+  // O caso real: ~1 de cada 3 notas chega com qVol=0 e pesoB=0.000.
+  assert.equal(formatarCarga(0, 0), 'vol/peso não informado');
+  assert.equal(temCarga(0, 0), false);
+
+  assert.equal(formatarCarga(1, 3.113), '1 vol · 3,113 kg');
+  assert.equal(temCarga(1, 3.113), true);
+  // Uma parte só informada ainda vale: mostra o que existe, omite o que não.
+  assert.equal(formatarCarga(2, 0), '2 vol');
+  assert.equal(formatarCarga(0, 4.5), '4,500 kg');
+  assert.equal(temCarga(2, 0), true);
+  // Dado corrompido não pode virar "NaN vol".
+  assert.equal(formatarCarga(NaN, NaN), 'vol/peso não informado');
+  assert.equal(formatarCarga(-1, -2), 'vol/peso não informado');
 });
 
 test('parada: o doc do cliente manda sobre a flag denormalizada da rota', () => {

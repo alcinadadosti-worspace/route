@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import type { CentroDistribuicao, Cliente, Pedido, PreviaRota, Rota, Usuario } from '@rota/shared';
+import { formatarCarga, type CentroDistribuicao, type Cliente, type Pedido, type PreviaRota, type Rota, type Usuario } from '@rota/shared';
 import {
   apagarRota,
   listarCds,
@@ -427,7 +427,7 @@ export function Rotas() {
                     )}
                   </td>
                   <td>
-                    {p.volumes} vol · {p.pesoBrutoKg.toFixed(3)} kg
+                    {formatarCarga(p.volumes, p.pesoBrutoKg)}
                   </td>
                 </tr>
               ))}
@@ -518,7 +518,7 @@ export function Rotas() {
                   <td>{p.nome}</td>
                   <td>{p.endereco}</td>
                   <td>
-                    {p.volumes} vol · {p.pesoBrutoKg.toFixed(3)} kg
+                    {formatarCarga(p.volumes, p.pesoBrutoKg)}
                   </td>
                   <td>
                     <div className="reordenar">

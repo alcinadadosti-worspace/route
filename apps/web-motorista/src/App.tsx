@@ -4,6 +4,7 @@ import {
   linkWhatsApp,
   mensagemDeRota,
   mesclarParametrosAviso,
+  formatarCarga,
   mesclarParametrosTrilha,
   paradaPrecisaMapear,
   type GeoPonto,
@@ -560,7 +561,7 @@ export function App() {
           <h2>{p.cliente}</h2>
           <div className="endereco">{p.endereco}</div>
           <div className="carga">
-            {p.itens} itens · {p.volumes} vol · {p.pesoKg.toFixed(3)} kg
+            {p.itens} itens · {formatarCarga(p.volumes, p.pesoKg)}
           </div>
           {p.fotoPath && <FotoReferencia caminho={p.fotoPath} alt={`Referência de ${p.cliente}`} />}
           {p.observacao && <div className="obs">📌 {p.observacao}</div>}

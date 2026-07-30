@@ -90,7 +90,18 @@ export function Importacao() {
             <Metrica valor={relatorio.pendentesDeMapeamento} rotulo="Pendentes de mapeamento" />
             <Metrica valor={relatorio.pendentesDeDecisao} rotulo="Aguardando escolha de endereço" />
             <Metrica valor={relatorio.rejeitados.length} rotulo="Rejeitados" />
+            <Metrica valor={relatorio.semCarga ?? 0} rotulo="Sem volume/peso" />
           </div>
+
+          {(relatorio.semCarga ?? 0) > 0 && (
+            <div className="alerta">
+              {relatorio.semCarga} nota(s) chegaram <strong>sem volume nem peso</strong> — o XML traz
+              a estrutura zerada (<span className="mono">qVol=0</span>,{' '}
+              <span className="mono">pesoB=0.000</span>). Não é falha da importação: o dado não vem
+              na nota. Quem carrega o caminhão fica sem essa informação, e o conserto é no ERP que
+              emite.
+            </div>
+          )}
 
           {/* De qual CD saiu cada nota, pelo CNPJ do emitente (seção 8.5). É a
               conferência que o operador faz de olho: se uma remessa que devia

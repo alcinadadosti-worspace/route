@@ -1,6 +1,7 @@
 import {
   ehEnderecoRural,
   enderecosDivergem,
+  temCarga,
   validarGeoPonto,
   type Cliente,
   type EnderecoFiscal,
@@ -45,6 +46,7 @@ export async function importarXmls(
     aproximados: 0,
     alertas: [],
     porCd: {},
+    semCarga: 0,
   };
 
   // Índice CNPJ → cdId, montado uma vez para a remessa toda (seção 8.5). O
@@ -120,6 +122,10 @@ export async function importarXmls(
 
     const cdId = nota.emitenteCnpj ? (cdPorCnpj.get(nota.emitenteCnpj) ?? null) : null;
     relatorio.porCd[cdId ?? '—'] = (relatorio.porCd[cdId ?? '—'] ?? 0) + 1;
+    // Um terço das notas reais chega com qVol=0 e pesoB=0.000 (o ERP preenche a
+    // estrutura com zeros). Contar aqui é o que faz o escritório enxergar o
+    // tamanho do buraco — o conserto é no ERP emissor, não neste sistema.
+    if (!temCarga(nota.volumes, nota.pesoBrutoKg)) relatorio.semCarga += 1;
 
     if (status === 'pronto_para_rota') relatorio.prontosParaRota += 1;
     else if (status === 'pendente_de_decisao') relatorio.pendentesDeDecisao += 1;

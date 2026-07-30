@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Pedido } from '@rota/shared';
+import { formatarCarga, type Pedido } from '@rota/shared';
 import { apagarPedido, listarPedidos } from '../api';
 
 /**
@@ -113,7 +113,7 @@ export function Pedidos() {
                   <td>{p.emitidoEm.slice(0, 10)}</td>
                   <td>{p.itens.length}</td>
                   <td>
-                    {p.volumes} vol · {p.pesoBrutoKg.toFixed(3)} kg
+                    {formatarCarga(p.volumes, p.pesoBrutoKg)}
                   </td>
                   <td className="mono">
                     {p.valorTotal.toLocaleString('pt-BR', {
