@@ -3,11 +3,12 @@ import { Importacao } from './telas/Importacao';
 import { Decisoes } from './telas/Decisoes';
 import { Pedidos } from './telas/Pedidos';
 import { Clientes } from './telas/Clientes';
+import { Produtividade } from './telas/Produtividade';
 import { Rotas } from './telas/Rotas';
 import { Login } from './telas/Login';
 import { useAutenticacao } from './useAutenticacao';
 
-type Aba = 'importacao' | 'decisoes' | 'rotas' | 'pedidos' | 'clientes';
+type Aba = 'importacao' | 'decisoes' | 'rotas' | 'pedidos' | 'clientes' | 'produtividade';
 
 const ABAS: Array<{ id: Aba; rotulo: string }> = [
   { id: 'importacao', rotulo: 'Importação' },
@@ -15,6 +16,7 @@ const ABAS: Array<{ id: Aba; rotulo: string }> = [
   { id: 'rotas', rotulo: 'Rotas' },
   { id: 'pedidos', rotulo: 'Pedidos' },
   { id: 'clientes', rotulo: 'Clientes' },
+  { id: 'produtividade', rotulo: 'Produtividade' },
 ];
 
 export function App() {
@@ -63,6 +65,7 @@ export function App() {
       {aba === 'rotas' && <Rotas />}
       {aba === 'pedidos' && <Pedidos />}
       {aba === 'clientes' && <Clientes />}
+      {aba === 'produtividade' && <Produtividade />}
     </div>
   );
 }

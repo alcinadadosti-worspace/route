@@ -4,6 +4,7 @@ import type {
   Pedido,
   PreviaRota,
   RelatorioImportacao,
+  RelatorioProdutividade,
   Rota,
   Usuario,
 } from '@rota/shared';
@@ -40,6 +41,27 @@ export async function listarPedidos(): Promise<Array<{ id: string } & Pedido>> {
 export async function listarClientes(): Promise<Array<{ id: string } & Cliente>> {
   const resposta = await apiFetch(`${BASE}/api/clientes`);
   if (!resposta.ok) throw new Error(erroHttp(resposta.status));
+  return resposta.json();
+}
+
+/** RF-25: produtividade por motorista na janela pedida (calculada no servidor). */
+export async function obterProdutividade(
+  desde: string,
+  ate: string,
+): Promise<RelatorioProdutividade> {
+  const resposta = await apiFetch(
+    `${BASE}/api/produtividade?desde=${encodeURIComponent(desde)}&ate=${encodeURIComponent(ate)}`,
+  );
+  if (!resposta.ok) {
+    const texto = await resposta.text();
+    let erro: string | undefined;
+    try {
+      erro = texto ? JSON.parse(texto).erro : undefined;
+    } catch {
+      erro = undefined;
+    }
+    throw new Error(erro ?? erroHttp(resposta.status));
+  }
   return resposta.json();
 }
 

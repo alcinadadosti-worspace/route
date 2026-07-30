@@ -225,6 +225,54 @@ export interface Entrega {
 }
 
 /**
+ * Produtividade do motorista (RF-25) — contrato de `GET /api/produtividade`.
+ * Calculado no servidor: os registros de entrega carregam posição GPS, e somar
+ * no navegador exigiria despejar tudo isso no painel sem necessidade.
+ */
+export interface ProdutividadeMotorista {
+  motoristaId: string;
+  rotas: number;
+  paradasPlanejadas: number;
+  entregues: number;
+  insucessos: number;
+  /** Insucessos por motivo: ausente é falha de aviso, não localizado é de mapa. */
+  porMotivo: Record<string, number>;
+  kmPlanejados: number;
+  /**
+   * Mediana do intervalo entre confirmações consecutivas — VIAGEM + ATENDIMENTO
+   * juntos, porque a hora de chegada no cliente ainda não é gravada. Mediana e
+   * não média: uma parada para almoçar distorceria a média.
+   */
+  minutosPorParadaMediana: number | null;
+  /**
+   * Da primeira à última confirmação de cada rota, somado. Subestima: o trecho
+   * do CD até a primeira parada não tem como ser medido sem hora de saída.
+   */
+  minutosEmRota: number | null;
+  avisados: number;
+  /**
+   * O laço causal do aviso por WhatsApp (seção 11.8): se avisar funciona, a
+   * ausência tem de ser mais rara entre os avisados.
+   */
+  ausenciasAvisados: number;
+  ausenciasNaoAvisados: number;
+  /**
+   * Conhecimento que ele acrescentou à base — pin confirmado e trilha gravada.
+   * É produtividade que COMPÕE: mapear um cliente rural hoje deixa toda rota
+   * futura até ele mais rápida, para qualquer motorista. Contar só entregas por
+   * hora premiaria quem corre e ignora o mato.
+   */
+  pinsConfirmados: number;
+  trilhasGravadas: number;
+}
+
+export interface RelatorioProdutividade {
+  desde: string;
+  ate: string;
+  motoristas: ProdutividadeMotorista[];
+}
+
+/**
  * Bloco `mapa` do doc `config/geral` (seção 7.6): versão corrente do basemap
  * PMTiles no Storage (seção 12, camada 3). O app compara `versao` com a
  * instalada no OPFS e propõe o download quando o motorista está na base.

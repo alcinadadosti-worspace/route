@@ -9,6 +9,7 @@ import {
   type ArquivoXml,
 } from './importacao/servico.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
+import { calcularProdutividade } from './produtividade.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
 import { sugerirOrdemDeParadas } from './rotas/ordem-sugerida.js';
@@ -260,6 +261,25 @@ export async function criarApp({
     );
     if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
     return resultado;
+  });
+
+  // RF-25: produtividade por motorista na janela pedida. Calculado aqui e não
+  // no painel: os registros de entrega carregam posição GPS, e somar no
+  // navegador exigiria despejar tudo isso no browser sem necessidade.
+  app.get('/api/produtividade', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
+    const { desde, ate } = req.query as { desde?: string; ate?: string };
+    const [rotas, entregas, clientes, trilhas] = await Promise.all([
+      repo.listarRotas(),
+      repo.listarEntregas(),
+      repo.listarClientes(),
+      repo.listarTrilhas(),
+    ]);
+    const resultado = calcularProdutividade(
+      { desde: desde ?? '', ate: ate ?? '' },
+      { rotas, entregas, clientes, trilhas },
+    );
+    if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+    return resultado.relatorio;
   });
 
   app.get('/api/trilhas', { config: { papeis: ESCRITORIO } }, async () => repo.listarTrilhas());

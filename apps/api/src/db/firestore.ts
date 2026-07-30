@@ -3,6 +3,7 @@ import type {
   CentroDistribuicao,
   Cliente,
   ConfigGeral,
+  Entrega,
   Pedido,
   Rota,
   Trilha,
@@ -156,6 +157,11 @@ class RepositorioFirestore implements Repositorio {
   async listarTrilhas(): Promise<Array<{ id: string } & Trilha>> {
     const resposta = await this.db.collection('trilhas').get();
     return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Trilha) }));
+  }
+
+  async listarEntregas(): Promise<Entrega[]> {
+    const resposta = await this.db.collection('entregas').get();
+    return resposta.docs.map((d) => d.data() as Entrega);
   }
 
   async aplicarProcessamentoDeTrilha(dados: {

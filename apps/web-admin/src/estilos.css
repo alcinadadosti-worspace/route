@@ -502,6 +502,50 @@ td input[type='checkbox'] {
   font-size: 0.9rem;
 }
 
+/* Produtividade do motorista (RF-25) */
+.periodo {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.produtividade {
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.produtividade-nome {
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ambar);
+  margin-bottom: 10px;
+}
+
+.produtividade-linha {
+  font-size: 0.92rem;
+  color: var(--texto-2);
+  padding-top: 10px;
+}
+
+/* O bloco que não é sobre o dia, é sobre o futuro: destaque próprio. */
+.produtividade-linha.conhecimento {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--verde-maq);
+  background: color-mix(in srgb, var(--verde-maq) 8%, transparent);
+}
+
+.produtividade-nota {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  margin-top: 4px;
+}
+
 /* Origem das notas no relatório de importação (seção 8.5) */
 .por-cd {
   font-size: 0.9rem;

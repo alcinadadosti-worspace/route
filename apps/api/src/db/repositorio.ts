@@ -2,6 +2,7 @@ import type {
   CentroDistribuicao,
   Cliente,
   ConfigGeral,
+  Entrega,
   Pedido,
   Rota,
   Trilha,
@@ -45,6 +46,8 @@ export interface Repositorio {
   atualizarTrilha(trilhaId: string, campos: Partial<Trilha>): Promise<void>;
   obterTrilhaAtiva(clienteId: string): Promise<({ id: string } & Trilha) | null>;
   listarTrilhas(): Promise<Array<{ id: string } & Trilha>>;
+  /** Registros de entrega (seção 7.5) — base da produtividade (RF-25). */
+  listarEntregas(): Promise<Entrega[]>;
   /**
    * Resultado do pós-processamento numa escrita só (atômica no Firestore):
    * desativa a trilha anterior, grava a nova, aponta o cliente para ela e
@@ -176,6 +179,13 @@ export class RepositorioMemoria implements Repositorio {
 
   async listarTrilhas(): Promise<Array<{ id: string } & Trilha>> {
     return [...this.trilhas].map(([id, t]) => ({ id, ...t }));
+  }
+
+  /** Espelho local de `entregas` para dev/testes. */
+  entregas: Entrega[] = [];
+
+  async listarEntregas(): Promise<Entrega[]> {
+    return this.entregas;
   }
 
   async aplicarProcessamentoDeTrilha(dados: {
