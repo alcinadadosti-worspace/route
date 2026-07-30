@@ -151,13 +151,25 @@ service cloud.firestore {
       allow create: if logado()
         && request.resource.data.keys().hasOnly(
              ['pedidoId', 'rotaId', 'clienteId', 'resultado', 'confirmadaEm',
-              'posicaoConfirmacao', 'gravadaPor'])
+              'posicaoConfirmacao', 'gravadaPor', 'recebidoPor', 'comprovantePath'])
         && request.resource.data.gravadaPor == request.auth.uid
         && request.resource.data.resultado in ['entregue', 'ausente', 'nao_localizado', 'recusa']
         && request.resource.data.confirmadaEm is string
         && (request.resource.data.posicaoConfirmacao == null
             || (request.resource.data.posicaoConfirmacao.lat is number
                 && request.resource.data.posicaoConfirmacao.lng is number))
+        // Comprovante (quem recebeu + foto do ato). Nome curto para caber num
+        // campo digitado na porta; caminho da PRÓPRIA entrega, não um arbitrário
+        // nem o de outra — senão o comprovante de uma serviria de álibi noutra.
+        && (!('recebidoPor' in request.resource.data)
+            || request.resource.data.recebidoPor == null
+            || (request.resource.data.recebidoPor is string
+                && request.resource.data.recebidoPor.size() > 0
+                && request.resource.data.recebidoPor.size() < 120))
+        && (!('comprovantePath' in request.resource.data)
+            || request.resource.data.comprovantePath == null
+            || request.resource.data.comprovantePath
+                 == 'entregas/' + entregaId + '/comprovante.jpg')
         && donoDaRota(request.resource.data.rotaId);
       allow update, delete: if false;
     }

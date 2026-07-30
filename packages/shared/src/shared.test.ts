@@ -24,6 +24,7 @@ import {
   formatarJanela,
   janelaDeChegada,
   mensagemDeChegada,
+  mensagemDeRecibo,
   mensagemDeRota,
   mesclarParametrosAviso,
   PARAMETROS_AVISO_PADRAO,
@@ -383,4 +384,30 @@ test('extração NÃO casa palavra que apenas termina em pedido/lote', () => {
   assert.deepEqual(extrairPedidoELote('culote 42'), { numeroPedido: null, lote: null });
   // Ainda casa o campo de verdade mesmo colado a outro texto.
   assert.equal(extrairPedidoELote('nota; PEDIDO 999').numeroPedido, '999');
+});
+
+test('recibo leva hora e quem recebeu — e não inventa nome quando não há', () => {
+  const quinzeHoras = new Date(2026, 6, 30, 14, 5);
+  assert.equal(
+    mensagemDeRecibo(quinzeHoras, 'Maria', PARAMETROS_AVISO_PADRAO),
+    'Entrega registrada às 14h05, recebida por Maria. Grupo Alcina Maria.',
+  );
+  // Insucesso ou nome não anotado: some o trecho, em vez de "recebida por ".
+  for (const vazio of [null, '', '   ']) {
+    assert.equal(
+      mensagemDeRecibo(quinzeHoras, vazio, PARAMETROS_AVISO_PADRAO),
+      'Entrega registrada às 14h05. Grupo Alcina Maria.',
+      `${JSON.stringify(vazio)} deveria sumir da frase`,
+    );
+  }
+});
+
+test('redação do recibo é ajustável sem deploy, como as outras', () => {
+  const p = mesclarParametrosAviso({ textoRecibo: 'Recebemos: {hora}{quem}. Obrigado!' });
+  assert.equal(
+    mensagemDeRecibo(new Date(2026, 6, 30, 9, 0), 'Ana', p),
+    'Recebemos: 9h00, recebida por Ana. Obrigado!',
+  );
+  // Vazio continua sendo ignorado — config torta não vira recibo em branco.
+  assert.equal(mesclarParametrosAviso({ textoRecibo: '  ' }).textoRecibo, PARAMETROS_AVISO_PADRAO.textoRecibo);
 });

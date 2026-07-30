@@ -510,9 +510,29 @@ export function Rotas() {
                                         <td colSpan={3}>
                                           <strong>{ROTULO_RESULTADO[e.resultado] ?? e.resultado}</strong>{' '}
                                           às {horaDe(e.confirmadaEm)}
+                                          {/* Quem recebeu é o que responde um
+                                              "não recebi" semanas depois — e a
+                                              distância é o que mostra que o
+                                              motorista estava na porta. */}
+                                          {e.recebidoPor && (
+                                            <>
+                                              {' '}
+                                              · recebido por <strong>{e.recebidoPor}</strong>
+                                            </>
+                                          )}
                                           {distancia != null
                                             ? ` · confirmado a ${distancia} m do ponto do cliente`
                                             : ' · sem posição (GPS indisponível na hora)'}
+                                          {p.reciboEnviadoEm &&
+                                            ` · recibo enviado ${horaDe(p.reciboEnviadoEm)}`}
+                                          {e.comprovantePath && (
+                                            <div className="dossie-bloco" style={{ marginTop: 8 }}>
+                                              <FotoReferencia
+                                                caminho={e.comprovantePath}
+                                                alt={`Comprovante da entrega de ${p.nome}`}
+                                              />
+                                            </div>
+                                          )}
                                         </td>
                                       </tr>
                                     )}

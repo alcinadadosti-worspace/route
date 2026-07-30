@@ -25,6 +25,11 @@ export interface ParametrosAviso {
   textoRota: string;
   /** Aviso de aproximação. `{quando}` vira "em uns 10 minutos". */
   textoChegando: string;
+  /**
+   * Recibo mandado DEPOIS de confirmar. `{hora}` vira "14h05" e `{quem}` vira
+   * quem recebeu — ou some da frase quando ninguém foi anotado.
+   */
+  textoRecibo: string;
 }
 
 export const PARAMETROS_AVISO_PADRAO: ParametrosAviso = {
@@ -35,6 +40,7 @@ export const PARAMETROS_AVISO_PADRAO: ParametrosAviso = {
     'Olá! Aqui é da entrega do Grupo Alcina Maria. Saí para a rota e devo chegar aí {janela}. ' +
     'Tem alguém no local para receber?',
   textoChegando: 'Estou chegando com a sua entrega {quando}.',
+  textoRecibo: 'Entrega registrada às {hora}{quem}. Grupo Alcina Maria.',
 };
 
 /**
@@ -50,7 +56,7 @@ export function mesclarParametrosAviso(override?: Partial<ParametrosAviso>): Par
     const valor = override[chave];
     if (typeof valor === 'number' && Number.isFinite(valor) && valor > 0) parametros[chave] = valor;
   }
-  for (const chave of ['textoRota', 'textoChegando'] as const) {
+  for (const chave of ['textoRota', 'textoChegando', 'textoRecibo'] as const) {
     const valor = override[chave];
     if (typeof valor === 'string' && valor.trim()) parametros[chave] = valor;
   }
@@ -111,6 +117,28 @@ export function mensagemDeChegada(
   const quando =
     minutos == null ? 'em instantes' : minutos <= 1 ? 'agora' : `em uns ${minutos} minutos`;
   return parametros.textoChegando.replaceAll('{quando}', quando);
+}
+
+/**
+ * Recibo da entrega, mandado ao cliente pelo WhatsApp logo depois de confirmar.
+ *
+ * É o que dá força ao comprovante: o registro nasce no aparelho do motorista,
+ * mas a CÓPIA fica no celular do cliente, com data, fora do nosso alcance.
+ * O WhatsApp entrega quando ele pegar sinal — não exige que esteja online na
+ * hora, o que importa numa base em que 1 em cada 5 endereços é rural.
+ *
+ * Sem nome anotado, a frase não inventa um: some o trecho inteiro em vez de
+ * dizer "recebida por " e deixar o vazio no ar.
+ */
+export function mensagemDeRecibo(
+  confirmadaEm: Date,
+  recebidoPor: string | null,
+  parametros: ParametrosAviso,
+): string {
+  const nome = (recebidoPor ?? '').trim();
+  return parametros.textoRecibo
+    .replaceAll('{hora}', hora(confirmadaEm))
+    .replaceAll('{quem}', nome ? `, recebida por ${nome}` : '');
 }
 
 function arredondar(data: Date, direcao: 'baixo' | 'cima'): Date {

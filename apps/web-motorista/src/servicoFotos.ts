@@ -1,4 +1,4 @@
-import { ref, uploadBytes } from 'firebase/storage';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db, storage } from './firebase';
 
@@ -11,6 +11,13 @@ import { db, storage } from './firebase';
  */
 
 const PASTA_FILA = 'fila-fotos';
+/**
+ * Fila separada para o COMPROVANTE de entrega. Não dá para reusar a do dossiê:
+ * lá o nome do arquivo é o clienteId e a foto mais nova substitui a anterior
+ * (uma referência por local); aqui cada entrega tem a sua e nada substitui
+ * nada — comprovante que se troca não prova.
+ */
+const PASTA_COMPROVANTES = 'fila-comprovantes';
 const LADO_MAXIMO = 1280;
 
 /**
@@ -89,9 +96,61 @@ export function processarFilaFotos(): Promise<void> {
   });
 }
 
+/** Enfileira o comprovante de UMA entrega. Nome do arquivo = entregaId. */
+export function enfileirarComprovante(entregaId: string, foto: Blob): Promise<void> {
+  return serializar(async () => {
+    const dir = await pasta(PASTA_COMPROVANTES);
+    const arquivo = await dir.getFileHandle(`${entregaId}.jpg`, { create: true });
+    const escrita = await arquivo.createWritable();
+    await escrita.write(foto);
+    await escrita.close();
+  }).then(() => void processarFilaComprovantes());
+}
+
+/**
+ * Sobe os comprovantes pendentes. Diferente do dossiê, aqui NÃO há doc a
+ * atualizar depois: o caminho já foi gravado no registro de entrega no momento
+ * da confirmação (o registro é imutável). Subir o arquivo é tudo.
+ */
+export function processarFilaComprovantes(): Promise<void> {
+  if (!navigator.onLine) return Promise.resolve();
+  return serializar(async () => {
+    const dir = await pasta(PASTA_COMPROVANTES);
+    const nomes: string[] = [];
+    for await (const item of valores(dir)) {
+      if (item.kind === 'file' && item.name.endsWith('.jpg')) nomes.push(item.name);
+    }
+    for (const nome of nomes) {
+      const entregaId = nome.slice(0, -'.jpg'.length);
+      const destino = ref(storage, `entregas/${entregaId}/comprovante.jpg`);
+      try {
+        const arquivo = await dir.getFileHandle(nome);
+        const foto = await arquivo.getFile();
+        await uploadBytes(destino, foto, { contentType: 'image/jpeg' });
+        await dir.removeEntry(nome);
+      } catch {
+        // O comprovante é imutável no Storage (`create` sim, sobrescrever não).
+        // Então uma falha aqui tem dois significados opostos: ou não subiu, ou
+        // JÁ subiu antes e a remoção local é que falhou. Sem distinguir, o
+        // segundo caso ficaria tentando para sempre a cada abertura do app.
+        try {
+          await getDownloadURL(destino);
+          await dir.removeEntry(nome);
+        } catch {
+          // Não está lá: continua na fila, que é o certo.
+        }
+      }
+    }
+  });
+}
+
 async function pastaFila(): Promise<FileSystemDirectoryHandle> {
+  return pasta(PASTA_FILA);
+}
+
+async function pasta(nome: string): Promise<FileSystemDirectoryHandle> {
   const raiz = await navigator.storage.getDirectory();
-  return raiz.getDirectoryHandle(PASTA_FILA, { create: true });
+  return raiz.getDirectoryHandle(nome, { create: true });
 }
 
 /** `FileSystemDirectoryHandle.values()` ainda não está no lib.dom do TS. */

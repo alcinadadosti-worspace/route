@@ -8,6 +8,7 @@ import {
   type Rota,
 } from '@rota/shared';
 import { db } from './firebase';
+import { enfileirarComprovante } from './servicoFotos';
 
 /**
  * Confirmação em campo (RF-18): um toque registra a entrega (ou o insucesso
@@ -26,13 +27,20 @@ export function registrarResultado(
   parada: ParadaRota,
   resultado: ResultadoEntrega,
   uid: string,
+  comprovante: { recebidoPor?: string | null; foto?: Blob | null } = {},
 ): void {
   const statusPedido = resultado === 'entregue' ? 'entregue' : 'insucesso';
   const confirmadaEm = new Date().toISOString();
-  const { paradas, statusRota } = aplicarResultadoParada(
+  const { paradas: aplicadas, statusRota } = aplicarResultadoParada(
     rota.paradas,
     parada.pedidoId,
     statusPedido,
+  );
+  const nomeRecebedor = (comprovante.recebidoPor ?? '').trim() || null;
+  // O nome vai TAMBÉM para a parada: o registro de entrega é a fonte de
+  // verdade, mas é o card que precisa exibi-lo e citá-lo no recibo.
+  const paradas = aplicadas.map((p) =>
+    p.pedidoId === parada.pedidoId ? { ...p, recebidoPor: nomeRecebedor } : p,
   );
 
   const batch = writeBatch(db);
@@ -45,6 +53,15 @@ export function registrarResultado(
   batch.commit().catch((erro) => console.error('Falha na sincronização', erro));
   navigator.vibrate?.(120);
 
+  // O id sai AQUI, antes de gravar: o Firestore o gera no cliente. Isso permite
+  // escrever o caminho do comprovante no próprio registro — que é imutável e não
+  // aceitaria um `update` depois que a foto subisse.
+  const referencia = doc(collection(db, 'entregas'));
+  const comprovantePath = comprovante.foto
+    ? `entregas/${referencia.id}/comprovante.jpg`
+    : null;
+  if (comprovante.foto) void enfileirarComprovante(referencia.id, comprovante.foto);
+
   void (async () => {
     const entrega: Entrega = {
       pedidoId: parada.pedidoId,
@@ -54,11 +71,27 @@ export function registrarResultado(
       confirmadaEm,
       posicaoConfirmacao: await posicaoAtual(),
       gravadaPor: uid,
+      recebidoPor: nomeRecebedor,
+      comprovantePath,
     };
-    setDoc(doc(collection(db, 'entregas')), entrega).catch((erro) =>
+    setDoc(referencia, entrega).catch((erro) =>
       console.error('Falha na sincronização da entrega', erro),
     );
   })();
+}
+
+/**
+ * Marca na parada que o RECIBO da entrega foi mandado ao cliente. Mesma
+ * mecânica do aviso de chegada, e pelo mesmo motivo: `entregas` é imutável, e
+ * o recibo é mandado depois de confirmar.
+ */
+export function registrarRecibo(rota: { id: string } & Rota, pedidoId: string): void {
+  const paradas = rota.paradas.map((p) =>
+    p.pedidoId === pedidoId ? { ...p, reciboEnviadoEm: new Date().toISOString() } : p,
+  );
+  updateDoc(doc(db, 'rotas', rota.id), { paradas }).catch((erro) =>
+    console.error('Falha ao registrar o recibo', erro),
+  );
 }
 
 /**

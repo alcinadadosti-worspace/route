@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   linkLigacao,
   linkWhatsApp,
+  mensagemDeRecibo,
   mensagemDeRota,
   mesclarParametrosAviso,
   formatarCarga,
@@ -14,6 +15,7 @@ import { Mapa } from './Mapa';
 import { Login } from './Login';
 import { Navegacao } from './Navegacao';
 import { DossieLocal, FotoReferencia } from './DossieLocal';
+import { Comprovante } from './Comprovante';
 import { useAutenticacao } from './useAutenticacao';
 import { useRotaDoDia } from './useRotaDoDia';
 import { useClientesDaRota } from './useClientesDaRota';
@@ -21,7 +23,13 @@ import { useConfigGeral } from './useConfigGeral';
 import { useMapaOffline } from './useMapaOffline';
 import { estiloMapa, type Tema } from './estiloMapa';
 import { tipoDeRede } from './mapaOffline';
-import { fecharRota, reabrirRota, registrarAviso, registrarResultado } from './servicoEntrega';
+import {
+  fecharRota,
+  reabrirRota,
+  registrarAviso,
+  registrarRecibo,
+  registrarResultado,
+} from './servicoEntrega';
 import { paradasPorResolver, separarRotas, type AbaRota } from './rotaAtiva';
 import { dispararProcessamento, ordemSugerida } from './servicoMapeamento';
 import { processarFilaFotos } from './servicoFotos';
@@ -55,6 +63,8 @@ interface ParadaTela {
   /** Minutos de direção acumulados desde o CD, calculados na publicação. */
   etaMin?: number;
   avisadoEm?: string | null;
+  reciboEnviadoEm?: string | null;
+  recebidoPor?: string | null;
 }
 
 const ICONE_STATUS: Record<ParadaTela['status'], string> = {
@@ -116,6 +126,7 @@ export function App() {
   const [abaRota, setAbaRota] = useState<AbaRota>('abertas');
   const [rotaEscolhidaId, setRotaEscolhidaId] = useState<string | null>(null);
   const listas = useMemo(() => separarRotas(rotas), [rotas]);
+
   /**
    * A rota na tela. A escolha à mão só vale se pertencer à ABA ABERTA — senão
    * abrir "Fechadas" mostraria a rota aberta que estava selecionada. Sem
@@ -206,12 +217,26 @@ export function App() {
               clienteId: p.clienteId,
               etaMin: p.etaMin,
               avisadoEm: p.avisadoEm ?? null,
+              reciboEnviadoEm: p.reciboEnviadoEm ?? null,
+              recebidoPor: p.recebidoPor ?? null,
             };
           })
         : [],
     [rota, dossies],
   );
   const [insucessoAberto, setInsucessoAberto] = useState<string | null>(null);
+  /**
+   * Parada cujo comprovante está sendo preenchido. Um passo antes de confirmar:
+   * o nome de quem recebeu se pergunta NA PORTA, com a pessoa na frente — não
+   * dá para lembrar depois, no caminhão.
+   */
+  const [comprovanteDe, setComprovanteDe] = useState<{
+    pedidoId: string;
+    resultado: ResultadoEntrega;
+  } | null>(null);
+  // Const local: o narrowing de `comprovanteDe` tem de sobreviver ao callback do
+  // JSX, e variável de state não é narrowável dentro de closure.
+  const comprovanteAtual = comprovanteDe;
   const [navegandoPara, setNavegandoPara] = useState<string | null>(null);
   const [dossieAberto, setDossieAberto] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>('todas');
@@ -251,13 +276,18 @@ export function App() {
     setRotaEscolhidaId(rota.id);
   }
 
-  function resolver(pedidoId: string | undefined, resultado: ResultadoEntrega) {
+  function resolver(
+    pedidoId: string | undefined,
+    resultado: ResultadoEntrega,
+    comprovante: { recebidoPor?: string | null; foto?: Blob | null } = {},
+  ) {
     if (!rota || !pedidoId || !usuario) return;
     const parada = rota.paradas.find((p) => p.pedidoId === pedidoId);
     // Parada já resolvida não gera segunda entrega (proteção contra toque duplo).
     if (!parada || parada.status === 'entregue' || parada.status === 'insucesso') return;
-    registrarResultado(rota, parada, resultado, usuario.uid);
+    registrarResultado(rota, parada, resultado, usuario.uid, comprovante);
     setInsucessoAberto(null);
+    setComprovanteDe(null);
   }
 
   // O componente Mapa recria o MapLibre quando as props mudam de identidade;
@@ -332,6 +362,15 @@ export function App() {
   /** Aviso da parada com a janela relativa a AGORA (chamada no toque). */
   function mensagemDaParada(p: ParadaTela): string {
     return mensagemDeRota(new Date(), p.etaMin ?? 0, p.ordem - 1, parametrosAviso);
+  }
+
+  /**
+   * Recibo com a hora de AGORA. Como o aviso da lista, é montado no toque: o
+   * card pode ficar horas na tela, e um recibo com hora velha vale menos que
+   * nenhum.
+   */
+  function mensagemDoRecibo(p: ParadaTela): string {
+    return mensagemDeRecibo(new Date(), p.recebidoPor ?? null, parametrosAviso);
   }
 
   async function refinarPorEstrada() {
@@ -735,7 +774,14 @@ export function App() {
               <button className="navegar" onClick={() => setNavegandoPara(p.pedidoId ?? null)}>
                 🧭 Navegar{p.status === 'trilha' ? ' e mapear' : ''}
               </button>
-              <button className="confirmar" onClick={() => resolver(p.pedidoId, 'entregue')}>
+              {/* Confirmar deixou de gravar direto: abre o comprovante, onde o
+                  nome de quem recebeu é perguntado com a pessoa na frente. */}
+              <button
+                className="confirmar"
+                onClick={() =>
+                  p.pedidoId && setComprovanteDe({ pedidoId: p.pedidoId, resultado: 'entregue' })
+                }
+              >
                 ✔ Confirmar entrega
               </button>
               <button
@@ -746,16 +792,53 @@ export function App() {
               >
                 ✖ Registrar insucesso
               </button>
-              {insucessoAberto === p.pedidoId && (
+              {insucessoAberto === p.pedidoId && comprovanteAtual?.pedidoId !== p.pedidoId && (
                 <div className="motivos">
                   {MOTIVOS_INSUCESSO.map((m) => (
-                    <button key={m.resultado} onClick={() => resolver(p.pedidoId, m.resultado)}>
+                    <button
+                      key={m.resultado}
+                      onClick={() =>
+                        p.pedidoId &&
+                        setComprovanteDe({ pedidoId: p.pedidoId, resultado: m.resultado })
+                      }
+                    >
                       {m.rotulo}
                     </button>
                   ))}
                 </div>
               )}
+              {comprovanteAtual && comprovanteAtual.pedidoId === p.pedidoId && (
+                <Comprovante
+                  resultado={comprovanteAtual.resultado}
+                  nomeCliente={p.cliente}
+                  aoConfirmar={({ recebidoPor, foto }) =>
+                    resolver(p.pedidoId, comprovanteAtual.resultado, { recebidoPor, foto })
+                  }
+                  aoCancelar={() => setComprovanteDe(null)}
+                />
+              )}
             </div>
+          )}
+
+          {/* Recibo ao cliente, depois de confirmada. É o que dá força ao
+              comprovante: a cópia fica no celular DELE, com data, fora do nosso
+              alcance. O WhatsApp entrega quando ele pegar sinal — não exige que
+              esteja online agora, o que importa numa base 1/5 rural. */}
+          {p.status === 'entregue' && p.telefone && !rotaFechada && (
+            <a
+              className={`recibo${p.reciboEnviadoEm ? ' feito' : ''}`}
+              href={linkWhatsApp(p.telefone, mensagemDoRecibo(p))}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(evento) => {
+                evento.currentTarget.href = linkWhatsApp(p.telefone!, mensagemDoRecibo(p));
+                if (rota && p.pedidoId) registrarRecibo(rota, p.pedidoId);
+              }}
+            >
+              {p.reciboEnviadoEm
+                ? `✔ Recibo enviado ${horaCurta(p.reciboEnviadoEm)}`
+                : '🧾 Mandar recibo ao cliente'}
+            </a>
           )}
 
           {(p.status === 'entregue' || p.status === 'insucesso') &&

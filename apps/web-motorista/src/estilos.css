@@ -1069,3 +1069,77 @@
   border-color: var(--ambar);
   color: var(--ambar);
 }
+
+/* Comprovante de entrega — o passo entre "cheguei" e "confirmado". */
+.comprovante {
+  border: 1px solid var(--ambar);
+  border-left-width: 6px;
+  border-radius: var(--raio);
+  padding: 14px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comprovante-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: var(--fonte-caps);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.8rem;
+  color: var(--texto-2);
+}
+
+.comprovante-campo input {
+  min-height: var(--alvo-toque);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--fonte-corpo);
+  font-size: 1.1rem;
+  padding: 0 12px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.comprovante-dica {
+  font-size: 0.85rem;
+  color: var(--texto-2);
+  line-height: 1.4;
+}
+
+.comprovante-dica.destaque {
+  color: var(--ambar);
+  font-size: 0.95rem;
+}
+
+.comprovante-acoes {
+  display: flex;
+  gap: 8px;
+}
+
+.comprovante-acoes button {
+  flex: 1;
+}
+
+/* Recibo ao cliente, irmão visual do aviso de chegada. */
+.recibo {
+  display: block;
+  margin-top: 8px;
+  min-height: var(--alvo-toque);
+  line-height: var(--alvo-toque);
+  text-align: center;
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  color: var(--texto);
+  text-decoration: none;
+}
+
+.recibo.feito {
+  border-color: var(--verde-maq);
+  color: var(--verde-maq);
+}

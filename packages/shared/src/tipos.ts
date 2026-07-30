@@ -144,6 +144,20 @@ export interface ParadaRota {
    * é o que separa aprendizado de reclamação.
    */
   avisadoEm?: string | null;
+  /**
+   * Quando o recibo da entrega foi mandado ao cliente pelo WhatsApp. Fica na
+   * PARADA, e não no registro de entrega, porque `entregas` é imutável por
+   * regra — e o recibo é mandado depois de confirmar. Mesmo lugar e mesma
+   * mecânica do `avisadoEm`.
+   */
+  reciboEnviadoEm?: string | null;
+  /**
+   * Quem recebeu, copiado do registro de entrega para a parada. O registro é a
+   * fonte de verdade (imutável); esta cópia existe porque a TELA precisa do
+   * nome — para mostrar no card e para citá-lo no recibo — e ler o doc de
+   * entrega a cada card seria uma consulta por parada.
+   */
+  recebidoPor?: string | null;
 }
 
 /** `rotas/{rotaId}` — seção 7.3. */
@@ -222,6 +236,22 @@ export interface Entrega {
   posicaoConfirmacao: GeoPonto | null;
   /** Autor do registro (uid) — accountability na trilha de auditoria. */
   gravadaPor: string;
+  /**
+   * Quem recebeu a mercadoria, perguntado na porta e digitado pelo motorista.
+   * Sozinho é palavra dele; ao lado da hora e da distância até o ponto do
+   * cliente, vira uma história que a revendedora confirma ou desmente na hora —
+   * e é o que falta hoje quando aparece um "não recebi" semanas depois.
+   * Nulo no insucesso (não houve quem recebesse) e em registros antigos.
+   */
+  recebidoPor?: string | null;
+  /**
+   * Foto do ato, no Storage. Opcional na entrega; o app INSISTE no insucesso,
+   * porque a briga real é o "cliente ausente" contra o "eu estava em casa" — e
+   * ali uma foto do portão fechado encerra a conversa. Caminho determinístico
+   * (`entregas/{entregaId}/comprovante.jpg`), gravado junto com o registro
+   * porque `entregas` é imutável; a imagem sobe pela fila e chega depois.
+   */
+  comprovantePath?: string | null;
 }
 
 /**
