@@ -502,6 +502,20 @@ td input[type='checkbox'] {
   font-size: 0.9rem;
 }
 
+/* Origem das notas no relatório de importação (seção 8.5) */
+.por-cd {
+  font-size: 0.9rem;
+  color: var(--texto-2);
+  padding: 8px 0;
+}
+
+/* Paradas de uma rota no acompanhamento do dia */
+.paradas-rota td {
+  padding: 4px 10px 4px 0;
+  border: 0;
+  font-size: 0.9rem;
+}
+
 /* CD definido pelas notas — o seletor só reaparece se não houver consenso */
 .cd-definido {
   display: flex;

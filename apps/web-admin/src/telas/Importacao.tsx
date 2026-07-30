@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
-import type { RelatorioImportacao } from '@rota/shared';
-import { importarXmls } from '../api';
+import { useEffect, useRef, useState } from 'react';
+import type { CentroDistribuicao, RelatorioImportacao } from '@rota/shared';
+import { importarXmls, listarCds } from '../api';
 
 /** Fluxo 1 — o operador arrasta os XMLs das notas do dia (RF-01, RF-04). */
 export function Importacao() {
@@ -9,6 +9,14 @@ export function Importacao() {
   const [enviando, setEnviando] = useState(false);
   const [relatorio, setRelatorio] = useState<RelatorioImportacao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  // Só para dar nome ao CD no relatório — a importação devolve o id.
+  const [cds, setCds] = useState<Record<string, CentroDistribuicao>>({});
+
+  useEffect(() => {
+    listarCds()
+      .then(setCds)
+      .catch(() => setCds({}));
+  }, []);
 
   async function enviar(lista: FileList | null) {
     // Copia ANTES de limpar: `files` é uma lista VIVA do input, e zerar o value
@@ -83,6 +91,21 @@ export function Importacao() {
             <Metrica valor={relatorio.pendentesDeDecisao} rotulo="Aguardando escolha de endereço" />
             <Metrica valor={relatorio.rejeitados.length} rotulo="Rejeitados" />
           </div>
+
+          {/* De qual CD saiu cada nota, pelo CNPJ do emitente (seção 8.5). É a
+              conferência que o operador faz de olho: se uma remessa que devia
+              ser toda de um galpão vem dividida, algo entrou errado. */}
+          {Object.keys(relatorio.porCd ?? {}).length > 0 && (
+            <div className="por-cd">
+              Origem das notas:{' '}
+              {Object.entries(relatorio.porCd)
+                .map(
+                  ([cdId, quantas]) =>
+                    `${cdId === '—' ? 'emitente não reconhecido' : (cds[cdId]?.nome ?? cdId)} (${quantas})`,
+                )
+                .join(' · ')}
+            </div>
+          )}
 
           {/* Um mesmo cliente pode render dois alertas na mesma remessa (mudança
               de cadastro + entrega em local diverso): a chave leva o índice. */}

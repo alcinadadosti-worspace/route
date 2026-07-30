@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { CentroDistribuicao, Cliente, Pedido, PreviaRota, Rota, Usuario } from '@rota/shared';
 import {
   listarCds,
@@ -40,6 +40,8 @@ export function Rotas() {
   const [publicando, setPublicando] = useState(false);
   const [publicada, setPublicada] = useState<string | null>(null);
   const [rotas, setRotas] = useState<Array<{ id: string } & Rota>>([]);
+  /** Rota expandida no acompanhamento, para ver parada a parada. */
+  const [rotaAberta, setRotaAberta] = useState<string | null>(null);
 
   function carregar() {
     Promise.all([listarPedidos(), listarCds(), listarUsuarios(), listarRotas(), listarClientes()])
@@ -195,6 +197,7 @@ export function Rotas() {
                 <th>Motorista</th>
                 <th>Partida</th>
                 <th>Progresso</th>
+                <th>Avisados</th>
                 <th>Insucessos</th>
                 <th>km</th>
                 <th>Status</th>
@@ -204,21 +207,62 @@ export function Rotas() {
               {rotas.map((r) => {
                 const entregues = r.paradas.filter((p) => p.status === 'entregue').length;
                 const insucessos = r.paradas.filter((p) => p.status === 'insucesso').length;
+                const avisados = r.paradas.filter((p) => p.avisadoEm).length;
                 const s = ROTULO_ROTA[r.status] ?? { texto: r.status, classe: '' };
+                const aberta = rotaAberta === r.id;
                 return (
-                  <tr key={r.id}>
-                    <td className="mono">{r.id}</td>
-                    <td>{nomeDoUsuario(r.motoristaId)}</td>
-                    <td>{r.origemNome}</td>
-                    <td className="mono">
-                      {entregues + insucessos}/{r.paradas.length}
-                    </td>
-                    <td className="mono">{insucessos || '—'}</td>
-                    <td className="mono">{r.distanciaTotalKm}</td>
-                    <td>
-                      <span className={`chip ${s.classe}`}>{s.texto}</span>
-                    </td>
-                  </tr>
+                  <Fragment key={r.id}>
+                    <tr
+                      onClick={() => setRotaAberta(aberta ? null : r.id)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td className="mono">{r.id}</td>
+                      <td>{nomeDoUsuario(r.motoristaId)}</td>
+                      <td>{r.origemNome}</td>
+                      <td className="mono">
+                        {entregues + insucessos}/{r.paradas.length} {aberta ? '▲' : '▾'}
+                      </td>
+                      <td className="mono">
+                        {avisados}/{r.paradas.length}
+                      </td>
+                      <td className="mono">{insucessos || '—'}</td>
+                      <td className="mono">{r.distanciaTotalKm}</td>
+                      <td>
+                        <span className={`chip ${s.classe}`}>{s.texto}</span>
+                      </td>
+                    </tr>
+                    {aberta && (
+                      <tr>
+                        <td colSpan={8}>
+                          {/* Parada a parada com o aviso ao cliente: diante de um
+                              "ausente", saber se ele tinha sido avisado é o que
+                              separa aprendizado de reclamação (seção 11.8). */}
+                          <table className="paradas-rota">
+                            <tbody>
+                              {r.paradas.map((p, i) => (
+                                <tr key={p.pedidoId}>
+                                  <td className="mono">{String(i + 1).padStart(2, '0')}</td>
+                                  <td>{p.nome}</td>
+                                  <td>
+                                    <span
+                                      className={`chip ${p.status === 'entregue' ? 'pronto' : p.status === 'insucesso' ? '' : 'pendente'}`}
+                                    >
+                                      {p.status}
+                                    </span>
+                                  </td>
+                                  <td className="mono">
+                                    {p.avisadoEm
+                                      ? `avisado ${new Date(p.avisadoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                                      : 'não avisado'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
