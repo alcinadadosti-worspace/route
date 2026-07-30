@@ -9,6 +9,7 @@ import {
   type ArquivoXml,
 } from './importacao/servico.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
+import { FORMATO_ROTA_ID } from './rotas/comum.js';
 import { calcularProdutividade } from './produtividade.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
@@ -211,6 +212,17 @@ export async function criarApp({
   app.get('/api/usuarios', { config: { papeis: ESCRITORIO } }, async () => repo.listarUsuarios());
 
   app.get('/api/rotas', { config: { papeis: ESCRITORIO } }, async () => repo.listarRotas());
+
+  // O que a parada NÃO guarda: por que falhou, a que horas e de onde o motorista
+  // confirmou. Isso vive só no registro de entrega, e sem este endpoint o
+  // escritório via "insucesso" sem motivo — nada com que ligar para o cliente.
+  app.get('/api/rotas/:rotaId/entregas', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
+    const { rotaId } = req.params as { rotaId: string };
+    // O rotaId vira consulta e, em outros caminhos, caminho de documento: valida
+    // antes, como na remoção de rota.
+    if (!FORMATO_ROTA_ID.test(rotaId)) return reply.code(400).send({ erro: 'rotaId inválido' });
+    return repo.listarEntregasDaRota(rotaId);
+  });
 
   // RF-13: publicação da rota na ordem final, movendo os pedidos para em_rota.
   app.post('/api/rotas', { config: { papeis: ESCRITORIO } }, async (req, reply) => {

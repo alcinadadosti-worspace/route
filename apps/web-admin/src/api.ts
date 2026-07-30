@@ -1,6 +1,7 @@
 import type {
   CentroDistribuicao,
   Cliente,
+  Entrega,
   Pedido,
   PreviaRota,
   RelatorioImportacao,
@@ -88,6 +89,13 @@ export async function listarUsuarios(): Promise<Array<{ id: string } & Usuario>>
 
 export async function listarRotas(): Promise<Array<{ id: string } & Rota>> {
   const resposta = await apiFetch(`${BASE}/api/rotas`);
+  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
+  return resposta.json();
+}
+
+/** Motivo, hora e posição de cada confirmação — o que a parada não guarda. */
+export async function listarEntregasDaRota(rotaId: string): Promise<Entrega[]> {
+  const resposta = await apiFetch(`${BASE}/api/rotas/${encodeURIComponent(rotaId)}/entregas`);
   if (!resposta.ok) throw new Error(erroHttp(resposta.status));
   return resposta.json();
 }

@@ -49,6 +49,12 @@ export interface Repositorio {
   /** Registros de entrega (seção 7.5) — base da produtividade (RF-25). */
   listarEntregas(): Promise<Entrega[]>;
   /**
+   * Entregas de UMA rota. O motivo do insucesso e a hora só existem aqui — a
+   * parada guarda apenas 'insucesso'. Consulta escopada de propósito: o painel
+   * abre uma rota por vez e não tem por que ler o histórico inteiro.
+   */
+  listarEntregasDaRota(rotaId: string): Promise<Entrega[]>;
+  /**
    * Resultado do pós-processamento numa escrita só (atômica no Firestore):
    * desativa a trilha anterior, grava a nova, aponta o cliente para ela e
    * marca a bruta como processada. Sem isso, um crash no meio deixaria
@@ -186,6 +192,10 @@ export class RepositorioMemoria implements Repositorio {
 
   async listarEntregas(): Promise<Entrega[]> {
     return this.entregas;
+  }
+
+  async listarEntregasDaRota(rotaId: string): Promise<Entrega[]> {
+    return this.entregas.filter((e) => e.rotaId === rotaId);
   }
 
   async aplicarProcessamentoDeTrilha(dados: {

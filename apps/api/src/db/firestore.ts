@@ -164,6 +164,11 @@ class RepositorioFirestore implements Repositorio {
     return resposta.docs.map((d) => d.data() as Entrega);
   }
 
+  async listarEntregasDaRota(rotaId: string): Promise<Entrega[]> {
+    const resposta = await this.db.collection('entregas').where('rotaId', '==', rotaId).get();
+    return resposta.docs.map((d) => d.data() as Entrega);
+  }
+
   async aplicarProcessamentoDeTrilha(dados: {
     trilhaAnteriorId: string | null;
     trilhaId: string;

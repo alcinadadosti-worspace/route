@@ -560,6 +560,15 @@ td input[type='checkbox'] {
   font-size: 0.9rem;
 }
 
+/* O detalhe da confirmação pende da parada dela: recuado e mais discreto, para
+   se ler como explicação da linha de cima e não como outra parada. */
+.paradas-rota tr.confirmacao td {
+  padding-top: 0;
+  padding-bottom: 8px;
+  font-size: 0.85rem;
+  color: var(--texto-2);
+}
+
 /* Mercadoria entregue mede outra coisa que paradas — faixa própria, dourada,
    para não se ler como mais uma linha de contagem de parada. */
 .produtividade-linha.carga {

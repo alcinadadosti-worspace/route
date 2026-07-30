@@ -1,9 +1,20 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { formatarCarga, type CentroDistribuicao, type Cliente, type Pedido, type PreviaRota, type Rota, type Usuario } from '@rota/shared';
+import {
+  distanciaEmMetros,
+  formatarCarga,
+  type CentroDistribuicao,
+  type Cliente,
+  type Entrega,
+  type Pedido,
+  type PreviaRota,
+  type Rota,
+  type Usuario,
+} from '@rota/shared';
 import {
   apagarRota,
   listarCds,
   listarClientes,
+  listarEntregasDaRota,
   listarPedidos,
   listarRotas,
   listarUsuarios,
@@ -18,6 +29,18 @@ const ROTULO_PARADA: Record<string, string> = {
   entregue: 'Entregue',
   insucesso: 'Insucesso',
 };
+
+/** Motivo do insucesso como o motorista escolheu (RF-18). */
+const ROTULO_RESULTADO: Record<string, string> = {
+  entregue: 'Entregue',
+  ausente: 'Cliente ausente',
+  nao_localizado: 'Endereço não localizado',
+  recusa: 'Recusou a mercadoria',
+};
+
+function horaDe(iso: string): string {
+  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
 
 const ROTULO_ROTA: Record<string, { texto: string; classe: string }> = {
   rascunho: { texto: 'Rascunho', classe: '' },
@@ -50,6 +73,39 @@ export function Rotas() {
   const [rotas, setRotas] = useState<Array<{ id: string } & Rota>>([]);
   /** Rota expandida no acompanhamento, para ver parada a parada. */
   const [rotaAberta, setRotaAberta] = useState<string | null>(null);
+  /**
+   * Confirmações da rota aberta, por pedidoId. Buscadas só ao expandir: o motivo
+   * do insucesso não cabe na parada (que só guarda 'insucesso') e ler o
+   * histórico inteiro para mostrar uma rota seria desperdício.
+   */
+  const [entregasDaRota, setEntregasDaRota] = useState<Record<string, Entrega>>({});
+  const [carregandoEntregas, setCarregandoEntregas] = useState(false);
+
+  useEffect(() => {
+    if (!rotaAberta) {
+      setEntregasDaRota({});
+      return;
+    }
+    let ativo = true;
+    setCarregandoEntregas(true);
+    setEntregasDaRota({});
+    listarEntregasDaRota(rotaAberta)
+      .then((es) => {
+        if (!ativo) return;
+        // Mais recente por pedido: a coleção admite duplicata (id automático) e
+        // a última é a que casa com o status gravado na parada.
+        const porPedido: Record<string, Entrega> = {};
+        for (const e of [...es].sort((a, b) => a.confirmadaEm.localeCompare(b.confirmadaEm))) {
+          porPedido[e.pedidoId] = e;
+        }
+        setEntregasDaRota(porPedido);
+      })
+      .catch(() => ativo && setEntregasDaRota({}))
+      .finally(() => ativo && setCarregandoEntregas(false));
+    return () => {
+      ativo = false;
+    };
+  }, [rotaAberta]);
 
   function carregar() {
     Promise.all([listarPedidos(), listarCds(), listarUsuarios(), listarRotas(), listarClientes()])
@@ -287,24 +343,56 @@ export function Rotas() {
                               separa aprendizado de reclamação (seção 11.8). */}
                           <table className="paradas-rota">
                             <tbody>
-                              {r.paradas.map((p, i) => (
-                                <tr key={p.pedidoId}>
-                                  <td className="mono">{String(i + 1).padStart(2, '0')}</td>
-                                  <td>{p.nome}</td>
-                                  <td>
-                                    <span
-                                      className={`chip ${p.status === 'entregue' ? 'pronto' : p.status === 'insucesso' ? '' : 'pendente'}`}
-                                    >
-                                      {ROTULO_PARADA[p.status] ?? p.status}
-                                    </span>
-                                  </td>
-                                  <td className="mono">
-                                    {p.avisadoEm
-                                      ? `avisado ${new Date(p.avisadoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-                                      : 'não avisado'}
-                                  </td>
-                                </tr>
-                              ))}
+                              {r.paradas.map((p, i) => {
+                                const e = entregasDaRota[p.pedidoId];
+                                // Onde ele estava ao confirmar, contra o pin do
+                                // cliente. "Ausente" registrado a 3 km da porta
+                                // conta uma história diferente de "ausente" no
+                                // portão — e é a única forma de saber.
+                                const distancia =
+                                  e?.posicaoConfirmacao
+                                    ? Math.round(distanciaEmMetros(e.posicaoConfirmacao, p.coordenada))
+                                    : null;
+                                return (
+                                  <Fragment key={p.pedidoId}>
+                                    <tr>
+                                      <td className="mono">{String(i + 1).padStart(2, '0')}</td>
+                                      <td>{p.nome}</td>
+                                      <td>
+                                        <span
+                                          className={`chip ${p.status === 'entregue' ? 'pronto' : p.status === 'insucesso' ? '' : 'pendente'}`}
+                                        >
+                                          {ROTULO_PARADA[p.status] ?? p.status}
+                                        </span>
+                                      </td>
+                                      <td className="mono">
+                                        {p.avisadoEm ? `avisado ${horaDe(p.avisadoEm)}` : 'não avisado'}
+                                      </td>
+                                    </tr>
+                                    {/* O detalhe da confirmação: o "por quê" que
+                                        o escritório precisa para ligar ao
+                                        cliente, e que a parada não guarda. */}
+                                    {e && (
+                                      <tr className="confirmacao">
+                                        <td />
+                                        <td colSpan={3}>
+                                          <strong>{ROTULO_RESULTADO[e.resultado] ?? e.resultado}</strong>{' '}
+                                          às {horaDe(e.confirmadaEm)}
+                                          {distancia != null
+                                            ? ` · confirmado a ${distancia} m do ponto do cliente`
+                                            : ' · sem posição (GPS indisponível na hora)'}
+                                        </td>
+                                      </tr>
+                                    )}
+                                    {!e && carregandoEntregas && (
+                                      <tr className="confirmacao">
+                                        <td />
+                                        <td colSpan={3}>carregando confirmação…</td>
+                                      </tr>
+                                    )}
+                                  </Fragment>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </td>
