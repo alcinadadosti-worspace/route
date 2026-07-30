@@ -67,6 +67,27 @@ export async function coletarParadas(
       return { ok: false, status: 404, erro: `Cliente do pedido ${pedidoId} não encontrado` };
     }
 
+    /**
+     * Pedido que JÁ está numa rota, ou já foi executado, não entra em outra.
+     * O painel só oferece os `pronto_para_rota`, mas a checagem tem de estar
+     * AQUI: uma prévia montada antes de a seleção mudar (rota publicada por
+     * outro operador, pedido apagado, rota desfeita) mandaria estes ids do
+     * mesmo jeito. Publicar reescreveria o `rotaId` do pedido para a rota nova
+     * e a rota antiga ficaria com uma parada de um pedido que já não é dela —
+     * inconsistência que ninguém percebe até a conferência do dia.
+     */
+    if (pedido.status === 'em_rota' || pedido.status === 'entregue' || pedido.status === 'insucesso') {
+      const onde =
+        pedido.status === 'em_rota'
+          ? `já está na rota ${pedido.rotaId ?? '(publicada)'}`
+          : `já foi ${pedido.status === 'entregue' ? 'entregue' : 'registrado como insucesso'}`;
+      return {
+        ok: false,
+        status: 409,
+        erro: `Pedido ${pedido.numeroNota} ${onde} — atualize a tela e monte de novo`,
+      };
+    }
+
     // Decisão de endereço pendente trava a rota: entrega em local diverso
     // (8.4) roteirizaria o endereço fiscal no palpite, e cadastro que mudou de
     // lugar (8.3) roteirizaria o ponto do endereço antigo.

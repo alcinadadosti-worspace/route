@@ -326,3 +326,31 @@ test('pedido pendente_de_decisao é bloqueado na coleta (não entra em rota)', a
   assert.equal(coleta.ok, false);
   if (!coleta.ok) assert.equal(coleta.status, 422);
 });
+
+test('pedido JÁ em outra rota é recusado na coleta — prévia velha não republica', async () => {
+  // O painel só oferece os `pronto_para_rota`, mas uma prévia montada ANTES da
+  // seleção mudar manda os ids do mesmo jeito. Sem esta guarda, publicar
+  // reescreveria o rotaId do pedido e a rota antiga ficaria com uma parada que
+  // já não é dela.
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('c1', clienteCom({ lat: -9.42, lng: -36.64 }, 'CLIENTE UM'));
+  await repo.salvarPedido('p1', { ...pedidoDe('c1'), status: 'em_rota', rotaId: '2026-07-30_aaaaaaaa' });
+
+  const r = await coletarParadas(['p1'], repo);
+  assert.equal(r.ok, false);
+  if (!r.ok) {
+    assert.equal(r.status, 409);
+    assert.match(r.erro, /já está na rota 2026-07-30_aaaaaaaa/);
+  }
+});
+
+test('pedido já executado não volta para uma rota nova', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('c1', clienteCom({ lat: -9.42, lng: -36.64 }, 'CLIENTE UM'));
+  for (const status of ['entregue', 'insucesso'] as const) {
+    await repo.salvarPedido('p1', { ...pedidoDe('c1'), status });
+    const r = await coletarParadas(['p1'], repo);
+    assert.equal(r.ok, false, `${status} deveria ser recusado`);
+    if (!r.ok) assert.equal(r.status, 409);
+  }
+});

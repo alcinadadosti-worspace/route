@@ -67,6 +67,8 @@ export function Rotas() {
   const [previa, setPrevia] = useState<PreviaRota | null>(null);
   const [otimizando, setOtimizando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  /** Explica o que ACONTECEU, quando o resultado não é óbvio na tela. */
+  const [aviso, setAviso] = useState<string | null>(null);
   const [usuarios, setUsuarios] = useState<Array<{ id: string } & Usuario>>([]);
   const [motoristaId, setMotoristaId] = useState('');
   const [publicando, setPublicando] = useState(false);
@@ -181,6 +183,25 @@ export function Rotas() {
     });
   }, [prontos]);
 
+  /**
+   * A PRÉVIA também envelhece, e era a única coisa que ninguém podava. Ela
+   * carrega os pedidoIds usados na otimização; se algum deixou de estar
+   * disponível (foi apagado, entrou em outra rota, ou a rota foi desfeita e
+   * remontada), continuar mostrando uma rota que não existe mais é pior do que
+   * mostrar nada — e o botão Publicar mandaria os ids velhos.
+   */
+  useEffect(() => {
+    if (!previa) return;
+    const validos = new Set(prontos.map((p) => p.id));
+    const sumiram = previa.paradas.filter((p) => !validos.has(p.pedidoId));
+    if (sumiram.length === 0) return;
+    setPrevia(null);
+    setAviso(
+      `A prévia foi descartada: ${sumiram.length} pedido(s) dela não estão mais disponíveis ` +
+        '(apagados ou já em outra rota). Selecione de novo e otimize.',
+    );
+  }, [prontos, previa]);
+
   function alternar(id: string) {
     const proximo = new Set(selecionados);
     if (proximo.has(id)) proximo.delete(id);
@@ -237,8 +258,16 @@ export function Rotas() {
       return;
     }
     setErro(null);
+    setAviso(null);
     try {
       await apagarRota(r.id);
+      // Dizer PARA ONDE os pedidos foram. Sem isto, eles reaparecem sozinhos na
+      // lista de Montagem e parece que a rota "não foi apagada de verdade" —
+      // quando é o contrário: apagar a rota é justamente devolvê-los.
+      setAviso(
+        `Rota ${r.id} desfeita. Os ${r.paradas.length} pedido(s) dela voltaram para a lista de ` +
+          'Montagem de rota, disponíveis para montar outra.',
+      );
       carregar();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao desfazer a rota');
@@ -299,6 +328,7 @@ export function Rotas() {
           <h2>Acompanhamento do dia</h2>
           <button onClick={carregar}>Atualizar</button>
         </div>
+        {aviso && <div className="alerta">{aviso}</div>}
         {rotas.length === 0 && <div className="vazio">Nenhuma rota publicada ainda.</div>}
         {rotas.length > 0 && (
           <table>
