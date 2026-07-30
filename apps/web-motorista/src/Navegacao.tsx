@@ -17,6 +17,7 @@ import {
 } from '@rota/shared';
 import { MapaNavegacao, type OutraParada } from './MapaNavegacao';
 import { DossieLocal } from './DossieLocal';
+import { Comprovante } from './Comprovante';
 import { useWakeLock } from './useWakeLock';
 import { usePosicao } from './usePosicao';
 import { useBussola } from './useBussola';
@@ -72,7 +73,11 @@ export function Navegacao({
    * da navegação (raro): força o MapaNavegacao a remontar com o mapa offline
    * em vez de ficar preso no basemap online que falha ao sair do sinal. */
   estiloKey: string;
-  aoResolver: (pedidoId: string, resultado: ResultadoEntrega) => void;
+  aoResolver: (
+    pedidoId: string,
+    resultado: ResultadoEntrega,
+    comprovante?: { recebidoPor?: string | null; foto?: Blob | null },
+  ) => void;
   aoFechar: () => void;
   /** Parâmetros de trilha já mesclados de config/geral (seção 11). */
   parametros: ParametrosTrilha;
@@ -306,9 +311,19 @@ export function Navegacao({
   }
 
   const [insucessoAberto, setInsucessoAberto] = useState(false);
-  function resolver(resultado: ResultadoEntrega) {
+  /**
+   * Passo do comprovante ANTES de resolver — o mesmo da lista de cards. Sem
+   * ele aqui, confirmar de dentro da navegação (o caminho de quem acabou de
+   * chegar, que é o normal) pulava a pergunta de quem recebeu e a foto: o
+   * comprovante existia só para quem confirmasse pela lista.
+   */
+  const [comprovanteDe, setComprovanteDe] = useState<ResultadoEntrega | null>(null);
+  function resolver(
+    resultado: ResultadoEntrega,
+    comprovante: { recebidoPor?: string | null; foto?: Blob | null } = {},
+  ) {
     if (gravando) encerrarGravacao(false);
-    aoResolver(parada.pedidoId, resultado);
+    aoResolver(parada.pedidoId, resultado, comprovante);
     aoFechar();
   }
 
@@ -359,6 +374,10 @@ export function Navegacao({
   }
   const podeAvisarChegada =
     minutosDoAviso() != null || (distanciaAoPin != null && distanciaAoPin <= RAIO_AVISO_CHEGADA_M);
+
+  // Const local: o narrowing de `comprovanteDe` tem de sobreviver aos callbacks
+  // do JSX — variável de state não é estreitável dentro de closure.
+  const comprovanteAtual = comprovanteDe;
 
   const rotuloModo = chegou
     ? 'VOCÊ CHEGOU'
@@ -442,7 +461,7 @@ export function Navegacao({
             {/* O carimbo que separa viagem de atendimento — mostrar dá ao
                 motorista a certeza de que registrou sem ele fazer nada. */}
             {parada.chegouEm && (
-              <div className="nav-chegada">
+              <div className="nav-chegada-carimbo">
                 ✔ chegada registrada às{' '}
                 {new Date(parada.chegouEm).toLocaleTimeString('pt-BR', {
                   hour: '2-digit',
@@ -546,22 +565,39 @@ export function Navegacao({
         {chegou && !ajustandoPin && !perguntaReaprendizado && (
           <div className="nav-chegada">
             {cliente && <DossieLocal cliente={cliente} />}
-            <div className="nav-acoes">
-              <button className="confirmar" onClick={() => resolver('entregue')}>
-                ✔ Confirmar entrega
-              </button>
-              <button className="insucesso-botao" onClick={() => setInsucessoAberto(!insucessoAberto)}>
-                ✖ Registrar insucesso
-              </button>
-            </div>
-            {insucessoAberto && (
+            {/* Com o comprovante aberto, os botões crus somem: dois caminhos de
+                confirmar na mesma tela seria convite a pular o passo. */}
+            {!comprovanteAtual && (
+              <div className="nav-acoes">
+                <button className="confirmar" onClick={() => setComprovanteDe('entregue')}>
+                  ✔ Confirmar entrega
+                </button>
+                <button
+                  className="insucesso-botao"
+                  onClick={() => setInsucessoAberto(!insucessoAberto)}
+                >
+                  ✖ Registrar insucesso
+                </button>
+              </div>
+            )}
+            {!comprovanteAtual && insucessoAberto && (
               <div className="motivos">
                 {MOTIVOS_INSUCESSO.map((m) => (
-                  <button key={m.resultado} onClick={() => resolver(m.resultado)}>
+                  <button key={m.resultado} onClick={() => setComprovanteDe(m.resultado)}>
                     {m.rotulo}
                   </button>
                 ))}
               </div>
+            )}
+            {comprovanteAtual && (
+              <Comprovante
+                resultado={comprovanteAtual}
+                nomeCliente={parada.nome}
+                aoConfirmar={({ recebidoPor, foto }) =>
+                  resolver(comprovanteAtual, { recebidoPor, foto })
+                }
+                aoCancelar={() => setComprovanteDe(null)}
+              />
             )}
           </div>
         )}

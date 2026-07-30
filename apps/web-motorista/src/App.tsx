@@ -313,7 +313,12 @@ export function App() {
         paradas.find((pt) => pt.pedidoId === pedidoId)?.status !== 'trilha';
       if (pinConfiavel) {
         const posicao = await posicaoAtual();
-        const distancia = posicao ? distanciaEmMetros(posicao, parada.coordenada) : null;
+        // Pin confirmado em campo manda sobre a coordenada da publicação — a
+        // MESMA precedência da navegação e do mapa. Medir contra o pin velho
+        // acusaria distância errada justamente no cliente recém-corrigido.
+        const referencia =
+          dossies[parada.clienteId]?.cliente?.coordenada ?? parada.coordenada;
+        const distancia = posicao ? distanciaEmMetros(posicao, referencia) : null;
         if (distancia != null && distancia > LIMIAR_GUARDA_M) {
           const acao =
             resultado === 'entregue' ? 'Confirmar a entrega' : 'Registrar o insucesso';
@@ -484,7 +489,9 @@ export function App() {
         parametrosAviso={parametrosAviso}
         outrasParadas={outrasParadas}
         aoTrocarParada={setNavegandoPara}
-        aoResolver={(pedidoId, resultado) => resolver(pedidoId, resultado)}
+        aoResolver={(pedidoId, resultado, comprovante) =>
+          resolver(pedidoId, resultado, comprovante ?? {})
+        }
         aoFechar={() => setNavegandoPara(null)}
       />
     );

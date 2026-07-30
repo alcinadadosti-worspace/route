@@ -1151,8 +1151,10 @@
   color: var(--verde-maq);
 }
 
-/* Chegada gravada — a certeza de que o carimbo aconteceu sem ele fazer nada. */
-.nav-chegada {
+/* Chegada gravada — a certeza de que o carimbo aconteceu sem ele fazer nada.
+   NÃO é .nav-chegada: esse nome já é do PAINEL de chegada (botões de confirmar),
+   e reusar a classe restilizava o painel inteiro por herança de fonte. */
+.nav-chegada-carimbo {
   font-size: 0.8rem;
   color: var(--verde-maq);
   margin-top: 2px;
