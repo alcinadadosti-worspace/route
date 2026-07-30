@@ -40,7 +40,9 @@ export function registrarResultado(
   // O nome vai TAMBÉM para a parada: o registro de entrega é a fonte de
   // verdade, mas é o card que precisa exibi-lo e citá-lo no recibo.
   const paradas = aplicadas.map((p) =>
-    p.pedidoId === parada.pedidoId ? { ...p, recebidoPor: nomeRecebedor } : p,
+    p.pedidoId === parada.pedidoId
+      ? { ...p, recebidoPor: nomeRecebedor, confirmadaEm }
+      : p,
   );
 
   const batch = writeBatch(db);

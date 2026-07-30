@@ -32,7 +32,7 @@ import {
 } from './servicoEntrega';
 import { paradasPorResolver, separarRotas, type AbaRota } from './rotaAtiva';
 import { dispararProcessamento, ordemSugerida } from './servicoMapeamento';
-import { processarFilaFotos } from './servicoFotos';
+import { processarFilaComprovantes, processarFilaFotos } from './servicoFotos';
 import { usePosicao } from './usePosicao';
 import { aplicarOrdemSugerida, ordenarPorProximidade } from './proximidade';
 import { formatarDistancia } from './formato';
@@ -65,6 +65,7 @@ interface ParadaTela {
   avisadoEm?: string | null;
   reciboEnviadoEm?: string | null;
   recebidoPor?: string | null;
+  confirmadaEm?: string | null;
 }
 
 const ICONE_STATUS: Record<ParadaTela['status'], string> = {
@@ -165,18 +166,21 @@ export function App() {
     document.documentElement.dataset.tema = tema;
   }, [tema]);
 
-  // O que ficou pendente offline (trilhas por processar, fotos na fila) é
-  // retomado em toda abertura logada e sempre que a rede volta.
+  // O que ficou pendente offline (trilhas por processar, fotos do dossiê e
+  // COMPROVANTES de entrega) é retomado em toda abertura logada e sempre que a
+  // rede volta. A fila de comprovantes tem de estar aqui: sem isto, um
+  // comprovante tirado sem sinal só subiria se o motorista tirasse OUTRO
+  // depois — e ficaria parado no aparelho para sempre se ele não tirasse.
   useEffect(() => {
     if (!usuario) return;
-    dispararProcessamento();
-    void processarFilaFotos();
-    const aoVoltarRede = () => {
+    const retomar = () => {
       dispararProcessamento();
       void processarFilaFotos();
+      void processarFilaComprovantes();
     };
-    window.addEventListener('online', aoVoltarRede);
-    return () => window.removeEventListener('online', aoVoltarRede);
+    retomar();
+    window.addEventListener('online', retomar);
+    return () => window.removeEventListener('online', retomar);
   }, [usuario]);
 
   // CD de partida da rota publicada. Identidade presa ao id da rota: cada
@@ -219,6 +223,7 @@ export function App() {
               avisadoEm: p.avisadoEm ?? null,
               reciboEnviadoEm: p.reciboEnviadoEm ?? null,
               recebidoPor: p.recebidoPor ?? null,
+              confirmadaEm: p.confirmadaEm ?? null,
             };
           })
         : [],
@@ -365,12 +370,19 @@ export function App() {
   }
 
   /**
-   * Recibo com a hora de AGORA. Como o aviso da lista, é montado no toque: o
-   * card pode ficar horas na tela, e um recibo com hora velha vale menos que
-   * nenhum.
+   * Recibo com a hora da ENTREGA, não a do toque.
+   *
+   * O aviso de chegada é uma previsão e por isso é refeito no toque; o recibo é
+   * o oposto — afirma um fato passado. Montá-lo com `new Date()` fazia o cliente
+   * receber "entrega registrada às 14h20" quando a entrega foi às 14h05, e a
+   * diferença cresce com a demora em mandar. Recibo com hora errada é pior que
+   * recibo nenhum.
+   *
+   * `new Date()` só como último recurso, para rota antiga sem o campo.
    */
   function mensagemDoRecibo(p: ParadaTela): string {
-    return mensagemDeRecibo(new Date(), p.recebidoPor ?? null, parametrosAviso);
+    const quando = p.confirmadaEm ? new Date(p.confirmadaEm) : new Date();
+    return mensagemDeRecibo(quando, p.recebidoPor ?? null, parametrosAviso);
   }
 
   async function refinarPorEstrada() {
@@ -820,11 +832,24 @@ export function App() {
             </div>
           )}
 
+          {/* O que ficou registrado, no proprio card: e o que o motorista
+              confere antes de mandar o recibo, e o que ele mostra ao cliente
+              se houver duvida na hora. */}
+          {p.status === 'entregue' && (p.recebidoPor || p.confirmadaEm) && (
+            <div className="recebido-por">
+              ✔ Entregue{p.confirmadaEm ? ` ${horaCurta(p.confirmadaEm)}` : ''}
+              {p.recebidoPor ? ` · recebido por ${p.recebidoPor}` : ' · sem nome anotado'}
+            </div>
+          )}
+
           {/* Recibo ao cliente, depois de confirmada. É o que dá força ao
               comprovante: a cópia fica no celular DELE, com data, fora do nosso
               alcance. O WhatsApp entrega quando ele pegar sinal — não exige que
               esteja online agora, o que importa numa base 1/5 rural. */}
-          {p.status === 'entregue' && p.telefone && !rotaFechada && (
+          {/* Vale TAMBÉM em rota fechada. Mandar o recibo não muda registro
+              nenhum — só comunica um fato já gravado —, e esquecer de mandar
+              antes de fechar não pode custar o recibo do cliente. */}
+          {p.status === 'entregue' && p.telefone && (
             <a
               className={`recibo${p.reciboEnviadoEm ? ' feito' : ''}`}
               href={linkWhatsApp(p.telefone, mensagemDoRecibo(p))}

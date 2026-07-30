@@ -411,3 +411,18 @@ test('redação do recibo é ajustável sem deploy, como as outras', () => {
   // Vazio continua sendo ignorado — config torta não vira recibo em branco.
   assert.equal(mesclarParametrosAviso({ textoRecibo: '  ' }).textoRecibo, PARAMETROS_AVISO_PADRAO.textoRecibo);
 });
+
+test('recibo carrega a hora da ENTREGA, não a de quando foi montado', () => {
+  // O bug que isto trava: montar com `new Date()` fazia o cliente receber
+  // "registrada às 14h20" quando a entrega tinha sido às 14h05 — e a diferença
+  // cresce com a demora em mandar. O aviso de chegada é previsão e se refaz; o
+  // recibo afirma um fato passado e não pode se mexer.
+  const entregue = new Date(2026, 6, 30, 14, 5);
+  const enviado = new Date(2026, 6, 30, 16, 40);
+  assert.match(mensagemDeRecibo(entregue, 'Maria', PARAMETROS_AVISO_PADRAO), /14h05/);
+  assert.ok(
+    !mensagemDeRecibo(entregue, 'Maria', PARAMETROS_AVISO_PADRAO).includes('16h40'),
+    'a hora do envio não pode aparecer no lugar da hora da entrega',
+  );
+  assert.match(mensagemDeRecibo(enviado, 'Maria', PARAMETROS_AVISO_PADRAO), /16h40/);
+});

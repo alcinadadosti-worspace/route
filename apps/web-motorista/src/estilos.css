@@ -1143,3 +1143,10 @@
   border-color: var(--verde-maq);
   color: var(--verde-maq);
 }
+
+/* O que ficou registrado na parada entregue — confere antes de mandar o recibo. */
+.recebido-por {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: var(--verde-maq);
+}

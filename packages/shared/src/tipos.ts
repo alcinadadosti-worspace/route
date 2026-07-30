@@ -158,6 +158,14 @@ export interface ParadaRota {
    * entrega a cada card seria uma consulta por parada.
    */
   recebidoPor?: string | null;
+  /**
+   * Quando esta parada foi confirmada. Copiado do registro de entrega pelo mesmo
+   * motivo do nome, e ele é INDISPENSÁVEL ao recibo: o recibo afirma um FATO
+   * passado ("entrega registrada às 14h05"), e não uma previsão. Montá-lo com a
+   * hora do toque faria o cliente receber a hora errada sempre que o motorista
+   * demorasse a mandar.
+   */
+  confirmadaEm?: string | null;
 }
 
 /** `rotas/{rotaId}` — seção 7.3. */
