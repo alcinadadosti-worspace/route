@@ -391,6 +391,33 @@
   background: color-mix(in srgb, var(--laranja-seg) 10%, var(--superficie));
 }
 
+/* Trecho em foco no mapa (só o caminho até uma parada) */
+.foco-trecho {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border: 1px solid var(--ambar);
+  border-radius: var(--raio);
+  padding: 8px 12px;
+  margin: 8px 0 12px;
+  font-size: 0.9rem;
+  background: color-mix(in srgb, var(--ambar) 10%, var(--superficie));
+}
+
+.foco-trecho button {
+  min-height: var(--alvo-toque);
+  padding: 0 12px;
+  margin-left: auto;
+  border-color: var(--ambar);
+  color: var(--ambar);
+}
+
+/* O número da parada abre o foco: sinaliza que é tocável. */
+.parada .ordem {
+  cursor: pointer;
+}
+
 /* Sem rota publicada — substituiu o antigo modo de demonstração */
 .sem-rota {
   border: 1px dashed var(--borda);

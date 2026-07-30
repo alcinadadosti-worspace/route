@@ -190,6 +190,8 @@ export function App() {
   const [dossieAberto, setDossieAberto] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Filtro>('todas');
   const [porProximidade, setPorProximidade] = useState(false);
+  /** Parada cujo trecho está em foco no mapa (índice 0-based). */
+  const [paradaFocada, setParadaFocada] = useState<number | null>(null);
   /** Ordem por estrada vinda da API (null = linha reta, o padrão offline). */
   const [ordemEstrada, setOrdemEstrada] = useState<string[] | null>(null);
   const [refinando, setRefinando] = useState(false);
@@ -429,10 +431,19 @@ export function App() {
             polyline={rota.polylinePlanejada}
             estilo={estilo}
             aoEscolherParada={setNavegandoPara}
+            paradaFocada={paradaFocada}
+            aoFocarParada={setParadaFocada}
           />
         ) : (
           <div className="mapa" />
         ))}
+      {rota && paradaFocada != null && paradas[paradaFocada] && (
+        <div className="foco-trecho">
+          Mostrando o caminho até a <strong>PARADA {String(paradaFocada + 1).padStart(2, '0')}</strong>{' '}
+          · {paradas[paradaFocada]!.cliente}
+          <button onClick={() => setParadaFocada(null)}>ver rota toda</button>
+        </div>
+      )}
       {/* Estado do mapa embarcado: interessa mesmo sem rota, porque baixá-lo é
           o que o motorista faz no Wi-Fi da base ANTES de sair. */}
       <div className="mapa-nota">
@@ -528,7 +539,9 @@ export function App() {
 
       {paradasNaTela.map((p) => (
         <article key={p.ordem} className={`parada${p.status === 'trilha' ? ' rural' : ''}`}>
-          <div className="ordem">
+          {/* Tocar o cartão foca o trecho dela no mapa — o mesmo que tocar o
+              marcador. É onde o motorista já está olhando quando decide. */}
+          <div className="ordem" onClick={() => setParadaFocada(p.ordem - 1)}>
             PARADA {String(p.ordem).padStart(2, '0')}
             {p.distanciaM != null && (
               <span className="parada-distancia">· {formatarDistancia(p.distanciaM)}</span>

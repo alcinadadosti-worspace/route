@@ -1,8 +1,16 @@
-import { useEffect, useRef } from 'react';
-import { LngLatBounds, Map as MapaLibre, Marker, Popup, type StyleSpecification } from 'maplibre-gl';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  LngLatBounds,
+  Map as MapaLibre,
+  Marker,
+  Popup,
+  type GeoJSONSource,
+  type StyleSpecification,
+} from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { decodificarPolyline, type GeoPonto } from '@rota/shared';
 import { camadaContorno, camadaLinha, COR_ROTA } from './estiloRota';
+import { indicesDasParadas, trechoDaParada } from './trechos';
 
 export interface PontoMapa {
   ordem: number;
@@ -31,6 +39,8 @@ export function Mapa({
   polyline,
   estilo,
   aoEscolherParada,
+  paradaFocada = null,
+  aoFocarParada,
 }: {
   cd: GeoPonto & { nome: string };
   paradas: PontoMapa[];
@@ -39,23 +49,49 @@ export function Mapa({
   estilo: StyleSpecification;
   /** Toque em "Navegar até aqui" no balão da parada — o mapa vira o seletor. */
   aoEscolherParada?: (pedidoId: string) => void;
+  /**
+   * Parada em foco (índice 0-based). Com foco, o mapa desenha SÓ o trecho que
+   * chega nela e enquadra esse trecho — a rota inteira de uma vez não aponta
+   * para nada. Null desenha a rota toda.
+   */
+  paradaFocada?: number | null;
+  /** Toque no marcador da parada. */
+  aoFocarParada?: (indice: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mapaRef = useRef<MapaLibre | null>(null);
+  const [pronto, setPronto] = useState(false);
   // Por referência: o mapa é recriado quando as props mudam de identidade, e
   // um callback novo a cada render do pai recriaria o MapLibre sem parar.
   const aoEscolherRef = useRef(aoEscolherParada);
   aoEscolherRef.current = aoEscolherParada;
+  const aoFocarRef = useRef(aoFocarParada);
+  aoFocarRef.current = aoFocarParada;
+
+  /**
+   * Traçado e emendas por parada. Sem polyline do OSRM, a ligação reta entre os
+   * pontos serve de traçado — e o recorte por parada funciona igual.
+   */
+  const desenho = useMemo(() => {
+    const doOsrm = polyline ? decodificarPolyline(polyline) : null;
+    const linha: GeoPonto[] = doOsrm ?? [
+      { lat: cd.lat, lng: cd.lng },
+      ...paradas.map((p) => p.coordenada),
+    ];
+    return {
+      linha,
+      indices: indicesDasParadas(
+        linha,
+        paradas.map((p) => p.coordenada),
+      ),
+      doOsrm: doOsrm != null,
+    };
+  }, [polyline, paradas, cd]);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const tracado = polyline ? decodificarPolyline(polyline) : null;
-    const coordenadas: Array<[number, number]> = tracado
-      ? tracado.map((p): [number, number] => [p.lng, p.lat])
-      : [
-          [cd.lng, cd.lat],
-          ...paradas.map((p): [number, number] => [p.coordenada.lng, p.coordenada.lat]),
-        ];
+    const coordenadas = desenho.linha.map((p): [number, number] => [p.lng, p.lat]);
     const limites = coordenadas.reduce(
       (b, c) => b.extend(c),
       new LngLatBounds(coordenadas[0], coordenadas[0]),
@@ -67,6 +103,7 @@ export function Mapa({
       bounds: limites,
       fitBoundsOptions: { padding: 48, maxZoom: 13 },
     });
+    mapaRef.current = mapa;
 
     // Exposto também no build: os E2E (RNF-01) inspecionam o estado do mapa.
     (window as unknown as { __mapa?: unknown }).__mapa = mapa;
@@ -84,8 +121,9 @@ export function Mapa({
       // um palpite e vai tracejada, para não passar por caminho de verdade.
       mapa.addLayer(camadaContorno('tracado-contorno', 'tracado', 5));
       mapa.addLayer(
-        camadaLinha('tracado', 'tracado', 5, COR_ROTA, tracado ? undefined : [2, 1.5]),
+        camadaLinha('tracado', 'tracado', 5, COR_ROTA, desenho.doOsrm ? undefined : [2, 1.5]),
       );
+      setPronto(true);
     });
 
     new Marker({ color: '#2e3033' })
@@ -93,19 +131,48 @@ export function Mapa({
       .setPopup(new Popup({ offset: 24 }).setText(cd.nome))
       .addTo(mapa);
 
-    for (const p of paradas) {
-      new Marker({ color: COR_STATUS[p.status] })
+    paradas.forEach((p, indice) => {
+      const marcador = new Marker({ color: COR_STATUS[p.status] })
         .setLngLat([p.coordenada.lng, p.coordenada.lat])
         .setPopup(new Popup({ offset: 24 }).setDOMContent(balaoDaParada(p, aoEscolherRef)))
         .addTo(mapa);
-    }
+      // Tocar o marcador foca o trecho DESTA parada, além de abrir o balão.
+      marcador.getElement().addEventListener('click', () => aoFocarRef.current?.(indice));
+    });
 
     return () => {
       const global = window as unknown as { __mapa?: unknown };
       if (global.__mapa === mapa) delete global.__mapa;
+      mapaRef.current = null;
+      setPronto(false);
       mapa.remove();
     };
-  }, [cd, paradas, polyline, estilo]);
+  }, [cd, paradas, desenho, estilo]);
+
+  // Foco: redesenha a linha e enquadra o trecho, SEM recriar o mapa — recriar
+  // recarregaria o basemap a cada toque de parada.
+  useEffect(() => {
+    const mapa = mapaRef.current;
+    if (!mapa || !pronto) return;
+    const pontos =
+      paradaFocada == null
+        ? desenho.linha
+        : trechoDaParada(desenho.linha, desenho.indices, paradaFocada);
+    if (pontos.length === 0) return;
+
+    const fonte = mapa.getSource('tracado') as GeoJSONSource | undefined;
+    fonte?.setData({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: pontos.map((p) => [p.lng, p.lat]) },
+    });
+
+    const limites = pontos.reduce(
+      (b, p) => b.extend([p.lng, p.lat]),
+      new LngLatBounds([pontos[0]!.lng, pontos[0]!.lat], [pontos[0]!.lng, pontos[0]!.lat]),
+    );
+    mapa.fitBounds(limites, { padding: 60, maxZoom: 15, duration: 500 });
+  }, [pronto, paradaFocada, desenho]);
 
   return <div ref={containerRef} className="mapa" />;
 }
