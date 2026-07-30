@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
-import { formatarCarga, type Pedido } from '@rota/shared';
-import { apagarPedido, listarPedidos } from '../api';
+import { Fragment, useEffect, useState } from 'react';
+import { formatarCarga, type Cliente, type Pedido } from '@rota/shared';
+import { apagarPedido, listarClientes, listarPedidos } from '../api';
+import { FotoReferencia } from '../FotoReferencia';
 
 /**
  * Só o que ainda não foi executado em campo pode ser apagado (a API confere
@@ -26,13 +27,20 @@ const ROTULO_STATUS: Record<string, { texto: string; classe: string }> = {
 
 export function Pedidos() {
   const [pedidos, setPedidos] = useState<Array<{ id: string } & Pedido>>([]);
+  const [clientes, setClientes] = useState<Record<string, Cliente>>({});
   const [filtro, setFiltro] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
   useEffect(() => {
-    listarPedidos()
-      .then(setPedidos)
+    // O dossiê do local mora no CLIENTE, não no pedido — é o que faz foto e
+    // observação valerem para todo pedido futuro do mesmo endereço. Para
+    // MOSTRAR isso ao lado do pedido, é preciso trazer os clientes junto.
+    Promise.all([listarPedidos(), listarClientes()])
+      .then(([ps, cs]) => {
+        setPedidos(ps);
+        setClientes(Object.fromEntries(cs.map((c) => [c.id, c])));
+      })
       .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao listar'));
   }, []);
 
@@ -90,6 +98,7 @@ export function Pedidos() {
           <thead>
             <tr>
               <th>Nota</th>
+              <th>Cliente</th>
               <th>Pedido / Lote</th>
               <th>Emitida em</th>
               <th>Itens</th>
@@ -102,10 +111,19 @@ export function Pedidos() {
           <tbody>
             {filtrados.map((p) => {
               const s = ROTULO_STATUS[p.status] ?? { texto: p.status, classe: '' };
+              const c = clientes[p.clienteId];
+              const temDossie = Boolean(c?.fotoReferenciaPath || c?.observacoes);
               return (
-                <tr key={p.id}>
+                <Fragment key={p.id}>
+                <tr>
                   <td className="mono">
                     {p.numeroNota}/{p.serie}
+                  </td>
+                  <td>
+                    {c?.nome ?? '—'}
+                    <div className="sub">
+                      {c ? `${c.enderecoFiscal.bairro}, ${c.enderecoFiscal.municipio}` : ''}
+                    </div>
                   </td>
                   <td className="mono">
                     {p.numeroPedido ?? '—'} · {p.lote ?? '—'}
@@ -137,6 +155,26 @@ export function Pedidos() {
                     )}
                   </td>
                 </tr>
+                {/* O dossiê do local, do doc do CLIENTE. Aparece em TODO pedido
+                    dele, inclusive nos futuros — é esse o ponto: o que o
+                    motorista aprendeu numa entrega serve para a próxima. */}
+                {temDossie && (
+                  <tr className="dossie-linha">
+                    <td />
+                    <td colSpan={8}>
+                      <div className="dossie-bloco">
+                        {c!.fotoReferenciaPath && (
+                          <FotoReferencia
+                            caminho={c!.fotoReferenciaPath}
+                            alt={`Referência do local de ${c!.nome}`}
+                          />
+                        )}
+                        {c!.observacoes && <div className="dossie-obs-admin">📌 {c!.observacoes}</div>}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

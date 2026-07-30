@@ -673,3 +673,14 @@ button.ligacao {
   min-width: 200px;
   font-size: 0.95rem;
 }
+
+/* O dossiê pendurado na linha do pedido/parada: sem borda em cima, para se ler
+   como continuação da linha e não como registro solto. */
+tr.dossie-linha td {
+  padding-top: 0;
+  border-top: 0;
+}
+
+tr.dossie-linha .dossie-bloco {
+  margin-bottom: 0;
+}

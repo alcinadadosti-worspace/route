@@ -22,6 +22,7 @@ import {
   publicarRota,
 } from '../api';
 import { MapaRota } from '../MapaRota';
+import { FotoReferencia } from '../FotoReferencia';
 
 /** Status da parada em português — o enum cru não é para o operador ler. */
 const ROTULO_PARADA: Record<string, string> = {
@@ -388,6 +389,31 @@ export function Rotas() {
                                       <tr className="confirmacao">
                                         <td />
                                         <td colSpan={3}>carregando confirmação…</td>
+                                      </tr>
+                                    )}
+                                    {/* O dossiê do local: foto e observação que
+                                        o motorista deixou no doc do CLIENTE.
+                                        Vale para esta rota e para as próximas
+                                        até o mesmo endereço. */}
+                                    {(clientes[p.clienteId]?.fotoReferenciaPath ||
+                                      clientes[p.clienteId]?.observacoes) && (
+                                      <tr className="dossie-linha">
+                                        <td />
+                                        <td colSpan={3}>
+                                          <div className="dossie-bloco">
+                                            {clientes[p.clienteId]!.fotoReferenciaPath && (
+                                              <FotoReferencia
+                                                caminho={clientes[p.clienteId]!.fotoReferenciaPath!}
+                                                alt={`Referência do local de ${p.nome}`}
+                                              />
+                                            )}
+                                            {clientes[p.clienteId]!.observacoes && (
+                                              <div className="dossie-obs-admin">
+                                                📌 {clientes[p.clienteId]!.observacoes}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </td>
                                       </tr>
                                     )}
                                   </Fragment>
