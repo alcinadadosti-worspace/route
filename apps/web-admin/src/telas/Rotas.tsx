@@ -11,6 +11,7 @@ import {
   type Usuario,
 } from '@rota/shared';
 import {
+  apagarPedido,
   apagarRota,
   listarCds,
   listarClientes,
@@ -72,6 +73,7 @@ export function Rotas() {
   const [usuarios, setUsuarios] = useState<Array<{ id: string } & Usuario>>([]);
   const [motoristaId, setMotoristaId] = useState('');
   const [publicando, setPublicando] = useState(false);
+  const [apagandoLote, setApagandoLote] = useState(false);
   const [publicada, setPublicada] = useState<string | null>(null);
   const [rotas, setRotas] = useState<Array<{ id: string } & Rota>>([]);
   /** Rota expandida no acompanhamento, para ver parada a parada. */
@@ -272,6 +274,69 @@ export function Rotas() {
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao desfazer a rota');
     }
+  }
+
+  /**
+   * Apagar o pedido SEM sair da montagem. Ele já podia ser apagado na aba
+   * Pedidos, mas quem está montando a rota está olhando ESTA lista — mandar o
+   * operador procurar a nota noutra aba para tirá-la daqui é fazer o trabalho
+   * duas vezes.
+   */
+  async function apagarDaMontagem(p: { id: string } & Pedido) {
+    const nome = clientes[p.clienteId]?.nome ?? '';
+    if (
+      !window.confirm(
+        `Apagar a nota ${p.numeroNota}/${p.serie}${nome ? ` — ${nome}` : ''}?\n\n` +
+          'A importação dela é desfeita e ela sai da montagem. Para trazê-la de volta, ' +
+          'reimporte o XML.',
+      )
+    ) {
+      return;
+    }
+    setErro(null);
+    setAviso(null);
+    try {
+      await apagarPedido(p.id);
+      carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha ao apagar');
+    }
+  }
+
+  /** Limpar a montagem de uma vez — dez notas erradas não se apagam uma a uma. */
+  async function apagarSelecionados() {
+    const alvos = prontos.filter((p) => selecionados.has(p.id));
+    if (alvos.length === 0) return;
+    if (
+      !window.confirm(
+        `Apagar ${alvos.length} pedido(s) selecionado(s)?\n\n` +
+          'A importação deles é desfeita e eles saem da montagem. Para trazê-los de volta, ' +
+          'reimporte os XMLs.',
+      )
+    ) {
+      return;
+    }
+    setErro(null);
+    setAviso(null);
+    setApagandoLote(true);
+    // Em série: a API do plano free responde melhor a uma fila do que a dez
+    // requisições ao mesmo tempo, e o parcial importa — o que apagou, apagou.
+    const falhas: string[] = [];
+    for (const p of alvos) {
+      try {
+        await apagarPedido(p.id);
+      } catch {
+        falhas.push(`${p.numeroNota}/${p.serie}`);
+      }
+    }
+    setApagandoLote(false);
+    setSelecionados(new Set());
+    if (falhas.length > 0) {
+      setErro(`Não deu para apagar ${falhas.length}: ${falhas.join(', ')}. Tente de novo.`);
+    } else {
+      setAviso(`${alvos.length} pedido(s) apagado(s) da montagem.`);
+    }
+    carregar();
   }
 
   async function publicar() {
@@ -570,6 +635,7 @@ export function Rotas() {
                 <th>CD</th>
                 <th>Cliente</th>
                 <th>Vol · Peso</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -598,10 +664,36 @@ export function Rotas() {
                   <td>
                     {formatarCarga(p.volumes, p.pesoBrutoKg)}
                   </td>
+                  <td>
+                    <button
+                      className="apagar"
+                      title={`Apagar a nota ${p.numeroNota}`}
+                      aria-label={`Apagar a nota ${p.numeroNota}`}
+                      disabled={apagandoLote}
+                      onClick={() => void apagarDaMontagem(p)}
+                    >
+                      ✕
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+
+        {/* Apagar em lote: quem selecionou dez notas erradas não vai apagar uma
+            a uma. Só aparece com seleção, para não ficar um botão destrutivo
+            parado na tela ao lado de "Otimizar". */}
+        {algumProntoMarcado && (
+          <button
+            className="apagar-lote"
+            disabled={apagandoLote}
+            onClick={() => void apagarSelecionados()}
+          >
+            {apagandoLote
+              ? 'APAGANDO…'
+              : `✕ Apagar ${selecionados.size} pedido(s) selecionado(s)`}
+          </button>
         )}
 
         {pendentes.length > 0 && (

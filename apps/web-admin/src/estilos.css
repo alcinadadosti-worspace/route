@@ -684,3 +684,17 @@ tr.dossie-linha td {
 tr.dossie-linha .dossie-bloco {
   margin-bottom: 0;
 }
+
+/* Apagar em lote na montagem: destrutivo, então vermelho e discreto — não pode
+   competir com "Otimizar", que é a ação normal da tela. */
+.apagar-lote {
+  margin-top: 12px;
+  border-color: var(--vermelho-falha);
+  color: var(--vermelho-falha);
+  font-size: 0.9rem;
+}
+
+.apagar-lote:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
