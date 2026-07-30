@@ -11,6 +11,13 @@ import {
 } from '../api';
 import { MapaRota } from '../MapaRota';
 
+/** Status da parada em português — o enum cru não é para o operador ler. */
+const ROTULO_PARADA: Record<string, string> = {
+  em_rota: 'A entregar',
+  entregue: 'Entregue',
+  insucesso: 'Insucesso',
+};
+
 const ROTULO_ROTA: Record<string, { texto: string; classe: string }> = {
   rascunho: { texto: 'Rascunho', classe: '' },
   publicada: { texto: 'Publicada', classe: 'pendente' },
@@ -50,8 +57,10 @@ export function Rotas() {
         setClientes(Object.fromEntries(cls.map((cl) => [cl.id, cl])));
         setCds(c);
         setCdId((atual) => atual || (Object.keys(c)[0] ?? ''));
+        // TODOS ficam guardados para dar nome às rotas antigas: filtrar aqui
+        // fazia a rota de um motorista desativado exibir o uid cru para sempre.
+        setUsuarios(us);
         const ativos = us.filter((u) => u.ativo);
-        setUsuarios(ativos);
         setMotoristaId(
           (atual) => atual || (ativos.find((u) => u.papel === 'motorista') ?? ativos[0])?.id || '',
         );
@@ -247,7 +256,7 @@ export function Rotas() {
                                     <span
                                       className={`chip ${p.status === 'entregue' ? 'pronto' : p.status === 'insucesso' ? '' : 'pendente'}`}
                                     >
-                                      {p.status}
+                                      {ROTULO_PARADA[p.status] ?? p.status}
                                     </span>
                                   </td>
                                   <td className="mono">
@@ -499,7 +508,9 @@ export function Rotas() {
             <label className="opcao">
               Motorista:
               <select value={motoristaId} onChange={(e) => setMotoristaId(e.target.value)}>
-                {usuarios.map((u) => (
+                {usuarios
+                  .filter((u) => u.ativo)
+                  .map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.nome} ({u.papel})
                   </option>

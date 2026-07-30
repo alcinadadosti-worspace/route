@@ -268,6 +268,11 @@ export function App() {
         null)
       : null;
 
+  /** Aviso da parada com a janela relativa a AGORA (chamada no toque). */
+  function mensagemDaParada(p: ParadaTela): string {
+    return mensagemDeRota(new Date(), p.etaMin ?? 0, p.ordem - 1, parametrosAviso);
+  }
+
   async function refinarPorEstrada() {
     if (!rota || !posicao) return;
     setRefinando(true);
@@ -552,18 +557,19 @@ export function App() {
                     💬 WhatsApp
                   </a>
                   {/* Aviso com a janela estimada — o que evita o "ausente".
-                      A mensagem é montada na renderização para a janela ficar
-                      sempre relativa a agora; o WhatsApp abre com o texto
-                      pronto e o motorista revisa antes de enviar. */}
+                      A janela é RECALCULADA NO TOQUE, não na renderização: a
+                      lista pode ficar horas na tela sem re-renderizar (só
+                      snapshot ou interação provocam isso), e um "chego entre
+                      8h30 e 9h50" enviado às 10h30 é pior que nenhum aviso. O
+                      href do render é só o valor inicial, para o link funcionar
+                      de qualquer forma. */}
                   <a
                     className={`avisar${p.avisadoEm ? ' feito' : ''}`}
-                    href={linkWhatsApp(
-                      p.telefone,
-                      mensagemDeRota(new Date(), p.etaMin ?? 0, p.ordem - 1, parametrosAviso),
-                    )}
+                    href={linkWhatsApp(p.telefone, mensagemDaParada(p))}
                     target="_blank"
                     rel="noreferrer"
-                    onClick={() => {
+                    onClick={(evento) => {
+                      evento.currentTarget.href = linkWhatsApp(p.telefone!, mensagemDaParada(p));
                       if (rota && p.pedidoId) registrarAviso(rota, p.pedidoId);
                     }}
                   >
