@@ -5,16 +5,24 @@ import { calcularProdutividade } from './produtividade.js';
 
 const MOTORISTA = 'motorista-1';
 
-function parada(pedidoId: string, avisadoEm: string | null = null): ParadaRota {
+function parada(
+  pedidoId: string,
+  avisadoEm: string | null = null,
+  carga: { quantidades?: number[]; volumes?: number; pesoBrutoKg?: number } = {},
+): ParadaRota {
   return {
     pedidoId,
     clienteId: `cliente-${pedidoId}`,
     nome: 'CLIENTE',
     endereco: 'Rua A, 1',
     telefone: null,
-    itens: [],
-    volumes: 1,
-    pesoBrutoKg: 1,
+    itens: (carga.quantidades ?? []).map((quantidade, i) => ({
+      codigo: `cod-${i}`,
+      descricao: `ITEM ${i}`,
+      quantidade,
+    })),
+    volumes: carga.volumes ?? 1,
+    pesoBrutoKg: carga.pesoBrutoKg ?? 1,
     coordenada: { lat: -10.28, lng: -36.56 },
     etaMin: 10,
     distanciaKm: 1,
@@ -222,6 +230,139 @@ test('rota sem nenhuma entrega ainda: aparece com volume, sem ritmo inventado', 
   assert.equal(m.entregues, 0);
   assert.equal(m.minutosPorParadaMediana, null, 'sem entrega não há mediana a mostrar');
   assert.equal(m.minutosEmRota, null);
+});
+
+test('linha de nota e unidade são números DIFERENTES — não podem ser confundidos', () => {
+  // Nas notas reais a média é 8,3 linhas contra 24,1 unidades: chamar linha de
+  // "item" subestima o trabalho em três vezes.
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    {
+      ...SEM_NADA,
+      rotas: [
+        rota('r1', '2026-07-29', [
+          parada('p1', null, { quantidades: [12, 6, 6] }),
+          parada('p2', null, { quantidades: [2] }),
+        ]),
+      ],
+      entregas: [
+        entrega('r1', 'p1', 'entregue', '2026-07-29T08:00:00-03:00'),
+        entrega('r1', 'p2', 'entregue', '2026-07-29T08:30:00-03:00'),
+      ],
+    },
+  );
+
+  assert.ok(r.ok);
+  const m = r.relatorio.motoristas[0]!;
+  assert.equal(m.itensEntregues, 4, '3 linhas + 1 linha');
+  assert.equal(m.unidadesEntregues, 26, '12+6+6+2');
+});
+
+test('mercadoria que NÃO foi entregue não entra na conta — voltou no caminhão', () => {
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    {
+      ...SEM_NADA,
+      rotas: [
+        rota('r1', '2026-07-29', [
+          parada('p1', null, { quantidades: [10], volumes: 3, pesoBrutoKg: 5.5 }),
+          parada('p2', null, { quantidades: [99], volumes: 40, pesoBrutoKg: 900 }),
+        ]),
+      ],
+      entregas: [
+        entrega('r1', 'p1', 'entregue', '2026-07-29T08:00:00-03:00'),
+        entrega('r1', 'p2', 'recusa', '2026-07-29T08:30:00-03:00'),
+      ],
+    },
+  );
+
+  assert.ok(r.ok);
+  const m = r.relatorio.motoristas[0]!;
+  assert.equal(m.itensEntregues, 1);
+  assert.equal(m.unidadesEntregues, 10);
+  assert.equal(m.volumesEntregues, 3);
+  assert.equal(m.pesoEntregueKg, 5.5, 'os 900 kg recusados não podem contar como entregues');
+});
+
+test('nota sem volume nem peso é contada à parte — o peso somado é só o declarado', () => {
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    {
+      ...SEM_NADA,
+      rotas: [
+        rota('r1', '2026-07-29', [
+          parada('p1', null, { quantidades: [4], volumes: 2, pesoBrutoKg: 4.5 }),
+          // O ERP emissor manda a estrutura zerada: o dado não existe na nota.
+          parada('p2', null, { quantidades: [7], volumes: 0, pesoBrutoKg: 0 }),
+        ]),
+      ],
+      entregas: [
+        entrega('r1', 'p1', 'entregue', '2026-07-29T08:00:00-03:00'),
+        entrega('r1', 'p2', 'entregue', '2026-07-29T08:30:00-03:00'),
+      ],
+    },
+  );
+
+  assert.ok(r.ok);
+  const m = r.relatorio.motoristas[0]!;
+  assert.equal(m.entregues, 2);
+  assert.equal(m.unidadesEntregues, 11, 'unidade é contada mesmo sem volume/peso na nota');
+  assert.equal(m.volumesEntregues, 2);
+  assert.equal(m.pesoEntregueKg, 4.5);
+  assert.equal(m.entregasSemCarga, 1, 'sem este número o peso passaria por carga total do dia');
+});
+
+test('detalhe por rota: uma linha por rota, mais recente primeiro, somando o total', () => {
+  const r = calcularProdutividade(
+    { desde: '2026-07-01', ate: '2026-07-31' },
+    {
+      ...SEM_NADA,
+      rotas: [
+        rota('r1', '2026-07-20', [parada('p1', null, { quantidades: [5, 5], pesoBrutoKg: 3 })], 80),
+        rota('r2', '2026-07-28', [parada('p2', null, { quantidades: [1], pesoBrutoKg: 2 })], 40),
+      ],
+      entregas: [
+        entrega('r1', 'p1', 'entregue', '2026-07-20T08:00:00-03:00'),
+        entrega('r2', 'p2', 'entregue', '2026-07-28T08:00:00-03:00'),
+      ],
+    },
+  );
+
+  assert.ok(r.ok);
+  const m = r.relatorio.motoristas[0]!;
+  assert.deepEqual(
+    m.rotas_detalhe.map((d) => d.data),
+    ['2026-07-28', '2026-07-20'],
+  );
+  assert.deepEqual(
+    m.rotas_detalhe.map((d) => d.unidadesEntregues),
+    [1, 10],
+  );
+  assert.deepEqual(
+    m.rotas_detalhe.map((d) => d.kmPlanejados),
+    [40, 80],
+  );
+  // O detalhe tem de fechar com o total: se divergir, um dos dois está errado.
+  const soma = (f: (d: (typeof m.rotas_detalhe)[number]) => number) =>
+    m.rotas_detalhe.reduce((s, d) => s + f(d), 0);
+  assert.equal(soma((d) => d.itensEntregues), m.itensEntregues);
+  assert.equal(soma((d) => d.unidadesEntregues), m.unidadesEntregues);
+  assert.equal(soma((d) => d.pesoEntregueKg), m.pesoEntregueKg);
+  assert.equal(soma((d) => d.entregues), m.entregues);
+});
+
+test('rota publicada e não executada aparece no detalhe com zero, não desaparece', () => {
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    { ...SEM_NADA, rotas: [rota('r1', '2026-07-29', [parada('p1'), parada('p2')])] },
+  );
+
+  assert.ok(r.ok);
+  const detalhe = r.relatorio.motoristas[0]!.rotas_detalhe;
+  assert.equal(detalhe.length, 1);
+  assert.equal(detalhe[0]!.paradas, 2);
+  assert.equal(detalhe[0]!.entregues, 0);
+  assert.equal(detalhe[0]!.unidadesEntregues, 0);
 });
 
 test('sincronização offline fora de ordem não vira intervalo negativo', () => {

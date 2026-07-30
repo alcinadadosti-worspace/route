@@ -1,7 +1,9 @@
+import { temCarga } from '@rota/shared';
 import type {
   Cliente,
   Entrega,
   ProdutividadeMotorista,
+  ProdutividadeRota,
   RelatorioProdutividade,
   Rota,
   Trilha,
@@ -69,6 +71,12 @@ export function calcularProdutividade(
     ausenciasNaoAvisados: 0,
     pinsConfirmados: 0,
     trilhasGravadas: 0,
+    itensEntregues: 0,
+    unidadesEntregues: 0,
+    volumesEntregues: 0,
+    pesoEntregueKg: 0,
+    entregasSemCarga: 0,
+    rotas_detalhe: [],
   });
   const de = (motoristaId: string) => {
     if (!porMotorista.has(motoristaId)) porMotorista.set(motoristaId, vazio(motoristaId));
@@ -91,21 +99,70 @@ export function calcularProdutividade(
     const daRota = dados.entregas
       .filter((e) => e.rotaId === rota.id)
       .sort((a, b) => a.confirmadaEm.localeCompare(b.confirmadaEm));
-    if (daRota.length === 0) continue;
 
     const m = de(rota.motoristaId);
-    const avisadoPorPedido = new Map(rota.paradas.map((p) => [p.pedidoId, Boolean(p.avisadoEm)]));
+    const paradaPorPedido = new Map(rota.paradas.map((p) => [p.pedidoId, p]));
+    const daqui: ProdutividadeRota = {
+      rotaId: rota.id,
+      data: rota.data,
+      paradas: rota.paradas.length,
+      entregues: 0,
+      insucessos: 0,
+      itensEntregues: 0,
+      unidadesEntregues: 0,
+      volumesEntregues: 0,
+      pesoEntregueKg: 0,
+      entregasSemCarga: 0,
+      kmPlanejados: rota.distanciaTotalKm,
+    };
+    // Rota publicada e ainda não executada entra no detalhe com zero: sumir da
+    // lista faria parecer que o dia não existiu.
+    if (daRota.length === 0) {
+      m.rotas_detalhe.push(daqui);
+      continue;
+    }
+
     for (const entrega of daRota) {
-      if (entrega.resultado === 'entregue') m.entregues += 1;
-      else {
+      const parada = paradaPorPedido.get(entrega.pedidoId);
+      if (entrega.resultado !== 'entregue') {
         m.insucessos += 1;
+        daqui.insucessos += 1;
         m.porMotivo[entrega.resultado] = (m.porMotivo[entrega.resultado] ?? 0) + 1;
         if (entrega.resultado === 'ausente') {
-          if (avisadoPorPedido.get(entrega.pedidoId)) m.ausenciasAvisados += 1;
+          if (parada?.avisadoEm) m.ausenciasAvisados += 1;
           else m.ausenciasNaoAvisados += 1;
         }
+        continue;
+      }
+
+      m.entregues += 1;
+      daqui.entregues += 1;
+      if (!parada) continue;
+      // Mercadoria que saiu do caminhão. `itens` são LINHAS da nota; `unidades`
+      // é a soma das quantidades — três vezes maior, nas notas reais.
+      daqui.itensEntregues += parada.itens.length;
+      daqui.unidadesEntregues += parada.itens.reduce(
+        (soma, item) => soma + (Number.isFinite(item.quantidade) ? item.quantidade : 0),
+        0,
+      );
+      if (temCarga(parada.volumes, parada.pesoBrutoKg)) {
+        if (parada.volumes > 0) daqui.volumesEntregues += parada.volumes;
+        if (parada.pesoBrutoKg > 0) daqui.pesoEntregueKg += parada.pesoBrutoKg;
+      } else {
+        // Um terço das notas reais não informa carga: sem contar isto, a soma
+        // de peso passaria por carga total do dia quando é só a parte declarada.
+        daqui.entregasSemCarga += 1;
       }
     }
+
+    daqui.unidadesEntregues = Math.round(daqui.unidadesEntregues);
+    daqui.pesoEntregueKg = Math.round(daqui.pesoEntregueKg * 1000) / 1000;
+    m.itensEntregues += daqui.itensEntregues;
+    m.unidadesEntregues += daqui.unidadesEntregues;
+    m.volumesEntregues += daqui.volumesEntregues;
+    m.pesoEntregueKg = Math.round((m.pesoEntregueKg + daqui.pesoEntregueKg) * 1000) / 1000;
+    m.entregasSemCarga += daqui.entregasSemCarga;
+    m.rotas_detalhe.push(daqui);
 
     const intervalos = intervalosPorMotorista.get(rota.motoristaId) ?? [];
     for (let i = 1; i < daRota.length; i++) {
@@ -158,9 +215,13 @@ export function calcularProdutividade(
       ate: entrada.ate,
       // Quem mais entregou primeiro; empate resolvido pelo nome, para a ordem
       // não dançar entre duas cargas da mesma tela.
-      motoristas: [...porMotorista.values()].sort(
-        (a, b) => b.entregues - a.entregues || a.motoristaId.localeCompare(b.motoristaId),
-      ),
+      motoristas: [...porMotorista.values()]
+        .map((m) => ({
+          ...m,
+          // Rota mais recente primeiro: é o dia que se quer olhar.
+          rotas_detalhe: m.rotas_detalhe.sort((a, b) => b.data.localeCompare(a.data)),
+        }))
+        .sort((a, b) => b.entregues - a.entregues || a.motoristaId.localeCompare(b.motoristaId)),
     },
   };
 }

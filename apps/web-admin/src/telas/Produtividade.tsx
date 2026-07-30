@@ -1,5 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { ProdutividadeMotorista, RelatorioProdutividade, Usuario } from '@rota/shared';
+import { Fragment, useCallback, useEffect, useState } from 'react';
+import type {
+  ProdutividadeMotorista,
+  ProdutividadeRota,
+  RelatorioProdutividade,
+  Usuario,
+} from '@rota/shared';
 import { listarUsuarios, obterProdutividade } from '../api';
 
 /**
@@ -23,6 +28,21 @@ function diaRelativo(dias: number): string {
 function horas(minutos: number | null): string {
   if (minutos == null) return '—';
   return `${Math.floor(minutos / 60)}h${String(minutos % 60).padStart(2, '0')}`;
+}
+
+/** Milhar com ponto, como se escreve aqui: 12.480 e não 12,480. */
+function num(valor: number): string {
+  return valor.toLocaleString('pt-BR');
+}
+
+function kg(valor: number): string {
+  return `${valor.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} kg`;
+}
+
+/** AAAA-MM-DD → DD/MM. Sem `new Date`, que jogaria o dia para trás no fuso. */
+function diaCurto(data: string): string {
+  const [, mes, dia] = data.split('-');
+  return mes && dia ? `${dia}/${mes}` : data;
 }
 
 const ROTULO_MOTIVO: Record<string, string> = {
@@ -105,6 +125,7 @@ function Cartao({ m, nome }: { m: ProdutividadeMotorista; nome: string }) {
   const executadas = m.entregues + m.insucessos;
   const conclusao = m.paradasPlanejadas > 0 ? Math.round((executadas / m.paradasPlanejadas) * 100) : null;
   const motivos = Object.entries(m.porMotivo);
+  const [detalhe, setDetalhe] = useState(false);
 
   return (
     <div className="produtividade">
@@ -122,6 +143,30 @@ function Cartao({ m, nome }: { m: ProdutividadeMotorista; nome: string }) {
           rotulo="Por parada (mediana)"
         />
         <Metrica valor={horas(m.minutosEmRota)} rotulo="Em rota" />
+      </div>
+
+      {/* Mercadoria que efetivamente saiu do caminhão. Fica em bloco próprio
+          porque "20 paradas" e "480 unidades" medem coisas diferentes: uma
+          parada pode ser uma caixa ou um palete. */}
+      <div className="produtividade-linha carga">
+        <strong>Mercadoria entregue:</strong> {num(m.unidadesEntregues)} unidade(s) em{' '}
+        {num(m.itensEntregues)} linha(s) de nota
+        {m.volumesEntregues > 0 && ` · ${num(m.volumesEntregues)} volume(s)`}
+        {m.pesoEntregueKg > 0 && ` · ${kg(m.pesoEntregueKg)}`}
+        <div className="produtividade-nota">
+          <strong>Unidade</strong> é a soma das quantidades; <strong>linha de nota</strong> é quantos
+          produtos distintos. Nas notas desta operação a média é 8 linhas contra 24 unidades por
+          nota — por isso os dois números aparecem.
+          {m.entregasSemCarga > 0 && (
+            <>
+              {' '}
+              Já <strong>volume e peso são parciais</strong>: em {m.entregasSemCarga} das{' '}
+              {m.entregues} entregas a nota não trouxe nenhum dos dois (o ERP emissor manda zerado),
+              e há nota que informa um sem o outro. O que está somado é a parte declarada — não a
+              carga real do período. Unidades e linhas, sim, saem de toda nota.
+            </>
+          )}
+        </div>
       </div>
 
       {motivos.length > 0 && (
@@ -148,6 +193,69 @@ function Cartao({ m, nome }: { m: ProdutividadeMotorista; nome: string }) {
           qualquer motorista.
         </div>
       </div>
+
+      {/* O número do período é média; o dia é o que se cobra. Rota a rota mostra
+          onde a carga foi grande e onde a rota rendeu pouco. */}
+      {m.rotas_detalhe.length > 0 && (
+        <div className="produtividade-linha">
+          <button className="ligacao" onClick={() => setDetalhe(!detalhe)}>
+            {detalhe ? '▲ Esconder' : '▾ Ver'} rota a rota ({m.rotas_detalhe.length})
+          </button>
+          {detalhe && <TabelaRotas rotas={m.rotas_detalhe} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TabelaRotas({ rotas }: { rotas: ProdutividadeRota[] }) {
+  return (
+    <div className="rolagem-tabela">
+      <table className="rotas-produtividade">
+        <thead>
+          <tr>
+            <th>Dia</th>
+            <th>Rota</th>
+            <th>Paradas</th>
+            <th>Unidades</th>
+            <th>Linhas</th>
+            <th>Volumes</th>
+            <th>Peso</th>
+            <th>km</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rotas.map((r) => (
+            <Fragment key={r.rotaId}>
+              {/* Sem a borda, a nota do "sem carga" cola na sua própria rota em
+                  vez de parecer pertencer à de baixo. */}
+              <tr className={r.entregasSemCarga > 0 ? 'sem-borda' : undefined}>
+                <td className="mono">{diaCurto(r.data)}</td>
+                {/* A data do id repete a coluna Dia; só o sufixo identifica. */}
+                <td className="mono" title={r.rotaId}>
+                  {r.rotaId.split('_')[1] ?? r.rotaId}
+                </td>
+                <td className="mono">
+                  {r.entregues + r.insucessos}/{r.paradas}
+                </td>
+                <td className="mono">{num(r.unidadesEntregues)}</td>
+                <td className="mono">{num(r.itensEntregues)}</td>
+                <td className="mono">{r.volumesEntregues || '—'}</td>
+                <td className="mono">{r.pesoEntregueKg > 0 ? kg(r.pesoEntregueKg) : '—'}</td>
+                <td className="mono">{r.kmPlanejados}</td>
+              </tr>
+              {r.entregasSemCarga > 0 && (
+                <tr className="nota-linha">
+                  <td colSpan={8}>
+                    {r.entregasSemCarga} de {r.entregues} entrega(s) desta rota sem volume nem peso
+                    na nota — as colunas Volumes e Peso ficam abaixo do que saiu de fato.
+                  </td>
+                </tr>
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

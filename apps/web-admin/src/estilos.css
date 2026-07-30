@@ -560,6 +560,55 @@ td input[type='checkbox'] {
   font-size: 0.9rem;
 }
 
+/* Mercadoria entregue mede outra coisa que paradas — faixa própria, dourada,
+   para não se ler como mais uma linha de contagem de parada. */
+.produtividade-linha.carga {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--ambar);
+  background: color-mix(in srgb, var(--ambar) 8%, transparent);
+}
+
+/* Alternador em texto: abrir o detalhe não é a ação principal do cartão, então
+   não pode ter o mesmo peso de "Atualizar". Altura de toque preservada. */
+button.ligacao {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--ambar);
+  font-size: 0.85rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Oito colunas: em tela estreita a TABELA rola, não a página. */
+.rolagem-tabela {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+
+.rotas-produtividade th,
+.rotas-produtividade td {
+  padding: 6px 14px 6px 0;
+  white-space: nowrap;
+}
+
+/* A tabela herdaria o cinza da linha em que está: número tem de ser legível. */
+.rotas-produtividade td {
+  color: var(--texto);
+}
+
+.rotas-produtividade tr.sem-borda td {
+  border-bottom: 0;
+}
+
+.rotas-produtividade tr.nota-linha td {
+  white-space: normal;
+  padding-top: 0;
+  font-size: 0.85rem;
+  color: var(--texto-2);
+}
+
 /* CD definido pelas notas — o seletor só reaparece se não houver consenso */
 .cd-definido {
   display: flex;

@@ -264,6 +264,39 @@ export interface ProdutividadeMotorista {
    */
   pinsConfirmados: number;
   trilhasGravadas: number;
+  /**
+   * Volume de mercadoria efetivamente entregue. `itens` conta LINHAS da nota e
+   * `unidades` soma as quantidades — não é a mesma coisa: nas notas reais a
+   * média é 8,3 linhas contra 24,1 unidades por nota, então chamar linha de
+   * "item" subestima o trabalho em três vezes.
+   */
+  itensEntregues: number;
+  unidadesEntregues: number;
+  volumesEntregues: number;
+  pesoEntregueKg: number;
+  /**
+   * Entregas cuja nota não informou volume nem peso (~1/3 das notas reais, ver
+   * seção 8.2). Sem este número, a soma de peso pareceria a carga total do dia
+   * quando é só a parte declarada.
+   */
+  entregasSemCarga: number;
+  /** Rota a rota, para ver o dia em vez da média do período. */
+  rotas_detalhe: ProdutividadeRota[];
+}
+
+/** Uma rota no relatório de produtividade. */
+export interface ProdutividadeRota {
+  rotaId: string;
+  data: string;
+  paradas: number;
+  entregues: number;
+  insucessos: number;
+  itensEntregues: number;
+  unidadesEntregues: number;
+  volumesEntregues: number;
+  pesoEntregueKg: number;
+  entregasSemCarga: number;
+  kmPlanejados: number;
 }
 
 export interface RelatorioProdutividade {
