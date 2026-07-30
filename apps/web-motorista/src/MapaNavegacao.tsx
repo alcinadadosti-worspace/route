@@ -29,7 +29,7 @@ export interface OutraParada {
 
 export function MapaNavegacao({
   pin,
-  polylinePlanejada,
+  tracado,
   trilha,
   modoTrilha,
   posicao,
@@ -40,7 +40,13 @@ export function MapaNavegacao({
   aoTrocarParada,
 }: {
   pin: GeoPonto;
-  polylinePlanejada?: string;
+  /**
+   * Caminho a desenhar, já decodificado e já RECORTADO no trecho desta parada
+   * (ou o traçado recalculado, quando houve re-rota). Recebe pontos e não a
+   * polyline da rota inteira de propósito: desenhar o dia todo aqui não aponta
+   * para o destino, que é a única pergunta desta tela.
+   */
+  tracado: GeoPonto[];
   trilha: Trilha | null;
   modoTrilha: boolean;
   posicao: GeoPonto | null;
@@ -152,13 +158,13 @@ export function MapaNavegacao({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chaveOutras]);
 
-  // Traçado planejado e trilha aprendida.
+  // Caminho até esta parada e trilha aprendida.
   useEffect(() => {
     const mapa = mapaRef.current;
     if (!mapa || !pronto) return;
-    atualizarLinha(mapa, 'planejada', polylinePlanejada ? decodificarPolyline(polylinePlanejada) : []);
+    atualizarLinha(mapa, 'planejada', tracado);
     atualizarLinha(mapa, 'trilha', trilha ? decodificarPolyline(trilha.polyline) : []);
-  }, [pronto, polylinePlanejada, trilha]);
+  }, [pronto, tracado, trilha]);
 
   // Handoff (seção 11.3): a trilha tracejada vira linha cheia e mais grossa —
   // o contorno cresce junto, senão a linha engorda e o realce some.

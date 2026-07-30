@@ -23,6 +23,7 @@ import { useBussola } from './useBussola';
 import { GravadorTrilha } from './gravadorTrilha';
 import { confirmarPin, recalcularTracado, salvarTrilhaBruta } from './servicoMapeamento';
 import { formatarDistancia } from './formato';
+import { indicesDasParadas, trechoDaParada } from './trechos';
 import type { DossieCliente } from './useClientesDaRota';
 
 const MOTIVOS_INSUCESSO: Array<{ resultado: ResultadoEntrega; rotulo: string }> = [
@@ -176,11 +177,28 @@ export function Navegacao({
   } | null>(null);
   const [recalculando, setRecalculando] = useState(false);
   const [erroRerota, setErroRerota] = useState<string | null>(null);
-  const tracadoDesenhado = rerota?.polyline ?? rota.polylinePlanejada;
-  const pontosTracado = useMemo(
-    () => (tracadoDesenhado ? decodificarPolyline(tracadoDesenhado) : []),
-    [tracadoDesenhado],
-  );
+  /**
+   * O caminho desta parada — e só dela. A rota publicada é uma polyline do dia
+   * inteiro; desenhá-la aqui mostra um emaranhado em vez da estrada até este
+   * cliente. O recorte usa as mesmas emendas do mapa de visão geral.
+   *
+   * Isso também afina a detecção de desvio: comparar a posição com a rota
+   * INTEIRA dava "estou no traçado" por estar perto de qualquer perna do dia.
+   * Contra o trecho certo, o desvio passa a significar algo — e navegar fora da
+   * ordem passa a ser detectado como desvio, que é justamente quando pedir uma
+   * rota nova a partir de onde o motorista está faz mais sentido.
+   */
+  const indiceDaParada = rota.paradas.findIndex((p) => p.pedidoId === parada.pedidoId);
+  const pontosTracado = useMemo(() => {
+    if (rerota) return decodificarPolyline(rerota.polyline);
+    const linha = rota.polylinePlanejada ? decodificarPolyline(rota.polylinePlanejada) : [];
+    if (linha.length === 0 || indiceDaParada < 0) return linha;
+    const indices = indicesDasParadas(
+      linha,
+      rota.paradas.map((p) => p.coordenada),
+    );
+    return trechoDaParada(linha, indices, indiceDaParada);
+  }, [rerota, rota.polylinePlanejada, rota.paradas, indiceDaParada]);
   // Memorizado: o traçado tem milhares de pontos e a tela re-renderiza por
   // muito mais que leitura de GPS (abrir dossiê, digitar observação).
   const desvioM = useMemo(
@@ -329,7 +347,7 @@ export function Navegacao({
         key={estiloKey}
         estilo={estilo}
         pin={pinNoMapa}
-        polylinePlanejada={tracadoDesenhado}
+        tracado={pontosTracado}
         trilha={trilha}
         modoTrilha={modoTrilha}
         posicao={leitura}
