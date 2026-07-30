@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { CentroDistribuicao, Cliente, Pedido, PreviaRota, Rota, Usuario } from '@rota/shared';
 import {
+  apagarRota,
   listarCds,
   listarClientes,
   listarPedidos,
@@ -168,6 +169,25 @@ export function Rotas() {
     }
   }
 
+  async function desfazerRota(r: { id: string } & Rota) {
+    if (
+      !window.confirm(
+        `Desfazer a rota ${r.id}?\n\n` +
+          `As ${r.paradas.length} paradas somem do app do motorista e os pedidos voltam a ficar ` +
+          'disponíveis para montar outra rota. Nada do que já foi entregue é afetado.',
+      )
+    ) {
+      return;
+    }
+    setErro(null);
+    try {
+      await apagarRota(r.id);
+      carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha ao desfazer a rota');
+    }
+  }
+
   async function publicar() {
     if (!previa || !motoristaId) return;
     setPublicando(true);
@@ -210,6 +230,7 @@ export function Rotas() {
                 <th>Insucessos</th>
                 <th>km</th>
                 <th>Status</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -239,10 +260,28 @@ export function Rotas() {
                       <td>
                         <span className={`chip ${s.classe}`}>{s.texto}</span>
                       </td>
+                      <td>
+                        {/* Desfazer a publicação. Só faz sentido enquanto nada
+                            foi executado — depois disso é histórico, e a API
+                            recusa (o botão nem aparece). */}
+                        {entregues + insucessos === 0 && (
+                          <button
+                            className="apagar"
+                            title="Desfazer esta rota"
+                            aria-label={`Desfazer a rota ${r.id}`}
+                            onClick={(evento) => {
+                              evento.stopPropagation();
+                              void desfazerRota(r);
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </td>
                     </tr>
                     {aberta && (
                       <tr>
-                        <td colSpan={8}>
+                        <td colSpan={9}>
                           {/* Parada a parada com o aviso ao cliente: diante de um
                               "ausente", saber se ele tinha sido avisado é o que
                               separa aprendizado de reclamação (seção 11.8). */}

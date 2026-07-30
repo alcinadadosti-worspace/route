@@ -3,12 +3,12 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import {
   importarXmls,
-  apagarPedidoImportado,
   decidirEnderecoEntrega,
   decidirMudancaEndereco,
   refazerPontoDoCliente,
   type ArquivoXml,
 } from './importacao/servico.js';
+import { removerPedido, removerRota } from './rotas/remover.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
 import { sugerirOrdemDeParadas } from './rotas/ordem-sugerida.js';
@@ -163,16 +163,25 @@ export async function criarApp({
     },
   );
 
-  // Apagar nota importada por engano. Recusa o que já saiu do escritório —
-  // em rota, entregue ou com insucesso (ver apagarPedidoImportado).
+  // Apagar nota. Se ela estiver numa rota publicada, a parada sai da rota
+  // junto; só o que já foi executado em campo é intocável (ver remover.ts).
   app.delete('/api/pedidos/:chave', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
     const { chave } = req.params as { chave: string };
     if (!/^\d{44}$/.test(chave)) {
       return reply.code(404).send({ erro: 'Pedido não encontrado' });
     }
-    const resultado = await apagarPedidoImportado(repo, chave);
+    const resultado = await removerPedido(repo, chave);
     if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
-    return { apagado: chave };
+    return { apagado: chave, rotaApagada: resultado.rotaApagada ?? null };
+  });
+
+  // Desfazer uma rota publicada: os pedidos voltam a ficar disponíveis e a rota
+  // desaparece do celular do motorista.
+  app.delete('/api/rotas/:rotaId', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
+    const { rotaId } = req.params as { rotaId: string };
+    const resultado = await removerRota(repo, rotaId);
+    if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+    return { apagada: rotaId };
   });
 
   app.get('/api/clientes', { config: { papeis: ESCRITORIO } }, async () => repo.listarClientes());

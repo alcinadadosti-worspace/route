@@ -35,6 +35,7 @@ export interface Repositorio {
    */
   publicarRotaAtomica(rotaId: string, rota: Rota, pedidoIds: string[]): Promise<void>;
   obterRota(rotaId: string): Promise<({ id: string } & Rota) | null>;
+  apagarRota(rotaId: string): Promise<void>;
   listarRotas(): Promise<Array<{ id: string } & Rota>>;
   atualizarCliente(clienteId: string, campos: Partial<Cliente>): Promise<void>;
   salvarTrilhaBruta(id: string, bruta: TrilhaBruta): Promise<void>;
@@ -124,6 +125,10 @@ export class RepositorioMemoria implements Repositorio {
   async obterRota(rotaId: string): Promise<({ id: string } & Rota) | null> {
     const rota = this.rotas.get(rotaId);
     return rota ? { id: rotaId, ...rota } : null;
+  }
+
+  async apagarRota(rotaId: string): Promise<void> {
+    this.rotas.delete(rotaId);
   }
 
   async listarRotas(): Promise<Array<{ id: string } & Rota>> {

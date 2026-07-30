@@ -354,39 +354,6 @@ export async function decidirEnderecoEntrega(
 }
 
 /**
- * Apaga um pedido importado por engano (nota trocada, remessa duplicada de
- * outro dia). O CLIENTE fica: coordenada, pin de campo, trilha e dossiê são
- * conhecimento sobre o lugar, não sobre a nota — e reimportar o mesmo XML
- * recria o pedido reaproveitando tudo isso.
- *
- * Recusa o que já saiu do escritório: pedido `em_rota` está impresso no
- * documento da rota e no celular do motorista, e apagá-lo deixaria uma parada
- * apontando para nada, cuja confirmação de entrega falharia em campo, longe de
- * quem poderia entender o porquê. Entregue ou insucesso é histórico, com
- * registro de entrega apontando para ele.
- */
-export async function apagarPedidoImportado(
-  repo: Repositorio,
-  pedidoId: string,
-): Promise<ResultadoDecisao> {
-  const pedido = await repo.obterPedido(pedidoId);
-  if (!pedido) return { ok: false, status: 404, erro: 'Pedido não encontrado' };
-
-  const bloqueados: Record<string, string> = {
-    em_rota: 'já está numa rota publicada — a parada ficaria apontando para nada no app do motorista',
-    entregue: 'já foi entregue — é histórico da operação',
-    insucesso: 'já tem insucesso registrado — é histórico da operação',
-  };
-  const motivo = bloqueados[pedido.status];
-  if (motivo) {
-    return { ok: false, status: 409, erro: `Nota ${pedido.numeroNota} ${motivo}` };
-  }
-
-  await repo.apagarPedido(pedidoId);
-  return { ok: true, status: pedido.status };
-}
-
-/**
  * Resolve a mudança de endereço do cadastro (seção 8.3): o cliente passou a ter
  * outro endereço fiscal e já tinha um ponto estabelecido para o anterior. Quem
  * conhece a operação decide se aquele ponto sobrevive à mudança.

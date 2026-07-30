@@ -102,23 +102,30 @@ export async function decidirMudancaEndereco(
 }
 
 /**
- * Apaga uma nota importada por engano. A API recusa o que já saiu do
- * escritório (em rota, entregue, insucesso) — o cliente e o que ele já
- * ensinou sobre o local ficam.
+ * Apaga uma nota. Estando numa rota publicada, a parada sai da rota junto (e a
+ * rota some se era a última). Só o que já foi executado em campo é intocável.
+ * O cliente e o que ele ensinou sobre o local ficam.
  */
-export async function apagarPedido(pedidoId: string): Promise<void> {
-  const resposta = await apiFetch(`${BASE}/api/pedidos/${encodeURIComponent(pedidoId)}`, {
-    method: 'DELETE',
-  });
-  if (resposta.ok) return;
+export async function apagarPedido(pedidoId: string): Promise<{ rotaApagada: string | null }> {
+  return apagar<{ rotaApagada: string | null }>(`${BASE}/api/pedidos/${encodeURIComponent(pedidoId)}`);
+}
+
+/** Desfaz uma rota publicada: os pedidos voltam a ficar disponíveis. */
+export async function apagarRota(rotaId: string): Promise<void> {
+  await apagar(`${BASE}/api/rotas/${encodeURIComponent(rotaId)}`);
+}
+
+async function apagar<T>(url: string): Promise<T> {
+  const resposta = await apiFetch(url, { method: 'DELETE' });
   const texto = await resposta.text();
-  let erro: string | undefined;
+  let dados: any = null;
   try {
-    erro = texto ? JSON.parse(texto).erro : undefined;
+    dados = texto ? JSON.parse(texto) : null;
   } catch {
-    erro = undefined;
+    dados = null;
   }
-  throw new Error(erro ?? erroHttp(resposta.status));
+  if (!resposta.ok) throw new Error(dados?.erro ?? erroHttp(resposta.status));
+  return dados as T;
 }
 
 /**

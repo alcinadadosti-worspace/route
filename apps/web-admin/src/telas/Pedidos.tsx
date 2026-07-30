@@ -2,8 +2,17 @@ import { useEffect, useState } from 'react';
 import type { Pedido } from '@rota/shared';
 import { apagarPedido, listarPedidos } from '../api';
 
-/** Só o que ainda não saiu do escritório pode ser apagado (a API confere também). */
-const APAGAVEIS = new Set(['importado', 'pendente_de_mapeamento', 'pendente_de_decisao', 'pronto_para_rota']);
+/**
+ * Só o que ainda não foi executado em campo pode ser apagado (a API confere
+ * também). Pedido `em_rota` PODE: a parada sai da rota junto.
+ */
+const APAGAVEIS = new Set([
+  'importado',
+  'pendente_de_mapeamento',
+  'pendente_de_decisao',
+  'pronto_para_rota',
+  'em_rota',
+]);
 
 const ROTULO_STATUS: Record<string, { texto: string; classe: string }> = {
   pendente_de_mapeamento: { texto: 'Pendente de mapeamento', classe: 'pendente' },
@@ -19,6 +28,7 @@ export function Pedidos() {
   const [pedidos, setPedidos] = useState<Array<{ id: string } & Pedido>>([]);
   const [filtro, setFiltro] = useState('');
   const [erro, setErro] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
 
   useEffect(() => {
     listarPedidos()
@@ -28,14 +38,18 @@ export function Pedidos() {
 
   async function apagar(p: { id: string } & Pedido) {
     // Some da tela para sempre: vale um passo de confirmação com o número da
-    // nota, para não apagar a linha de baixo por engano.
-    if (!window.confirm(`Apagar a nota ${p.numeroNota}/${p.serie}? A importação dela é desfeita.`)) {
-      return;
-    }
+    // nota, para não apagar a linha de baixo por engano. Em rota, o aviso diz
+    // que a parada sai do celular do motorista — é a consequência que importa.
+    const aviso =
+      p.status === 'em_rota'
+        ? `Apagar a nota ${p.numeroNota}/${p.serie}?\n\nEla está numa rota publicada: a parada sai da rota e desaparece do app do motorista. O traçado e a quilometragem da rota continuam os antigos.`
+        : `Apagar a nota ${p.numeroNota}/${p.serie}? A importação dela é desfeita.`;
+    if (!window.confirm(aviso)) return;
     setErro(null);
     try {
-      await apagarPedido(p.id);
+      const { rotaApagada } = await apagarPedido(p.id);
       setPedidos((atual) => atual.filter((outro) => outro.id !== p.id));
+      if (rotaApagada) setAviso(`Era a última parada: a rota ${rotaApagada} também foi apagada.`);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao apagar');
     }
@@ -64,6 +78,7 @@ export function Pedidos() {
         />
       )}
       {erro && <div className="erro">{erro}</div>}
+      {aviso && <div className="alerta">{aviso}</div>}
       {!erro && pedidos.length === 0 && (
         <div className="vazio">Nenhum pedido importado ainda. Comece pela aba Importação.</div>
       )}
