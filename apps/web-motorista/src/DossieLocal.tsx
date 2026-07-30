@@ -59,11 +59,17 @@ export function DossieLocal({ cliente }: { cliente: { id: string } & Cliente }) 
         📷 {temFoto ? 'Trocar foto de referência' : 'Fotografar referência do local'}
         <input type="file" accept="image/*" capture="environment" hidden onChange={aoEscolherFoto} />
       </label>
+      {/* O LIMITE É DE REGRA, não de gosto: `firestore.rules` recusa observação
+          com 2000 caracteres ou mais. Sem este teto, o motorista escreveria um
+          texto longo, a escrita seria rejeitada no servidor, o catch engoliria o
+          erro e o botão "Salvar" ficaria ali para sempre — ele tocando, e nada
+          gravando. 1000 sobra para uma referência de local. */}
       <textarea
         className="dossie-obs"
         value={observacoes}
         onChange={(e) => setObservacoes(e.target.value)}
         placeholder="Observações do local (portão azul, entrar pela lateral…)"
+        maxLength={1000}
         rows={2}
       />
       {observacoes !== cliente.observacoes && (

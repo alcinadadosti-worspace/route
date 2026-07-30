@@ -126,7 +126,13 @@ export function App() {
     const escolhida = rotas.find((r) => r.id === rotaEscolhidaId);
     const daAba = listas[abaRota];
     if (escolhida && daAba.some((r) => r.id === escolhida.id)) return escolhida;
-    if (abaRota === 'abertas') return rotaPadrao ?? daAba[0] ?? null;
+    // `rotaPadrao` só serve à aba ABERTAS, e só se ela própria estiver aberta:
+    // sem nenhuma rota ativa, `escolherRotaAtiva` devolve a concluída mais
+    // recente (de propósito — é o resumo do dia). Usá-la aqui mostraria uma rota
+    // FECHADA embaixo do aviso "nenhuma rota aberta agora".
+    if (abaRota === 'abertas' && rotaPadrao && daAba.some((r) => r.id === rotaPadrao.id)) {
+      return rotaPadrao;
+    }
     return daAba[0] ?? null;
   }, [rotas, rotaEscolhidaId, rotaPadrao, listas, abaRota]);
   const rotaFechada = rota?.status === 'concluida';
@@ -257,8 +263,13 @@ export function App() {
   // O componente Mapa recria o MapLibre quando as props mudam de identidade;
   // os snapshots de dossiê renovam `paradas` a cada chegada, então os pontos
   // só devem trocar de identidade quando algo visível no mapa mudar de fato.
+  // O pedidoId ENTRA na chave. Sem ele, duas rotas com o mesmo cliente, mesma
+  // posição e mesmo status davam a MESMA chave — e o memo devolvia os pontos da
+  // rota anterior, com os pedidoIds antigos. Tocar no marcador chamaria um
+  // pedidoId que não existe na rota aberta, e a navegação não abria. Produção
+  // tem exatamente esse caso: duas rotas do mesmo dia com a mesma parada.
   const chavePontos = paradas
-    .map((p) => `${p.ordem}:${p.status}:${p.coordenada.lat},${p.coordenada.lng}`)
+    .map((p) => `${p.pedidoId}:${p.ordem}:${p.status}:${p.coordenada.lat},${p.coordenada.lng}`)
     .join('|');
   const pontosMapa = useMemo(
     () =>

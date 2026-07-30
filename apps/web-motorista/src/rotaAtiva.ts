@@ -32,21 +32,6 @@ export function escolherRotaAtiva<T extends { id: string } & Rota>(rotas: T[]): 
   return candidatas[0] ?? null;
 }
 
-/**
- * Rotas ABERTAS que ficaram para trás — publicadas ou em execução e que não são
- * a que ele está vendo. Existir mais de uma não é erro (o escritório pode
- * publicar duas de propósito), mas ficar invisível é: a rota some do aparelho
- * com os pedidos ainda em `em_rota`, e ninguém percebe.
- */
-export function rotasAbertasEmEspera<T extends { id: string } & Rota>(
-  rotas: T[],
-  atual: T | null,
-): T[] {
-  return rotas.filter(
-    (r) => r.status !== 'rascunho' && r.status !== 'concluida' && r.id !== (atual?.id ?? ''),
-  );
-}
-
 export type AbaRota = 'abertas' | 'fechadas';
 
 /**

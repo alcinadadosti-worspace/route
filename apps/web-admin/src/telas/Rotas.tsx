@@ -68,8 +68,15 @@ export function Rotas() {
   const [previa, setPrevia] = useState<PreviaRota | null>(null);
   const [otimizando, setOtimizando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  /** Explica o que ACONTECEU, quando o resultado não é óbvio na tela. */
-  const [aviso, setAviso] = useState<string | null>(null);
+  /**
+   * Explica o que ACONTECEU, quando o resultado não é óbvio na tela — e diz em
+   * QUE seção mostrar. Acompanhamento e Montagem estão longe uma da outra:
+   * confirmar "10 pedidos apagados" lá em cima, fora da tela de quem apagou na
+   * de baixo, é o mesmo que não confirmar.
+   */
+  const [aviso, setAviso] = useState<{ texto: string; onde: 'acompanhamento' | 'montagem' } | null>(
+    null,
+  );
   const [usuarios, setUsuarios] = useState<Array<{ id: string } & Usuario>>([]);
   const [motoristaId, setMotoristaId] = useState('');
   const [publicando, setPublicando] = useState(false);
@@ -198,10 +205,12 @@ export function Rotas() {
     const sumiram = previa.paradas.filter((p) => !validos.has(p.pedidoId));
     if (sumiram.length === 0) return;
     setPrevia(null);
-    setAviso(
-      `A prévia foi descartada: ${sumiram.length} pedido(s) dela não estão mais disponíveis ` +
+    setAviso({
+      onde: 'montagem',
+      texto:
+        `A prévia foi descartada: ${sumiram.length} pedido(s) dela não estão mais disponíveis ` +
         '(apagados ou já em outra rota). Selecione de novo e otimize.',
-    );
+    });
   }, [prontos, previa]);
 
   function alternar(id: string) {
@@ -266,10 +275,12 @@ export function Rotas() {
       // Dizer PARA ONDE os pedidos foram. Sem isto, eles reaparecem sozinhos na
       // lista de Montagem e parece que a rota "não foi apagada de verdade" —
       // quando é o contrário: apagar a rota é justamente devolvê-los.
-      setAviso(
-        `Rota ${r.id} desfeita. Os ${r.paradas.length} pedido(s) dela voltaram para a lista de ` +
+      setAviso({
+        onde: 'acompanhamento',
+        texto:
+          `Rota ${r.id} desfeita. Os ${r.paradas.length} pedido(s) dela voltaram para a lista de ` +
           'Montagem de rota, disponíveis para montar outra.',
-      );
+      });
       carregar();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao desfazer a rota');
@@ -334,7 +345,7 @@ export function Rotas() {
     if (falhas.length > 0) {
       setErro(`Não deu para apagar ${falhas.length}: ${falhas.join(', ')}. Tente de novo.`);
     } else {
-      setAviso(`${alvos.length} pedido(s) apagado(s) da montagem.`);
+      setAviso({ onde: 'montagem', texto: `${alvos.length} pedido(s) apagado(s) da montagem.` });
     }
     carregar();
   }
@@ -393,7 +404,7 @@ export function Rotas() {
           <h2>Acompanhamento do dia</h2>
           <button onClick={carregar}>Atualizar</button>
         </div>
-        {aviso && <div className="alerta">{aviso}</div>}
+        {aviso?.onde === 'acompanhamento' && <div className="alerta">{aviso.texto}</div>}
         {rotas.length === 0 && <div className="vazio">Nenhuma rota publicada ainda.</div>}
         {rotas.length > 0 && (
           <table>
@@ -727,6 +738,7 @@ export function Rotas() {
           </button>
         </div>
 
+        {aviso?.onde === 'montagem' && <div className="alerta">{aviso.texto}</div>}
         {erro && <div className="erro">{erro}</div>}
         {publicada && (
           <div className="sucesso">
