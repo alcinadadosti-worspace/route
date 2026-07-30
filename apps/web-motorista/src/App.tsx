@@ -539,10 +539,17 @@ export function App() {
 
       {paradasNaTela.map((p) => (
         <article key={p.ordem} className={`parada${p.status === 'trilha' ? ' rural' : ''}`}>
-          {/* Tocar o cartão foca o trecho dela no mapa — o mesmo que tocar o
-              marcador. É onde o motorista já está olhando quando decide. */}
-          <div className="ordem" onClick={() => setParadaFocada(p.ordem - 1)}>
+          <div className="ordem">
             PARADA {String(p.ordem).padStart(2, '0')}
+            {/* Botão de verdade, com rótulo: antes o clique estava no texto
+                "PARADA 05", sem nada indicando que era tocável — a função
+                existia e ninguém achava. */}
+            <button
+              className={`ver-caminho${paradaFocada === p.ordem - 1 ? ' ativo' : ''}`}
+              onClick={() => setParadaFocada(paradaFocada === p.ordem - 1 ? null : p.ordem - 1)}
+            >
+              {paradaFocada === p.ordem - 1 ? '🔍 caminho em foco' : '🔍 ver caminho'}
+            </button>
             {p.distanciaM != null && (
               <span className="parada-distancia">· {formatarDistancia(p.distanciaM)}</span>
             )}

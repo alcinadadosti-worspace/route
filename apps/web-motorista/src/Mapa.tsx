@@ -132,12 +132,12 @@ export function Mapa({
       .addTo(mapa);
 
     paradas.forEach((p, indice) => {
-      const marcador = new Marker({ color: COR_STATUS[p.status] })
+      const balao = new Popup({ offset: 24 });
+      balao.setDOMContent(balaoDaParada(p, indice, aoEscolherRef, aoFocarRef, balao));
+      new Marker({ color: COR_STATUS[p.status] })
         .setLngLat([p.coordenada.lng, p.coordenada.lat])
-        .setPopup(new Popup({ offset: 24 }).setDOMContent(balaoDaParada(p, aoEscolherRef)))
+        .setPopup(balao)
         .addTo(mapa);
-      // Tocar o marcador foca o trecho DESTA parada, além de abrir o balão.
-      marcador.getElement().addEventListener('click', () => aoFocarRef.current?.(indice));
     });
 
     return () => {
@@ -178,13 +178,17 @@ export function Mapa({
 }
 
 /**
- * Conteúdo do balão da parada: identificação e, quando ainda há o que entregar,
- * o atalho para navegar direto dali — é o que faz do mapa um seletor de parada,
- * sem obrigar o motorista a caçar o cartão certo numa lista de dez.
+ * Conteúdo do balão da parada: identificação e as duas ações que fazem do mapa
+ * um seletor — ver só o caminho até ela, e navegar direto dali. Ambas em botão
+ * explícito: depender do clique no marcador escondia a função (no computador o
+ * clique lê como "abrir o balão", e o balão ainda cobre o mapa).
  */
 function balaoDaParada(
   p: PontoMapa,
+  indice: number,
   aoEscolherRef: { current: ((pedidoId: string) => void) | undefined },
+  aoFocarRef: { current: ((indice: number) => void) | undefined },
+  balao: Popup,
 ): HTMLElement {
   const conteudo = document.createElement('div');
   conteudo.className = 'balao-parada';
@@ -195,6 +199,17 @@ function balaoDaParada(
   const nome = document.createElement('div');
   nome.textContent = p.cliente;
   conteudo.append(titulo, nome);
+
+  const focar = document.createElement('button');
+  focar.type = 'button';
+  focar.className = 'balao-focar';
+  focar.textContent = '🔍 Ver só este caminho';
+  focar.addEventListener('click', () => {
+    aoFocarRef.current?.(indice);
+    // Fecha o balão: ele cobre justamente o trecho que acabou de ser desenhado.
+    balao.remove();
+  });
+  conteudo.appendChild(focar);
 
   const pendente = p.status === 'pendente' || p.status === 'trilha';
   if (p.pedidoId && pendente) {
