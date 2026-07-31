@@ -308,16 +308,23 @@ export function App() {
   /** Confirmações em andamento — o await do GPS abre janela para toque duplo. */
   const confirmandoRef = useRef<Set<string>>(new Set());
 
+  /**
+   * Devolve SE o resultado foi registrado. O retorno existe para a navegação:
+   * cancelar a guarda de distância tem de deixar o motorista ONDE ESTAVA, com
+   * o comprovante preenchido — fechar a tela num cancelamento foi bug real.
+   */
   async function resolver(
     pedidoId: string | undefined,
     resultado: ResultadoEntrega,
     comprovante: { recebidoPor?: string | null; foto?: Blob | null } = {},
-  ) {
-    if (!rota || !pedidoId || !usuario) return;
+  ): Promise<boolean> {
+    if (!rota || !pedidoId || !usuario) return false;
     const parada = rota.paradas.find((p) => p.pedidoId === pedidoId);
-    // Parada já resolvida não gera segunda entrega (proteção contra toque duplo).
-    if (!parada || parada.status === 'entregue' || parada.status === 'insucesso') return;
-    if (confirmandoRef.current.has(pedidoId)) return;
+    if (!parada) return false;
+    // Parada já resolvida não gera segunda entrega (proteção contra toque
+    // duplo) — mas conta como "feito": quem chamou pode fechar a tela.
+    if (parada.status === 'entregue' || parada.status === 'insucesso') return true;
+    if (confirmandoRef.current.has(pedidoId)) return false;
     confirmandoRef.current.add(pedidoId);
     try {
       // Destino "a mapear" tem pin sabidamente grosseiro (aproximado no
@@ -341,13 +348,14 @@ export function App() {
                 `${acao} mesmo assim?`,
             )
           ) {
-            return;
+            return false;
           }
         }
       }
       registrarResultado(rota, parada, resultado, usuario.uid, comprovante);
       setInsucessoAberto(null);
       setComprovanteDe(null);
+      return true;
     } finally {
       confirmandoRef.current.delete(pedidoId);
     }

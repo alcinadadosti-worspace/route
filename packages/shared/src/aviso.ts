@@ -175,19 +175,20 @@ export function mensagemDeRecibo(
   if (nota.numeroNota) referencias.push(`*Nota fiscal:* ${nota.numeroNota}`);
   const blocoReferencia = referencias.length > 0 ? `\n\n${referencias.join('\n')}` : '';
 
+  const itens = nota.itens ?? [];
   const linhas: string[] = [];
   let usados = 0;
-  let cortados = 0;
-  for (const item of nota.itens ?? []) {
+  // O corte é um SUFIXO: estourou o teto, para ali. A primeira versão fazia
+  // `continue` — pulava o item comprido e seguia incluindo os curtos de
+  // depois, e o "e mais N" mentia sobre QUAIS ficaram de fora.
+  for (const item of itens) {
     const quantidade = Number.isFinite(item.quantidade) ? Math.round(item.quantidade) : 0;
     const linha = `• ${quantidade}x ${item.descricao}`;
-    if (usados + linha.length > TETO_BLOCO_ITENS) {
-      cortados += 1;
-      continue;
-    }
+    if (usados + linha.length > TETO_BLOCO_ITENS) break;
     linhas.push(linha);
     usados += linha.length + 1;
   }
+  const cortados = itens.length - linhas.length;
   if (cortados > 0) linhas.push(`• … e mais ${cortados} item(ns)`);
   // Cabeçalho próprio: sem ele a lista começava colada na referência e as duas
   // viravam um bloco só de olho.

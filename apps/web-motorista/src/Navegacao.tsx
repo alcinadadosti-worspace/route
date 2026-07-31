@@ -77,7 +77,7 @@ export function Navegacao({
     pedidoId: string,
     resultado: ResultadoEntrega,
     comprovante?: { recebidoPor?: string | null; foto?: Blob | null },
-  ) => void | Promise<void>;
+  ) => boolean | Promise<boolean>;
   aoFechar: () => void;
   /** Parâmetros de trilha já mesclados de config/geral (seção 11). */
   parametros: ParametrosTrilha;
@@ -322,12 +322,14 @@ export function Navegacao({
     resultado: ResultadoEntrega,
     comprovante: { recebidoPor?: string | null; foto?: Blob | null } = {},
   ) {
+    // ESPERA o resolver do pai (ele aguarda o GPS e pode abrir a guarda de
+    // distância) e SÓ FECHA SE REGISTROU. Cancelar a guarda deixa o motorista
+    // onde estava, com o comprovante preenchido na tela — e a gravação de
+    // trilha, se houver, continua rodando: descartá-la num cancelamento seria
+    // perder o rastro por uma pergunta.
+    const registrou = await aoResolver(parada.pedidoId, resultado, comprovante);
+    if (!registrou) return;
     if (gravando) encerrarGravacao(false);
-    // ESPERA o resolver do pai. Ele virou assíncrono quando ganhou a guarda de
-    // distância (aguarda o GPS, e pode abrir uma confirmação). Fechar antes
-    // tirava a navegação da tela e só DEPOIS mostrava a pergunta — e um
-    // "cancelar" deixava o motorista fora da navegação sem ter registrado nada.
-    await aoResolver(parada.pedidoId, resultado, comprovante);
     aoFechar();
   }
 
