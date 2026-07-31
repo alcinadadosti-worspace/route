@@ -161,17 +161,26 @@ export function mensagemDeRecibo(
 ): string {
   const nome = (recebidoPor ?? '').trim();
 
+  /**
+   * Uma LINHA ROTULADA por número, em negrito do WhatsApp (`*texto*`).
+   *
+   * A primeira versão era `Pedido 123 · Nota 456` numa linha só — e usava o
+   * MESMO `·` que marca cada item. A linha se disfarçava de item e o número
+   * passava despercebido (aconteceu na primeira leitura de quem pediu o
+   * recurso). Rótulo explícito, negrito e um marcador diferente na lista
+   * resolvem: são três sinais, não um.
+   */
   const referencias: string[] = [];
-  if (nota.numeroPedido) referencias.push(`Pedido ${nota.numeroPedido}`);
-  if (nota.numeroNota) referencias.push(`Nota ${nota.numeroNota}`);
-  const blocoReferencia = referencias.length > 0 ? `\n\n${referencias.join(' · ')}` : '';
+  if (nota.numeroPedido) referencias.push(`*Pedido:* ${nota.numeroPedido}`);
+  if (nota.numeroNota) referencias.push(`*Nota fiscal:* ${nota.numeroNota}`);
+  const blocoReferencia = referencias.length > 0 ? `\n\n${referencias.join('\n')}` : '';
 
   const linhas: string[] = [];
   let usados = 0;
   let cortados = 0;
   for (const item of nota.itens ?? []) {
     const quantidade = Number.isFinite(item.quantidade) ? Math.round(item.quantidade) : 0;
-    const linha = `· ${quantidade}x ${item.descricao}`;
+    const linha = `• ${quantidade}x ${item.descricao}`;
     if (usados + linha.length > TETO_BLOCO_ITENS) {
       cortados += 1;
       continue;
@@ -179,8 +188,10 @@ export function mensagemDeRecibo(
     linhas.push(linha);
     usados += linha.length + 1;
   }
-  if (cortados > 0) linhas.push(`· … e mais ${cortados} item(ns)`);
-  const blocoItens = linhas.length > 0 ? `\n${linhas.join('\n')}` : '';
+  if (cortados > 0) linhas.push(`• … e mais ${cortados} item(ns)`);
+  // Cabeçalho próprio: sem ele a lista começava colada na referência e as duas
+  // viravam um bloco só de olho.
+  const blocoItens = linhas.length > 0 ? `\n\n*Itens entregues:*\n${linhas.join('\n')}` : '';
 
   return parametros.textoRecibo
     .replaceAll('{hora}', hora(confirmadaEm))

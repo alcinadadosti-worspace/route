@@ -414,11 +414,17 @@ test('recibo completo: número do pedido, da nota e a lista do que foi entregue'
   assert.equal(
     texto,
     'Entrega registrada às 14h05, recebida por Maria.\n\n' +
-      'Pedido 506203606 · Nota 280683\n' +
-      '· 3x COFFEE DES COL DUO WOMAN 100ml\n' +
-      '· 2x GLAMOUR DES COL DIVA 75ml\n\n' +
+      '*Pedido:* 506203606\n' +
+      '*Nota fiscal:* 280683\n\n' +
+      '*Itens entregues:*\n' +
+      '• 3x COFFEE DES COL DUO WOMAN 100ml\n' +
+      '• 2x GLAMOUR DES COL DIVA 75ml\n\n' +
       'Grupo Alcina Maria.',
   );
+  // O marcador da lista NÃO pode ser o mesmo caractere que separa a referência:
+  // foi assim que o número passou despercebido na primeira leitura de quem
+  // pediu o recurso — a linha se disfarçava de item.
+  assert.ok(!texto.includes('· '), 'a referência não usa o mesmo marcador da lista');
 });
 
 test('recibo sem número de pedido mostra só a nota — placeholder nunca vaza', () => {
@@ -426,7 +432,7 @@ test('recibo sem número de pedido mostra só a nota — placeholder nunca vaza'
     numeroNota: 280683,
     itens: [{ codigo: '1', descricao: 'CREME X', quantidade: 1 }],
   });
-  assert.match(texto, /Nota 280683/);
+  assert.match(texto, /\*Nota fiscal:\* 280683/);
   assert.ok(!texto.includes('Pedido'), 'sem numeroPedido, o rótulo some inteiro');
   assert.ok(!texto.includes('{'), 'nenhum placeholder pode vazar para o cliente');
 });
@@ -444,7 +450,7 @@ test('lista de itens tem teto: nota gigante corta com "e mais N", não estoura a
     itens,
   });
   assert.match(texto, /… e mais \d+ item/);
-  assert.ok(texto.length < 1700, `mensagem inteira sob controle: ${texto.length} chars`);
+  assert.ok(texto.length < 1800, `mensagem inteira sob controle: ${texto.length} chars`);
   // E a nota NORMAL (8 linhas, a média real) sai completa, sem corte.
   const normal = mensagemDeRecibo(new Date(2026, 6, 30, 14, 5), null, PARAMETROS_AVISO_PADRAO, {
     itens: itens.slice(0, 8),
