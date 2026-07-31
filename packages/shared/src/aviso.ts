@@ -10,6 +10,8 @@
  * este.
  */
 
+import type { ItemPedido } from './tipos.js';
+
 export interface ParametrosAviso {
   /** Tempo parado em cada cliente, que empurra as paradas seguintes. */
   minutosPorParada: number;
@@ -26,8 +28,10 @@ export interface ParametrosAviso {
   /** Aviso de aproximação. `{quando}` vira "em uns 10 minutos". */
   textoChegando: string;
   /**
-   * Recibo mandado DEPOIS de confirmar. `{hora}` vira "14h05" e `{quem}` vira
-   * quem recebeu — ou some da frase quando ninguém foi anotado.
+   * Recibo mandado DEPOIS de confirmar. `{hora}` vira "14h05"; `{quem}` vira
+   * quem recebeu (ou some, sem nome anotado); `{referencia}` vira o bloco
+   * "Pedido 506203606 · Nota 280683"; `{itens}` vira a lista "· 3x PRODUTO…".
+   * Blocos sem dado somem inteiros — placeholder nunca vaza para o cliente.
    */
   textoRecibo: string;
 }
@@ -40,7 +44,7 @@ export const PARAMETROS_AVISO_PADRAO: ParametrosAviso = {
     'Olá! Aqui é da entrega do Grupo Alcina Maria. Saí para a rota e devo chegar aí {janela}. ' +
     'Tem alguém no local para receber?',
   textoChegando: 'Estou chegando com a sua entrega {quando}.',
-  textoRecibo: 'Entrega registrada às {hora}{quem}. Grupo Alcina Maria.',
+  textoRecibo: 'Entrega registrada às {hora}{quem}.{referencia}{itens}\n\nGrupo Alcina Maria.',
 };
 
 /**
@@ -119,6 +123,22 @@ export function mensagemDeChegada(
   return parametros.textoChegando.replaceAll('{quando}', quando);
 }
 
+/** O que o recibo diz da nota — tudo opcional, porque rota antiga não carrega. */
+export interface NotaDoRecibo {
+  numeroPedido?: string | null;
+  numeroNota?: number | null;
+  itens?: ItemPedido[];
+}
+
+/**
+ * Teto do bloco de itens no recibo, em caracteres. Medido nas 3507 notas
+ * reais: p50 da mensagem inteira dá ~390 chars, p99 ~1140, máximo 2690 — só 16
+ * notas passam de 1500. O teto de 1300 no BLOCO deixa a lista completa em
+ * >99% dos casos e corta com "… e mais N itens" só nas extremas, porque o
+ * wa.me carrega a mensagem inteira na URL e URL gigante falha calado.
+ */
+const TETO_BLOCO_ITENS = 1300;
+
 /**
  * Recibo da entrega, mandado ao cliente pelo WhatsApp logo depois de confirmar.
  *
@@ -127,18 +147,46 @@ export function mensagemDeChegada(
  * O WhatsApp entrega quando ele pegar sinal — não exige que esteja online na
  * hora, o que importa numa base em que 1 em cada 5 endereços é rural.
  *
- * Sem nome anotado, a frase não inventa um: some o trecho inteiro em vez de
- * dizer "recebida por " e deixar o vazio no ar.
+ * Com os dados da nota, vira recibo de verdade: número do pedido (o que a
+ * revendedora digitou no ERP — é por ele que ela confere), número da nota e a
+ * lista do que foi entregue. Sem nome anotado, a frase não inventa um: some o
+ * trecho inteiro em vez de dizer "recebida por " e deixar o vazio no ar. O
+ * mesmo vale para os blocos — sem dado, somem.
  */
 export function mensagemDeRecibo(
   confirmadaEm: Date,
   recebidoPor: string | null,
   parametros: ParametrosAviso,
+  nota: NotaDoRecibo = {},
 ): string {
   const nome = (recebidoPor ?? '').trim();
+
+  const referencias: string[] = [];
+  if (nota.numeroPedido) referencias.push(`Pedido ${nota.numeroPedido}`);
+  if (nota.numeroNota) referencias.push(`Nota ${nota.numeroNota}`);
+  const blocoReferencia = referencias.length > 0 ? `\n\n${referencias.join(' · ')}` : '';
+
+  const linhas: string[] = [];
+  let usados = 0;
+  let cortados = 0;
+  for (const item of nota.itens ?? []) {
+    const quantidade = Number.isFinite(item.quantidade) ? Math.round(item.quantidade) : 0;
+    const linha = `· ${quantidade}x ${item.descricao}`;
+    if (usados + linha.length > TETO_BLOCO_ITENS) {
+      cortados += 1;
+      continue;
+    }
+    linhas.push(linha);
+    usados += linha.length + 1;
+  }
+  if (cortados > 0) linhas.push(`· … e mais ${cortados} item(ns)`);
+  const blocoItens = linhas.length > 0 ? `\n${linhas.join('\n')}` : '';
+
   return parametros.textoRecibo
     .replaceAll('{hora}', hora(confirmadaEm))
-    .replaceAll('{quem}', nome ? `, recebida por ${nome}` : '');
+    .replaceAll('{quem}', nome ? `, recebida por ${nome}` : '')
+    .replaceAll('{referencia}', blocoReferencia)
+    .replaceAll('{itens}', blocoItens);
 }
 
 function arredondar(data: Date, direcao: 'baixo' | 'cima'): Date {

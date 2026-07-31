@@ -4,12 +4,14 @@ import {
   linkLigacao,
   linkWhatsApp,
   mensagemDeRecibo,
+  notaDaChaveDeAcesso,
   mensagemDeRota,
   mesclarParametrosAviso,
   formatarCarga,
   mesclarParametrosTrilha,
   paradaPrecisaMapear,
   type GeoPonto,
+  type ItemPedido,
   type ResultadoEntrega,
 } from '@rota/shared';
 import { Mapa } from './Mapa';
@@ -68,6 +70,10 @@ interface ParadaTela {
   reciboEnviadoEm?: string | null;
   recebidoPor?: string | null;
   confirmadaEm?: string | null;
+  /** Para o recibo: nº do pedido, nº da nota e a lista do que foi entregue. */
+  numeroPedido?: string | null;
+  numeroNota?: number;
+  itensNota: ItemPedido[];
 }
 
 const ICONE_STATUS: Record<ParadaTela['status'], string> = {
@@ -205,6 +211,9 @@ export function App() {
               telefone: p.telefone ?? '',
               coordenada: p.coordenada,
               itens: p.itens.length,
+              itensNota: p.itens,
+              numeroPedido: p.numeroPedido ?? null,
+              numeroNota: p.numeroNota,
               volumes: p.volumes,
               pesoKg: p.pesoBrutoKg,
               status:
@@ -427,7 +436,14 @@ export function App() {
    */
   function mensagemDoRecibo(p: ParadaTela): string {
     const quando = p.confirmadaEm ? new Date(p.confirmadaEm) : new Date();
-    return mensagemDeRecibo(quando, p.recebidoPor ?? null, parametrosAviso);
+    // Rota publicada antes da denormalização não traz numeroNota — mas o
+    // pedidoId É a chave de acesso, e o número da nota mora dentro dela.
+    const daChave = p.numeroNota == null && p.pedidoId ? notaDaChaveDeAcesso(p.pedidoId) : null;
+    return mensagemDeRecibo(quando, p.recebidoPor ?? null, parametrosAviso, {
+      numeroPedido: p.numeroPedido,
+      numeroNota: p.numeroNota ?? daChave?.numeroNota,
+      itens: p.itensNota,
+    });
   }
 
   async function refinarPorEstrada() {

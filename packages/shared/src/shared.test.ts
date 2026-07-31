@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clienteIdDeDocumento, mascararDocumento } from './documento.js';
+import { clienteIdDeDocumento, mascararDocumento, notaDaChaveDeAcesso } from './documento.js';
 import { normalizarTelefone, linkWhatsApp } from './telefone.js';
 import {
   ehEnderecoRural,
@@ -390,16 +390,76 @@ test('recibo leva hora e quem recebeu — e não inventa nome quando não há', 
   const quinzeHoras = new Date(2026, 6, 30, 14, 5);
   assert.equal(
     mensagemDeRecibo(quinzeHoras, 'Maria', PARAMETROS_AVISO_PADRAO),
-    'Entrega registrada às 14h05, recebida por Maria. Grupo Alcina Maria.',
+    'Entrega registrada às 14h05, recebida por Maria.\n\nGrupo Alcina Maria.',
   );
   // Insucesso ou nome não anotado: some o trecho, em vez de "recebida por ".
   for (const vazio of [null, '', '   ']) {
     assert.equal(
       mensagemDeRecibo(quinzeHoras, vazio, PARAMETROS_AVISO_PADRAO),
-      'Entrega registrada às 14h05. Grupo Alcina Maria.',
+      'Entrega registrada às 14h05.\n\nGrupo Alcina Maria.',
       `${JSON.stringify(vazio)} deveria sumir da frase`,
     );
   }
+});
+
+test('recibo completo: número do pedido, da nota e a lista do que foi entregue', () => {
+  const texto = mensagemDeRecibo(new Date(2026, 6, 30, 14, 5), 'Maria', PARAMETROS_AVISO_PADRAO, {
+    numeroPedido: '506203606',
+    numeroNota: 280683,
+    itens: [
+      { codigo: '73613', descricao: 'COFFEE DES COL DUO WOMAN 100ml', quantidade: 3 },
+      { codigo: '80412', descricao: 'GLAMOUR DES COL DIVA 75ml', quantidade: 2 },
+    ],
+  });
+  assert.equal(
+    texto,
+    'Entrega registrada às 14h05, recebida por Maria.\n\n' +
+      'Pedido 506203606 · Nota 280683\n' +
+      '· 3x COFFEE DES COL DUO WOMAN 100ml\n' +
+      '· 2x GLAMOUR DES COL DIVA 75ml\n\n' +
+      'Grupo Alcina Maria.',
+  );
+});
+
+test('recibo sem número de pedido mostra só a nota — placeholder nunca vaza', () => {
+  const texto = mensagemDeRecibo(new Date(2026, 6, 30, 14, 5), null, PARAMETROS_AVISO_PADRAO, {
+    numeroNota: 280683,
+    itens: [{ codigo: '1', descricao: 'CREME X', quantidade: 1 }],
+  });
+  assert.match(texto, /Nota 280683/);
+  assert.ok(!texto.includes('Pedido'), 'sem numeroPedido, o rótulo some inteiro');
+  assert.ok(!texto.includes('{'), 'nenhum placeholder pode vazar para o cliente');
+});
+
+test('lista de itens tem teto: nota gigante corta com "e mais N", não estoura a URL', () => {
+  // O caso real extremo: 64 linhas (máximo da base). O wa.me carrega a mensagem
+  // na URL — sem teto, a nota máxima (2690 chars) arriscaria falhar calada.
+  const itens = Array.from({ length: 64 }, (_, i) => ({
+    codigo: String(i),
+    descricao: `PRODUTO DE NOME COMPRIDO PARA TESTE NUMERO ${i + 1}`,
+    quantidade: i + 1,
+  }));
+  const texto = mensagemDeRecibo(new Date(2026, 6, 30, 14, 5), 'Maria', PARAMETROS_AVISO_PADRAO, {
+    numeroNota: 1,
+    itens,
+  });
+  assert.match(texto, /… e mais \d+ item/);
+  assert.ok(texto.length < 1700, `mensagem inteira sob controle: ${texto.length} chars`);
+  // E a nota NORMAL (8 linhas, a média real) sai completa, sem corte.
+  const normal = mensagemDeRecibo(new Date(2026, 6, 30, 14, 5), null, PARAMETROS_AVISO_PADRAO, {
+    itens: itens.slice(0, 8),
+  });
+  assert.ok(!normal.includes('e mais'), 'nota média não pode ser cortada');
+});
+
+test('número da nota mora dentro da chave de acesso — fallback das rotas antigas', () => {
+  // Chave real de produção: nota 280683, série 1.
+  assert.deepEqual(notaDaChaveDeAcesso('27260414750618000183550010002806831089475267'), {
+    numeroNota: 280683,
+    serie: 1,
+  });
+  assert.equal(notaDaChaveDeAcesso('123'), null);
+  assert.equal(notaDaChaveDeAcesso('x'.repeat(44)), null);
 });
 
 test('redação do recibo é ajustável sem deploy, como as outras', () => {

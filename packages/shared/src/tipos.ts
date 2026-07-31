@@ -127,6 +127,15 @@ export interface ParadaRota {
   nome: string;
   endereco: string;
   telefone: string | null;
+  /**
+   * Identificação da nota para o RECIBO ao cliente: a revendedora confere pelo
+   * número do pedido (o que ela digitou no ERP), não pela chave de acesso.
+   * Opcionais porque rotas antigas não os carregam — aí o app deriva a nota da
+   * própria chave (`notaDaChaveDeAcesso`) e omite o pedido.
+   */
+  numeroNota?: number;
+  serie?: number;
+  numeroPedido?: string | null;
   itens: ItemPedido[];
   volumes: number;
   pesoBrutoKg: number;

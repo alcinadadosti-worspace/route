@@ -10,6 +10,23 @@
 
 const encoder = new TextEncoder();
 
+/**
+ * Número da nota e série extraídos da PRÓPRIA chave de acesso (44 dígitos):
+ * cUF(2) AAMM(4) CNPJ(14) modelo(2) série(3) nNF(9) tpEmis(1) cNF(8) DV(1).
+ * Existe para rotas publicadas ANTES de a parada carregar `numeroNota` — o
+ * pedidoId é a chave, então o número sempre esteve lá dentro.
+ * (Conferido contra nota real: ...55 001 000280683... → 280683/1.)
+ */
+export function notaDaChaveDeAcesso(
+  chave: string,
+): { numeroNota: number; serie: number } | null {
+  if (!/^\d{44}$/.test(chave)) return null;
+  return {
+    serie: Number(chave.slice(22, 25)),
+    numeroNota: Number(chave.slice(25, 34)),
+  };
+}
+
 function hex(buffer: ArrayBuffer): string {
   return Array.from(new Uint8Array(buffer))
     .map((b) => b.toString(16).padStart(2, '0'))

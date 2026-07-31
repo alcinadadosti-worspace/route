@@ -31,6 +31,10 @@ export interface CandidataParada {
   nome: string;
   endereco: string;
   telefone: string | null;
+  /** Para o recibo ao cliente: a revendedora confere pelo nº do PEDIDO. */
+  numeroNota: number;
+  serie: number;
+  numeroPedido: string | null;
   itens: ItemPedido[];
   volumes: number;
   pesoBrutoKg: number;
@@ -118,6 +122,9 @@ export async function coletarParadas(
       nome: cliente.nome,
       endereco: `${e.logradouro}, ${e.numero} — ${e.bairro}, ${e.municipio}/${e.uf}`,
       telefone: cliente.telefone,
+      numeroNota: pedido.numeroNota,
+      serie: pedido.serie,
+      numeroPedido: pedido.numeroPedido,
       itens: pedido.itens,
       volumes: pedido.volumes,
       pesoBrutoKg: pedido.pesoBrutoKg,
