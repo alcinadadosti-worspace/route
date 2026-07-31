@@ -39,27 +39,39 @@ export function useAtualizacao() {
   );
 
   useEffect(() => {
+    // O timer nasce DEPOIS do registro (callback assíncrono), então a limpeza
+    // precisa alcançá-lo por referência: sem isto o `setInterval` escapava do
+    // cleanup e sobrevivia a cada remontagem — dois efeitos no StrictMode já
+    // deixam dois timers checando atualização para sempre.
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let vivo = true;
+
     registerSW({
       immediate: true,
       onRegisteredSW(_url, registro) {
-        if (!registro) return;
+        // O registro resolve fora do ciclo do efeito: se ele já foi desmontado,
+        // criar o timer aqui seria criar um timer órfão.
+        if (!registro || !vivo) return;
         // O app fica aberto o dia inteiro: sem checagem periódica, versão nova
         // só seria notada na próxima abertura fria. Falha de update não pode
         // virar erro visível para quem está entregando.
-        setInterval(() => {
+        timer = setInterval(() => {
           if (navigator.onLine) void registro.update().catch(() => {});
         }, INTERVALO_CHECAGEM_MS);
       },
     });
 
-    if (!navigator.serviceWorker) return;
     const aoTrocarControlador = () => {
       if (jaTinhaControlador.current) setTemAtualizacao(true);
       jaTinhaControlador.current = true;
     };
-    navigator.serviceWorker.addEventListener('controllerchange', aoTrocarControlador);
-    return () =>
-      navigator.serviceWorker.removeEventListener('controllerchange', aoTrocarControlador);
+    navigator.serviceWorker?.addEventListener('controllerchange', aoTrocarControlador);
+
+    return () => {
+      vivo = false;
+      if (timer) clearInterval(timer);
+      navigator.serviceWorker?.removeEventListener('controllerchange', aoTrocarControlador);
+    };
   }, []);
 
   return { temAtualizacao, aplicar: () => window.location.reload() };
