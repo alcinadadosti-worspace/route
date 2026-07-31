@@ -77,7 +77,7 @@ export function Navegacao({
     pedidoId: string,
     resultado: ResultadoEntrega,
     comprovante?: { recebidoPor?: string | null; foto?: Blob | null },
-  ) => void;
+  ) => void | Promise<void>;
   aoFechar: () => void;
   /** Parâmetros de trilha já mesclados de config/geral (seção 11). */
   parametros: ParametrosTrilha;
@@ -318,12 +318,16 @@ export function Navegacao({
    * comprovante existia só para quem confirmasse pela lista.
    */
   const [comprovanteDe, setComprovanteDe] = useState<ResultadoEntrega | null>(null);
-  function resolver(
+  async function resolver(
     resultado: ResultadoEntrega,
     comprovante: { recebidoPor?: string | null; foto?: Blob | null } = {},
   ) {
     if (gravando) encerrarGravacao(false);
-    aoResolver(parada.pedidoId, resultado, comprovante);
+    // ESPERA o resolver do pai. Ele virou assíncrono quando ganhou a guarda de
+    // distância (aguarda o GPS, e pode abrir uma confirmação). Fechar antes
+    // tirava a navegação da tela e só DEPOIS mostrava a pergunta — e um
+    // "cancelar" deixava o motorista fora da navegação sem ter registrado nada.
+    await aoResolver(parada.pedidoId, resultado, comprovante);
     aoFechar();
   }
 
@@ -594,7 +598,7 @@ export function Navegacao({
                 resultado={comprovanteAtual}
                 nomeCliente={parada.nome}
                 aoConfirmar={({ recebidoPor, foto }) =>
-                  resolver(comprovanteAtual, { recebidoPor, foto })
+                  void resolver(comprovanteAtual, { recebidoPor, foto })
                 }
                 aoCancelar={() => setComprovanteDe(null)}
               />

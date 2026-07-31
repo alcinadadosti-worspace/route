@@ -210,8 +210,10 @@ export function App() {
               endereco: p.endereco,
               telefone: p.telefone ?? '',
               coordenada: p.coordenada,
-              itens: p.itens.length,
-              itensNota: p.itens,
+              // `?? []` porque um único doc de rota sem `itens` derrubaria a
+              // lista INTEIRA com um TypeError — falha desproporcional.
+              itens: (p.itens ?? []).length,
+              itensNota: p.itens ?? [],
               numeroPedido: p.numeroPedido ?? null,
               numeroNota: p.numeroNota,
               volumes: p.volumes,
