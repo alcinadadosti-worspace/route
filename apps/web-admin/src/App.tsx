@@ -7,6 +7,7 @@ import { Produtividade } from './telas/Produtividade';
 import { Rotas } from './telas/Rotas';
 import { Login } from './telas/Login';
 import { useAutenticacao } from './useAutenticacao';
+import { useAtualizacao } from './useAtualizacao';
 
 type Aba = 'importacao' | 'decisoes' | 'rotas' | 'pedidos' | 'clientes' | 'produtividade';
 
@@ -28,6 +29,7 @@ const ABAS: Array<{ id: Aba; rotulo: string }> = [
 
 export function App() {
   const [aba, setAba] = useState<Aba>('importacao');
+  const atualizacao = useAtualizacao();
   const { usuario, papel, ehEscritorio, carregando, entrar, sair } = useAutenticacao();
 
   if (carregando) {
@@ -68,6 +70,13 @@ export function App() {
 
   return (
     <div className="painel">
+      {/* Versão nova disponível. Não recarrega sozinho: perderia a seleção de
+          pedidos e a prévia já otimizada. */}
+      {atualizacao.temAtualizacao && (
+        <button className="faixa-atualizacao" onClick={() => atualizacao.aplicar?.()}>
+          ⬆ Nova versão do painel disponível — toque para atualizar
+        </button>
+      )}
       <header className="topo">
         <div className="topo-marca">
           <img src="/logo.png" className="logo-marca" alt="Grupo Alcina Maria" />

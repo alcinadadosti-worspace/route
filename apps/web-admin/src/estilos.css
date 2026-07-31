@@ -698,3 +698,16 @@ tr.dossie-linha .dossie-bloco {
   opacity: 0.6;
   cursor: progress;
 }
+
+/* Faixa de versão nova. Largura toda no topo e cor de atenção: o problema que
+   ela resolve é justamente ninguém saber que existe versão nova. */
+.faixa-atualizacao {
+  display: block;
+  width: 100%;
+  min-height: var(--alvo-toque);
+  margin-bottom: 12px;
+  background: var(--ambar);
+  border-color: var(--ambar);
+  color: #121212;
+  font-weight: 700;
+}

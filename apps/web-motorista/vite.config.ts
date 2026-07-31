@@ -6,6 +6,12 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // O SW assume assim que instala — e quem avisa a PESSOA é a faixa de
+      // `useAtualizacao` (o app não recarrega sozinho, para não perder trabalho
+      // em andamento). Trocar para 'prompt' deixaria o SW novo em espera, e os
+      // aparelhos que já têm o SW antigo instalado precisariam de uma limpeza
+      // manual de cache para entrar no esquema novo — exatamente o problema que
+      // isto veio resolver.
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       workbox: {

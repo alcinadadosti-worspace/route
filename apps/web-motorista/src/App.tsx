@@ -20,6 +20,7 @@ import { Navegacao } from './Navegacao';
 import { DossieLocal, FotoReferencia } from './DossieLocal';
 import { Comprovante } from './Comprovante';
 import { useAutenticacao } from './useAutenticacao';
+import { useAtualizacao } from './useAtualizacao';
 import { useRotaDoDia } from './useRotaDoDia';
 import { useClientesDaRota } from './useClientesDaRota';
 import { useConfigGeral } from './useConfigGeral';
@@ -129,6 +130,7 @@ function versaoLegivel(versao: string): string {
 
 export function App() {
   const [tema, setTema] = useState<Tema>('galpao');
+  const atualizacao = useAtualizacao();
   const { usuario, carregando, entrar, sair } = useAutenticacao();
   const { rotas, rota: rotaPadrao } = useRotaDoDia(usuario?.uid ?? null);
   /** Aba de rotas e rota escolhida à mão; null = a que abre sozinha. */
@@ -532,6 +534,14 @@ export function App() {
 
   return (
     <div className="app">
+      {/* Versão nova disponível. NÃO recarrega sozinho: no meio de um
+          comprovante — nome digitado, foto anexada — a recarga perderia o que
+          ele acabou de fazer na porta do cliente. Ele escolhe a hora. */}
+      {atualizacao.temAtualizacao && (
+        <button className="faixa-atualizacao" onClick={() => atualizacao.aplicar?.()}>
+          ⬆ Nova versão disponível — toque para atualizar
+        </button>
+      )}
       <header className="topo">
         <div className="topo-marca">
           <img src="/logo.png" className="logo-marca" alt="Alcina Maria" />
