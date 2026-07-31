@@ -750,3 +750,75 @@ test('escolher a ENTREGA encerra a decisão mesmo com o cadastro mudado', async 
   assert.ok(r.ok);
   assert.equal(r.status, 'pronto_para_rota');
 });
+
+
+/** Chave de acesso distinta por índice — cada nota é um pedido diferente. */
+function xmlComChave(i: number): string {
+  const nova = '272603147506180001555500100027616' + String(51000070282 + i).padStart(11, '0');
+  return xml.replaceAll('27260314750618000155550010002761651000070282', nova);
+}
+
+test('remessa concorrente: notas do mesmo cliente não duplicam cadastro nem geocodificação', () =>
+  (async () => {
+    // A trava que isto prova: sem serializar por cliente, as três notas veriam
+    // "cliente não existe" ao mesmo tempo, cada uma faria o `set` completo (uma
+    // apagando o trabalho da outra) e as três chamariam a Google — o mesmo
+    // endereço pago três vezes.
+    const repo = new RepositorioMemoria();
+    let geocodificacoes = 0;
+    const geocodificador = {
+      async geocodificar() {
+        geocodificacoes += 1;
+        // Latência de verdade: sem espera o await resolveria na mesma volta do
+        // laço de eventos e a corrida nem apareceria.
+        await new Promise((r) => setTimeout(r, 20));
+        return { coordenada: { lat: -10.28, lng: -36.56 }, precisa: true, municipioConfere: true };
+      },
+    };
+
+    const relatorio = await importarXmls(
+      [0, 1, 2].map((i) => ({ nome: `n${i}.xml`, conteudo: xmlComChave(i) })),
+      repo,
+      geocodificador as never,
+    );
+
+    assert.equal(relatorio.importados, 3);
+    assert.equal(geocodificacoes, 1, 'a 2ª e a 3ª já encontram a coordenada gravada');
+    assert.equal((await repo.listarClientes()).length, 1, 'um cliente, não três');
+  })());
+
+test('mesmo arquivo repetido na MESMA remessa é duplicado, não grava duas vezes', async () => {
+  // O dedupe por `obterPedido` só enxerga o que já está GRAVADO: dentro de um
+  // lote concorrente as duas cópias passariam juntas pela verificação.
+  const repo = new RepositorioMemoria();
+  const relatorio = await importarXmls(
+    [
+      { nome: 'x.xml', conteudo: xml },
+      { nome: 'x-copia.xml', conteudo: xml },
+    ],
+    repo,
+  );
+
+  assert.equal(relatorio.importados, 1);
+  assert.equal(relatorio.duplicados, 1);
+  assert.equal((await repo.listarPedidos()).length, 1);
+});
+
+test('remessa que cruza vários lotes mantém contagem exata e ordem dos rejeitados', async () => {
+  const repo = new RepositorioMemoria();
+  const arquivos = Array.from({ length: 45 }, (_, i) => ({
+    nome: `n${i}.xml`,
+    conteudo: xmlComChave(i),
+  }));
+  // No meio da remessa, para provar que a posição do rejeitado é preservada
+  // mesmo com as notas processadas fora de ordem.
+  arquivos.splice(20, 0, { nome: 'ruim.xml', conteudo: '<nao-e-nfe/>' });
+
+  const relatorio = await importarXmls(arquivos, repo);
+
+  assert.equal(relatorio.total, 46);
+  assert.equal(relatorio.importados, 45);
+  assert.equal(relatorio.rejeitados.length, 1);
+  assert.equal(relatorio.rejeitados[0]!.arquivo, 'ruim.xml');
+  assert.equal((await repo.listarPedidos()).length, 45);
+});

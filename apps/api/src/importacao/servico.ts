@@ -59,103 +59,220 @@ export async function importarXmls(
       .map(([id, cd]) => [String(cd.cnpj).replace(/\D/g, ''), id]),
   );
 
-  for await (const arquivo of arquivos) {
-    relatorio.total += 1;
-    const resultado = await parseNfe(arquivo.conteudo);
-    if (!resultado.ok) {
-      relatorio.rejeitados.push({ arquivo: arquivo.nome, motivo: resultado.motivo });
-      continue;
-    }
-    const nota = resultado.nota;
-
-    // Dedupe estrutural: chave de acesso é o ID do pedido (seção 7.2).
-    if (await repo.obterPedido(nota.chaveAcesso)) {
-      relatorio.duplicados += 1;
-      continue;
-    }
-
-    const { cliente, enderecoAnterior, revisaoNova } = await upsertCliente(nota, repo);
-    let status = await classificarDestino(
-      nota.destinatario.clienteId,
-      cliente,
-      repo,
-      geocodificador,
-      relatorio,
+  /**
+   * Uma remessa e dezenas de notas, e cada nota faz 4 idas ao Firestore
+   * (dedupe, ler cliente, gravar cliente, gravar pedido). MEDIDO: 108 ms por
+   * ida em fila contra 13 ms quando varias vao juntas - 8,6x, porque o custo e
+   * LATENCIA, nao trabalho. Sequencial, 100 notas levavam ~43 s, com o parser
+   * respondendo por 0,2 s disso. O gargalo era espera pura.
+   *
+   * Entao as notas correm em LOTES CONCORRENTES. Duas travas fazem isso ser
+   * seguro, e nenhuma e opcional:
+   *
+   * 1. `porCliente` serializa tudo que toca o MESMO cliente. Sem ela, duas
+   *    notas dele veriam "nao existe" ao mesmo tempo e ambas fariam o `set`
+   *    completo - uma apagando o trabalho da outra - e ambas geocodificariam o
+   *    mesmo endereco, que e dinheiro gasto duas vezes na Google.
+   * 2. `chavesVistas` cobre o mesmo arquivo repetido DENTRO da remessa: o
+   *    dedupe por `obterPedido` so enxerga o que ja esta gravado.
+   *
+   * A ordem do relatorio continua sendo a dos ARQUIVOS: contadores somam em
+   * qualquer ordem, mas rejeitados e alertas sao mesclados na sequencia de
+   * entrada - o operador le a lista na ordem em que soltou os arquivos.
+   */
+  const filaPorCliente = new Map<string, Promise<unknown>>();
+  function porCliente<T>(clienteId: string, tarefa: () => Promise<T>): Promise<T> {
+    const anterior = filaPorCliente.get(clienteId) ?? Promise.resolve();
+    const proxima = anterior.then(tarefa, tarefa);
+    // A fila guarda a versao que NAO rejeita: uma nota com erro nao pode travar
+    // as notas seguintes do mesmo cliente.
+    filaPorCliente.set(
+      clienteId,
+      proxima.then(
+        () => undefined,
+        () => undefined,
+      ),
     );
+    return proxima;
+  }
+  const chavesVistas = new Set<string>();
 
-    // Mudança de endereço do cadastro (seção 8.3): a nota trouxe endereço fiscal
-    // diferente daquele para o qual o ponto atual foi estabelecido. Roteirizar no
-    // ponto velho levaria o motorista ao lugar errado (e, no rural, a trilha
-    // aprendida reforçaria o engano), então o pedido espera a confirmação do
-    // escritório. O pin NÃO é descartado aqui: quem decide é quem conhece.
-    if (enderecoAnterior) {
-      status = 'pendente_de_decisao';
-      // Um alerta por cliente, não por nota: uma remessa com 5 notas dele faz a
-      // mesma pergunta uma vez.
-      if (revisaoNova) {
-        relatorio.alertas.push({
-          clienteId: nota.destinatario.clienteId,
-          nome: nota.destinatario.nome,
-          mensagem:
-            'Endereço do cadastro mudou — confirme na aba Decisões se o ponto atual ainda vale.',
-        });
-      }
+  for await (const lote of emLotes(arquivos, CONCORRENCIA)) {
+    const resultados = await Promise.all(
+      lote.map((arquivo) =>
+        processarArquivo(arquivo, {
+          repo,
+          geocodificador,
+          relatorio,
+          cdPorCnpj,
+          porCliente,
+          chavesVistas,
+        }),
+      ),
+    );
+    for (const r of resultados) {
+      if (r.rejeitado) relatorio.rejeitados.push(r.rejeitado);
+      for (const a of r.alertas) relatorio.alertas.push(a);
     }
-
-    // Entrega em local diverso (seção 8.4): a nota traz endereço de entrega
-    // diferente do fiscal. Geocodifica o candidato e deixa o pedido AGUARDANDO a
-    // escolha do escritório — nunca roteiriza no palpite. O cadastro do cliente
-    // segue com o endereço fiscal; o override mora no pedido.
-    let enderecoEntrega: EnderecoFiscal | undefined;
-    let coordenadaEntrega: GeoPonto | null | undefined;
-    if (nota.enderecoEntrega) {
-      enderecoEntrega = nota.enderecoEntrega;
-      coordenadaEntrega = await geocodificarEntrega(nota.enderecoEntrega, geocodificador);
-      status = 'pendente_de_decisao';
-      relatorio.alertas.push({
-        clienteId: nota.destinatario.clienteId,
-        nome: nota.destinatario.nome,
-        mensagem:
-          'Nota com endereço de entrega diferente do fiscal — escolha qual usar na aba Decisões.',
-      });
-    }
-
-    const cdId = nota.emitenteCnpj ? (cdPorCnpj.get(nota.emitenteCnpj) ?? null) : null;
-    relatorio.porCd[cdId ?? '—'] = (relatorio.porCd[cdId ?? '—'] ?? 0) + 1;
-    // Um terço das notas reais chega com qVol=0 e pesoB=0.000 (o ERP preenche a
-    // estrutura com zeros). Contar aqui é o que faz o escritório enxergar o
-    // tamanho do buraco — o conserto é no ERP emissor, não neste sistema.
-    if (!temCarga(nota.volumes, nota.pesoBrutoKg)) relatorio.semCarga += 1;
-
-    if (status === 'pronto_para_rota') relatorio.prontosParaRota += 1;
-    else if (status === 'pendente_de_decisao') relatorio.pendentesDeDecisao += 1;
-    else relatorio.pendentesDeMapeamento += 1;
-
-    const pedido: Pedido = {
-      numeroNota: nota.numeroNota,
-      serie: nota.serie,
-      numeroPedido: nota.numeroPedido,
-      lote: nota.lote,
-      clienteId: nota.destinatario.clienteId,
-      emitidoEm: nota.emitidoEm,
-      itens: nota.itens,
-      valorTotal: nota.valorTotal,
-      volumes: nota.volumes,
-      pesoBrutoKg: nota.pesoBrutoKg,
-      status,
-      rotaId: null,
-      xmlStoragePath: null,
-      // Só carrega os campos de entrega quando há divergência — pedido normal
-      // fica idêntico ao de antes do recurso (sem chaves indefinidas no doc).
-      ...(enderecoEntrega ? { enderecoEntrega, coordenadaEntrega } : {}),
-      ...(enderecoAnterior ? { enderecoAnterior } : {}),
-      cdId,
-    };
-    await repo.salvarPedido(nota.chaveAcesso, pedido);
-    relatorio.importados += 1;
   }
 
   return relatorio;
+}
+
+
+/**
+ * Quantas notas correm juntas. A conta que importa e latencia: com ~108 ms por
+ * ida ao banco e 4 idas por nota, 20 em paralelo tiram uma remessa de 100 notas
+ * de ~43 s para poucos segundos. Nao e numero para maximizar - passar disso so
+ * empilha requisicao numa instancia pequena e aproxima o limite de taxa da
+ * geocodificacao.
+ */
+const CONCORRENCIA = 20;
+
+/** Agrupa o iteravel de entrada (que pode ser stream) em lotes de `tamanho`. */
+async function* emLotes<T>(
+  itens: AsyncIterable<T> | Iterable<T>,
+  tamanho: number,
+): AsyncGenerator<T[]> {
+  let lote: T[] = [];
+  for await (const item of itens) {
+    lote.push(item);
+    if (lote.length >= tamanho) {
+      yield lote;
+      lote = [];
+    }
+  }
+  if (lote.length > 0) yield lote;
+}
+
+interface ResultadoArquivo {
+  alertas: RelatorioImportacao['alertas'];
+  rejeitado?: { arquivo: string; motivo: string };
+}
+
+/**
+ * Uma nota, do XML ao pedido gravado. O corpo e o mesmo de quando o laco era
+ * sequencial; mudou quem chama e as travas de concorrencia.
+ */
+async function processarArquivo(
+  arquivo: ArquivoXml,
+  ctx: {
+    repo: Repositorio;
+    geocodificador: Geocodificador | null;
+    relatorio: RelatorioImportacao;
+    cdPorCnpj: Map<string, string>;
+    porCliente: <T>(clienteId: string, tarefa: () => Promise<T>) => Promise<T>;
+    chavesVistas: Set<string>;
+  },
+): Promise<ResultadoArquivo> {
+  const { repo, geocodificador, relatorio, cdPorCnpj, porCliente, chavesVistas } = ctx;
+  const alertas: RelatorioImportacao['alertas'] = [];
+  relatorio.total += 1;
+  const resultado = await parseNfe(arquivo.conteudo);
+  if (!resultado.ok) {
+    return { alertas, rejeitado: { arquivo: arquivo.nome, motivo: resultado.motivo } };
+  }
+  const nota = resultado.nota;
+
+  // Dedupe estrutural: chave de acesso é o ID do pedido (seção 7.2). O Set cobre
+  // o mesmo arquivo repetido DENTRO da remessa, que ainda não está gravado e
+  // portanto é invisível para o `obterPedido`.
+  if (chavesVistas.has(nota.chaveAcesso) || (await repo.obterPedido(nota.chaveAcesso))) {
+    relatorio.duplicados += 1;
+    return { alertas };
+  }
+  chavesVistas.add(nota.chaveAcesso);
+
+  // Tudo que toca o CLIENTE vai na fila dele: cadastro e classificação são
+  // leitura → decisão → escrita, e duas notas do mesmo cliente em paralelo
+  // atropelariam uma à outra (e pagariam a geocodificação duas vezes).
+  const { cliente, enderecoAnterior, revisaoNova, status: statusInicial } = await porCliente(
+    nota.destinatario.clienteId,
+    async () => {
+      const upsert = await upsertCliente(nota, repo);
+      const classificado = await classificarDestino(
+        nota.destinatario.clienteId,
+        upsert.cliente,
+        repo,
+        geocodificador,
+        relatorio,
+      );
+      return { ...upsert, status: classificado };
+    },
+  );
+  let status = statusInicial;
+
+  // Mudança de endereço do cadastro (seção 8.3): a nota trouxe endereço fiscal
+  // diferente daquele para o qual o ponto atual foi estabelecido. Roteirizar no
+  // ponto velho levaria o motorista ao lugar errado (e, no rural, a trilha
+  // aprendida reforçaria o engano), então o pedido espera a confirmação do
+  // escritório. O pin NÃO é descartado aqui: quem decide é quem conhece.
+  if (enderecoAnterior) {
+    status = 'pendente_de_decisao';
+    // Um alerta por cliente, não por nota: uma remessa com 5 notas dele faz a
+    // mesma pergunta uma vez.
+    if (revisaoNova) {
+      alertas.push({
+        clienteId: nota.destinatario.clienteId,
+        nome: nota.destinatario.nome,
+        mensagem:
+          'Endereço do cadastro mudou — confirme na aba Decisões se o ponto atual ainda vale.',
+      });
+    }
+  }
+
+  // Entrega em local diverso (seção 8.4): a nota traz endereço de entrega
+  // diferente do fiscal. Geocodifica o candidato e deixa o pedido AGUARDANDO a
+  // escolha do escritório — nunca roteiriza no palpite. O cadastro do cliente
+  // segue com o endereço fiscal; o override mora no pedido.
+  let enderecoEntrega: EnderecoFiscal | undefined;
+  let coordenadaEntrega: GeoPonto | null | undefined;
+  if (nota.enderecoEntrega) {
+    enderecoEntrega = nota.enderecoEntrega;
+    coordenadaEntrega = await geocodificarEntrega(nota.enderecoEntrega, geocodificador);
+    status = 'pendente_de_decisao';
+    alertas.push({
+      clienteId: nota.destinatario.clienteId,
+      nome: nota.destinatario.nome,
+      mensagem:
+        'Nota com endereço de entrega diferente do fiscal — escolha qual usar na aba Decisões.',
+    });
+  }
+
+  const cdId = nota.emitenteCnpj ? (cdPorCnpj.get(nota.emitenteCnpj) ?? null) : null;
+  relatorio.porCd[cdId ?? '—'] = (relatorio.porCd[cdId ?? '—'] ?? 0) + 1;
+  // Um terço das notas reais chega com qVol=0 e pesoB=0.000 (o ERP preenche a
+  // estrutura com zeros). Contar aqui é o que faz o escritório enxergar o
+  // tamanho do buraco — o conserto é no ERP emissor, não neste sistema.
+  if (!temCarga(nota.volumes, nota.pesoBrutoKg)) relatorio.semCarga += 1;
+
+  if (status === 'pronto_para_rota') relatorio.prontosParaRota += 1;
+  else if (status === 'pendente_de_decisao') relatorio.pendentesDeDecisao += 1;
+  else relatorio.pendentesDeMapeamento += 1;
+
+  const pedido: Pedido = {
+    numeroNota: nota.numeroNota,
+    serie: nota.serie,
+    numeroPedido: nota.numeroPedido,
+    lote: nota.lote,
+    clienteId: nota.destinatario.clienteId,
+    emitidoEm: nota.emitidoEm,
+    itens: nota.itens,
+    valorTotal: nota.valorTotal,
+    volumes: nota.volumes,
+    pesoBrutoKg: nota.pesoBrutoKg,
+    status,
+    rotaId: null,
+    xmlStoragePath: null,
+    // Só carrega os campos de entrega quando há divergência — pedido normal
+    // fica idêntico ao de antes do recurso (sem chaves indefinidas no doc).
+    ...(enderecoEntrega ? { enderecoEntrega, coordenadaEntrega } : {}),
+    ...(enderecoAnterior ? { enderecoAnterior } : {}),
+    cdId,
+  };
+  await repo.salvarPedido(nota.chaveAcesso, pedido);
+  relatorio.importados += 1;
+  return { alertas };
 }
 
 /**
