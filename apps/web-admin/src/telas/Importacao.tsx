@@ -98,16 +98,15 @@ export function Importacao() {
               rotulo="Aguardando escolha de endereço"
             />
             <Metrica valor={relatorio.rejeitados.length} rotulo="Rejeitados" />
-            <Metrica valor={relatorio.semCarga ?? 0} rotulo="Sem volume/peso" />
+            <Metrica valor={relatorio.semCarga ?? 0} rotulo="Rota sem peso" />
           </div>
 
           {(relatorio.semCarga ?? 0) > 0 && (
             <div className="alerta">
-              {relatorio.semCarga} nota(s) chegaram <strong>sem volume nem peso</strong> — o XML traz
-              a estrutura zerada (<span className="mono">qVol=0</span>,{' '}
-              <span className="mono">pesoB=0.000</span>). Não é falha da importação: o dado não vem
-              na nota. Quem carrega o caminhão fica sem essa informação, e o conserto é no ERP que
-              emite.
+              {relatorio.semCarga} nota(s) <strong>de rota</strong> chegaram sem volume nem peso (
+              <span className="mono">qVol=0</span>, <span className="mono">pesoB=0.000</span>).
+              Quem carrega o caminhão fica sem essa informação nessas entregas. Nota de retirada
+              não conta aqui: o ERP zera o volume de propósito no que ninguém vai carregar.
             </div>
           )}
 

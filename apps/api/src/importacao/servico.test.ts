@@ -1135,3 +1135,33 @@ test('refazer o ponto do cliente não rebaixa pedido com override de entrega', a
   // O pin do override não veio do cliente e não morre com o ponto dele.
   assert.equal((await repo.obterPedido('com-override'))?.status, 'pronto_para_rota');
 });
+
+test('nota de RETIRADA com volume zerado não conta como "sem carga" — é a assinatura dela', async () => {
+  // O que parecia defeito do ERP (1/3 das notas sem peso) é o jeito de marcar
+  // retirada: qVol=0 ⟺ modFrete=9, confirmado pelo proprio ERP no ciclo 11.
+  // Contar aqui dobraria o mesmo fato em duas métricas.
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  const semPeso = comRetirada(xml)
+    .replace('<qVol>1</qVol>', '<qVol>0</qVol>')
+    .replace(/<pesoB>[\d.]+<\/pesoB>/, '<pesoB>0.000</pesoB>')
+    .replace(/<pesoL>[\d.]+<\/pesoL>/, '<pesoL>0.000</pesoL>');
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: semPeso }], repo);
+
+  assert.equal(relatorio.retiradaAConfirmar, 1);
+  assert.equal(relatorio.semCarga, 0);
+});
+
+test('nota de ROTA sem peso continua contando — é a que o caminhão carrega às cegas', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  const rotaSemPeso = xml
+    .replace('<modFrete>0</modFrete>', '<modFrete>1</modFrete>')
+    .replace('<qVol>1</qVol>', '<qVol>0</qVol>')
+    .replace(/<pesoB>[\d.]+<\/pesoB>/, '<pesoB>0.000</pesoB>')
+    .replace(/<pesoL>[\d.]+<\/pesoL>/, '<pesoL>0.000</pesoL>');
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: rotaSemPeso }], repo);
+
+  assert.equal(relatorio.retiradaAConfirmar, 0);
+  assert.equal(relatorio.semCarga, 1);
+});

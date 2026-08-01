@@ -272,10 +272,15 @@ async function processarArquivo(
 
   const cdId = nota.emitenteCnpj ? (cdPorCnpj.get(nota.emitenteCnpj) ?? null) : null;
   relatorio.porCd[cdId ?? '—'] = (relatorio.porCd[cdId ?? '—'] ?? 0) + 1;
-  // Um terço das notas reais chega com qVol=0 e pesoB=0.000 (o ERP preenche a
-  // estrutura com zeros). Contar aqui é o que faz o escritório enxergar o
-  // tamanho do buraco — o conserto é no ERP emissor, não neste sistema.
-  if (!temCarga(nota.volumes, nota.pesoBrutoKg)) relatorio.semCarga += 1;
+  // Peso zerado só importa para quem VAI NO CAMINHÃO. O que parecia defeito do
+  // ERP ("um terço das notas sem volume/peso") revelou-se a assinatura da
+  // retirada no balcão: qVol=0 ⟺ modFrete=9 nas 3507 notas reais, e o ERP
+  // confirmou (ciclo 11, 2019/2019) — ele não embala o que ninguém carrega.
+  // Contar retirada aqui dobraria o mesmo fato em duas métricas e mandaria o
+  // escritório cobrar do emissor um "conserto" que não existe.
+  if (sugestao !== 'retirada' && !temCarga(nota.volumes, nota.pesoBrutoKg)) {
+    relatorio.semCarga += 1;
+  }
 
   if (status === 'pronto_para_rota') relatorio.prontosParaRota += 1;
   else if (status === 'pendente_de_decisao') relatorio.pendentesDeDecisao += 1;

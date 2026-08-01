@@ -193,3 +193,19 @@ test('desfazer rota devolve PRONTO o pedido com override de entrega, mesmo sem p
   assert.ok(r.ok);
   assert.equal((await repo.obterPedido('p1'))!.status, 'pronto_para_rota');
 });
+
+test('pedido marcado como retirada PODE ser apagado — não é histórico de campo', async () => {
+  // A trava do apagar é sobre o que já foi EXECUTADO (entregue/insucesso).
+  // Retirada é decisão de escritório, reversível — apagar a nota desfaz tudo.
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('c1', clienteCom({ lat: -10.28, lng: -36.56 }));
+  await repo.salvarPedido('p1', {
+    ...pedidoDe('c1', 'retirada', null),
+    modFrete: '9',
+    modoEntrega: 'retirada',
+  });
+
+  const r = await removerPedido(repo, 'p1');
+  assert.ok(r.ok);
+  assert.equal(await repo.obterPedido('p1'), null);
+});
