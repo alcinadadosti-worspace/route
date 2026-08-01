@@ -175,3 +175,21 @@ test('rotaId com barra não vira caminho de documento (404)', async () => {
   if (!r.ok) assert.equal(r.status, 404);
   assert.ok(await repo.obterRota(ROTA_ID));
 });
+
+test('desfazer rota devolve PRONTO o pedido com override de entrega, mesmo sem ponto no cliente', async () => {
+  // O ponto desse pedido é o override (8.4) — o pin que o escritório cravou no
+  // mapa — e não o cadastro do cliente. Sem esta regra ele voltava para
+  // "pendente de mapeamento": trabalho de campo por um ponto que já existe, e
+  // o pedido sumia da lista de prontos sem ninguém entender por quê.
+  const repo = await cenario(['em_rota'], false); // cliente SEM coordenada
+  const pedido = (await repo.obterPedido('p1'))!;
+  await repo.salvarPedido('p1', {
+    ...pedido,
+    usarEnderecoEntrega: true,
+    coordenadaEntrega: { lat: -9.9, lng: -36.5 },
+  });
+
+  const r = await removerRota(repo, ROTA_ID);
+  assert.ok(r.ok);
+  assert.equal((await repo.obterPedido('p1'))!.status, 'pronto_para_rota');
+});

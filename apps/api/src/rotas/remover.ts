@@ -1,4 +1,4 @@
-import type { Rota, StatusPedido } from '@rota/shared';
+import { statusForaDeRota, type Pedido, type Rota } from '@rota/shared';
 import { FORMATO_ROTA_ID } from './comum.js';
 import type { Repositorio } from '../db/repositorio.js';
 
@@ -18,10 +18,11 @@ export type ResultadoRemocao =
   | { ok: true; rotaApagada?: string }
   | { ok: false; status: number; erro: string };
 
-/** Status de pedido que não está numa rota, derivado do ponto do cliente. */
-async function statusForaDeRota(repo: Repositorio, clienteId: string): Promise<StatusPedido> {
-  const cliente = await repo.obterCliente(clienteId);
-  return cliente?.coordenada ? 'pronto_para_rota' : 'pendente_de_mapeamento';
+/** Ponto do pedido fora de rota: o do cliente OU o override de entrega (8.4) —
+ * a regra pura mora no shared (`statusForaDeRota`), aqui só se busca o cliente. */
+async function statusDeVolta(repo: Repositorio, pedido: Pedido): Promise<Pedido['status']> {
+  const cliente = await repo.obterCliente(pedido.clienteId);
+  return statusForaDeRota(pedido, Boolean(cliente?.coordenada));
 }
 
 /**
@@ -100,7 +101,7 @@ export async function removerRota(repo: Repositorio, rotaId: string): Promise<Re
     if (!pedido) continue;
     await repo.salvarPedido(parada.pedidoId, {
       ...pedido,
-      status: await statusForaDeRota(repo, pedido.clienteId),
+      status: await statusDeVolta(repo, pedido),
       rotaId: null,
     });
   }

@@ -10,7 +10,7 @@ import {
 } from './servico.js';
 import { RepositorioMemoria } from '../db/repositorio.js';
 import { parseNfe } from '../nfe/parser.js';
-import type { Cliente, EnderecoFiscal } from '@rota/shared';
+import type { Cliente, EnderecoFiscal, Pedido } from '@rota/shared';
 
 let xml: string;
 
@@ -977,4 +977,130 @@ test('e o caminho inverso: responder o endereço não solta a do modo', async ()
   // Respondidas as duas, aí sim sai.
   const fim = await decidirModoEntrega(repo, id, 'rota');
   assert.equal(fim.ok && fim.status, 'pronto_para_rota');
+});
+
+/* ---------- O ponto pode vir do OVERRIDE do pedido, não só do cliente ---------- */
+
+const XML_ENTREGA_DIVERGENTE =
+  '</dest><entrega><xLgr>RUA DA ENTREGA</xLgr><nro>500</nro><xBairro>CENTRO</xBairro>' +
+  '<xMun>MACEIO</xMun><UF>AL</UF><CEP>57000000</CEP></entrega>';
+
+test('override de entrega vale como ponto: endereço respondido antes de rota×retirada não cai em mapeamento', async () => {
+  // O bug: decidirModoEntrega consultava só cliente.coordenada. Respondida a
+  // pergunta do endereço PRIMEIRO ("usar endereço de entrega", pin no mapa),
+  // responder "vai para rota" derrubava o pedido em pendente_de_mapeamento —
+  // pedindo trabalho de campo por um ponto que o escritório já tinha cravado.
+  const repo = new RepositorioMemoria();
+  // Cliente nasce da importação, rural, NUNCA mapeado.
+  const conteudo = comRetirada(xml).replace('</dest>', XML_ENTREGA_DIVERGENTE);
+  await importarXmls([{ nome: 'a.xml', conteudo }], repo);
+  const id = (await repo.listarPedidos())[0]!.id;
+
+  const r1 = await decidirEnderecoEntrega(repo, id, 'entrega', { lat: -9.66, lng: -35.73 });
+  assert.ok(r1.ok);
+  assert.equal(r1.status, 'pendente_de_decisao'); // ainda falta rota×retirada
+
+  const r2 = await decidirModoEntrega(repo, id, 'rota');
+  assert.ok(r2.ok);
+  assert.equal(r2.status, 'pronto_para_rota'); // o override É o ponto
+});
+
+test('as três perguntas na mesma nota: depois do remapeamento, o override segura o pedido pronto', async () => {
+  // Cliente conhecido e MAPEADO cujo cadastro mudou de endereço (8.3), nota
+  // com endereço de entrega divergente (8.4) E com cara de retirada. As três
+  // perguntas se acumulam; a liberação em lote do fim não pode rebaixar o
+  // pedido cujo ponto é o override — mesmo o cliente tendo acabado de perder
+  // o dele no remapear.
+  const repo = new RepositorioMemoria();
+  const parse = await parseNfe(xml);
+  assert.ok(parse.ok);
+  const clienteId = parse.nota.destinatario.clienteId;
+  await repo.salvarCliente(clienteId, {
+    nome: 'MARIA JOSE DA SILVA',
+    documentoMascarado: '***.***.***-82',
+    telefone: null,
+    email: null,
+    enderecoFiscal: {
+      logradouro: 'RUA ANTIGA',
+      numero: '1',
+      bairro: 'CENTRO',
+      municipio: 'JUNQUEIRO',
+      uf: 'AL',
+      cep: '57270000',
+    },
+    coordenada: { lat: -9.92, lng: -36.47 },
+    statusMapeamento: 'mapeado',
+    trilhaAtivaId: null,
+    mapeadoPor: 'motorista-1',
+    mapeadoEm: '2026-01-01T00:00:00-03:00',
+    fotoReferenciaPath: null,
+    observacoes: '',
+  });
+  const conteudo = comRetirada(xml).replace('</dest>', XML_ENTREGA_DIVERGENTE);
+  await importarXmls([{ nome: 'a.xml', conteudo }], repo);
+  const id = (await repo.listarPedidos())[0]!.id;
+
+  const r1 = await decidirEnderecoEntrega(repo, id, 'entrega', { lat: -9.66, lng: -35.73 });
+  assert.ok(r1.ok && r1.status === 'pendente_de_decisao');
+  const r2 = await decidirModoEntrega(repo, id, 'rota');
+  assert.ok(r2.ok && r2.status === 'pendente_de_decisao'); // presa na do cadastro
+  const r3 = await decidirMudancaEndereco(repo, id, 'remapear'); // cliente perde o ponto
+  assert.ok(r3.ok);
+
+  // Sem o fix a liberação aplicava o status-base do cliente (mapeamento).
+  assert.equal((await repo.obterPedido(id))?.status, 'pronto_para_rota');
+});
+
+test('refazer o ponto do cliente não rebaixa pedido com override de entrega', async () => {
+  const repo = new RepositorioMemoria();
+  const clienteId = 'cliente-refazer';
+  await repo.salvarCliente(clienteId, {
+    nome: 'CLIENTE',
+    documentoMascarado: '***',
+    telefone: null,
+    email: null,
+    enderecoFiscal: {
+      logradouro: 'RUA A',
+      numero: '1',
+      bairro: 'CENTRO',
+      municipio: 'PENEDO',
+      uf: 'AL',
+      cep: '57200000',
+    },
+    coordenada: { lat: -10.28, lng: -36.56 },
+    statusMapeamento: 'mapeado',
+    trilhaAtivaId: null,
+    mapeadoPor: 'motorista-1',
+    mapeadoEm: '2026-01-01T00:00:00-03:00',
+    fotoReferenciaPath: null,
+    observacoes: '',
+  });
+  const base = {
+    numeroNota: 1,
+    serie: 1,
+    numeroPedido: '1',
+    lote: null,
+    clienteId,
+    emitidoEm: '2026-07-30T08:00:00-03:00',
+    itens: [],
+    valorTotal: 10,
+    volumes: 1,
+    pesoBrutoKg: 1,
+    status: 'pronto_para_rota',
+    rotaId: null,
+    xmlStoragePath: null,
+  } satisfies Pedido;
+  await repo.salvarPedido('sem-override', { ...base });
+  await repo.salvarPedido('com-override', {
+    ...base,
+    usarEnderecoEntrega: true,
+    coordenadaEntrega: { lat: -9.9, lng: -36.5 },
+  });
+
+  // Sem geocodificador o cliente fica sem ponto nenhum.
+  const r = await refazerPontoDoCliente(repo, clienteId, null);
+  assert.ok(r.ok);
+  assert.equal((await repo.obterPedido('sem-override'))?.status, 'pendente_de_mapeamento');
+  // O pin do override não veio do cliente e não morre com o ponto dele.
+  assert.equal((await repo.obterPedido('com-override'))?.status, 'pronto_para_rota');
 });

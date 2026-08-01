@@ -2,6 +2,7 @@ import {
   aguardandoEscolhaDeModo,
   ehEnderecoRural,
   enderecosDivergem,
+  statusForaDeRota,
   sugerirModoEntrega,
   temCarga,
   validarGeoPonto,
@@ -477,7 +478,9 @@ export async function decidirEnderecoEntrega(
       return { ok: true, status: 'pendente_de_decisao' };
     }
     const cliente = await repo.obterCliente(pedido.clienteId);
-    const status: StatusPedido = cliente?.coordenada ? 'pronto_para_rota' : 'pendente_de_mapeamento';
+    // `usarEnderecoEntrega: false` — o override acabou de ser recusado, então o
+    // ponto só pode vir do cliente (statusForaDeRota com o pedido já decidido).
+    const status = statusForaDeRota({ usarEnderecoEntrega: false }, Boolean(cliente?.coordenada));
     await repo.salvarPedido(pedidoId, { ...pedido, usarEnderecoEntrega: false, status });
     return { ok: true, status };
   }
@@ -641,7 +644,11 @@ export async function decidirModoEntrega(
     return { ok: true, status: 'pendente_de_decisao' };
   }
 
-  const status: StatusPedido = cliente?.coordenada ? 'pronto_para_rota' : 'pendente_de_mapeamento';
+  // statusForaDeRota, e não `cliente.coordenada` direto: se o escritório
+  // respondeu "usar endereço de entrega" ANTES desta pergunta, o ponto do
+  // pedido é o override — mandá-lo para mapeamento em campo descartaria um pin
+  // que já foi cravado no mapa.
+  const status = statusForaDeRota(comEscolha, Boolean(cliente?.coordenada));
   await repo.salvarPedido(pedidoId, { ...comEscolha, status });
   return { ok: true, status };
 }
@@ -688,10 +695,13 @@ export async function refazerPontoDoCliente(
   // Os pedidos ainda não roteirizados seguem o ponto: sem isto, um pedido
   // continuaria marcado "pronto para rota" apontando para um cliente que
   // acabou de ficar sem coordenada, e só a montagem da rota reclamaria.
+  // Por pedido: o override de entrega (8.4) não veio do cliente e não morre
+  // com o ponto dele.
   for (const { id, ...pedido } of await repo.listarPedidos()) {
     if (pedido.clienteId !== clienteId) continue;
     if (pedido.status !== 'pronto_para_rota' && pedido.status !== 'pendente_de_mapeamento') continue;
-    if (pedido.status !== status) await repo.salvarPedido(id, { ...pedido, status });
+    const novo = statusForaDeRota(pedido, status === 'pronto_para_rota');
+    if (pedido.status !== novo) await repo.salvarPedido(id, { ...pedido, status: novo });
   }
 
   return { ok: true, status };
@@ -715,7 +725,13 @@ async function liberarPedidosEmRevisao(
     // Mesma razão dos outros dois pontos: a nota pode ter ficado presa também
     // pela escolha entre rota e retirada, que esta liberação não responde.
     if (aguardandoEscolhaDeModo(dados)) continue;
-    await repo.salvarPedido(id, { ...dados, status });
+    // Por pedido, não o status-base direto: quem tem override de entrega (8.4)
+    // carrega o próprio ponto e sai pronto mesmo que o cliente tenha acabado de
+    // perder o dele num remapeamento.
+    await repo.salvarPedido(id, {
+      ...dados,
+      status: statusForaDeRota(dados, status === 'pronto_para_rota'),
+    });
   }
 }
 

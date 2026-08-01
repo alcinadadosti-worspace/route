@@ -18,5 +18,11 @@ Thumbs.db
 XML_gerado_*/
 notas-teste/
 presencial/
+ciclo*/
 *-proc-nfe*.xml
 rota.xml
+# Exportações do ERP (ConsultaPedidos etc.): trazem cliente, valor e pedido em
+# claro. O repositório é só código — nenhuma planilha tem por que entrar.
+*.xlsx
+*.xls
+*.csv
