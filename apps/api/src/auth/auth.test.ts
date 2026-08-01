@@ -81,3 +81,42 @@ test('sem autenticador a API segue aberta (dev/CI)', async () => {
   assert.equal(r.statusCode, 200);
   await app.close();
 });
+
+/* ---------- /api/pedidos/:chave/modo-entrega (camada HTTP) ---------- */
+
+test('modo-entrega é rota de ESCRITÓRIO: motorista → 403', async () => {
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const r = await app.inject({
+    method: 'POST',
+    url: '/api/pedidos/27260314750618000155550010002761651000070282/modo-entrega',
+    headers: bearer('tk-motorista'),
+    payload: { escolha: 'retirada' },
+  });
+  assert.equal(r.statusCode, 403);
+  await app.close();
+});
+
+test('modo-entrega: chave malformada → 404 antes de tocar o banco', async () => {
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const r = await app.inject({
+    method: 'POST',
+    url: '/api/pedidos/nao-e-chave/modo-entrega',
+    headers: bearer('tk-admin'),
+    payload: { escolha: 'retirada' },
+  });
+  assert.equal(r.statusCode, 404);
+  await app.close();
+});
+
+test('modo-entrega: escolha inválida → 400 com a mensagem do serviço', async () => {
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const r = await app.inject({
+    method: 'POST',
+    url: '/api/pedidos/27260314750618000155550010002761651000070282/modo-entrega',
+    headers: bearer('tk-admin'),
+    payload: { escolha: 'balcao' },
+  });
+  assert.equal(r.statusCode, 400);
+  assert.match(JSON.parse(r.body).erro, /rota ou retirada/);
+  await app.close();
+});

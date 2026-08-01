@@ -11,14 +11,18 @@ import {
 import { MapaDecisao } from '../MapaDecisao';
 
 /**
- * Decisões de endereço. Duas perguntas diferentes caem aqui, ambas com o pedido
- * em `pendente_de_decisao`:
+ * Decisões — o que a importação não resolve sozinha. TRÊS perguntas caem aqui,
+ * todas com o pedido em `pendente_de_decisao`:
+ * - rota × retirada (ver retirada.ts): a nota tem cara de retirada no balcão —
+ *   metade da importação do dia. Vem primeiro e em bloco com confirmação em
+ *   lote, porque é volume;
  * - seção 8.4: a NF-e traz endereço de ENTREGA diferente do fiscal — o
  *   escritório vê os dois no mapa (A fiscal, B entrega) e escolhe qual vale; a
  *   escolha vira override no pedido, sem tocar o cadastro do cliente;
  * - seção 8.3: o endereço do CADASTRO mudou e o cliente já tinha ponto — o
  *   escritório confirma se aquele ponto sobrevive à mudança.
- * Uma nota pode levantar as duas: respondida a da entrega, sobra a do cadastro.
+ * Uma nota pode levantar mais de uma: primeiro rota × retirada; respondida
+ * "vai para rota", ela reaparece como cartão de endereço.
  */
 export function Decisoes() {
   const [pedidos, setPedidos] = useState<Array<{ id: string } & Pedido>>([]);
@@ -64,13 +68,13 @@ export function Decisoes() {
   return (
     <section className="cartao">
       <div className="cabecalho-secao">
-        <h2>Decisões de endereço</h2>
+        <h2>Decisões</h2>
         <button onClick={carregar}>Atualizar</button>
       </div>
       <p style={{ color: 'var(--texto-2)' }}>
-        Pedidos que a importação não roteiriza sozinha: o endereço de{' '}
-        <strong>entrega</strong> difere do fiscal, ou o endereço do{' '}
-        <strong>cadastro mudou</strong> e o ponto que o cliente já tinha pode não valer mais.
+        O que a importação não resolve sozinha: nota com cara de{' '}
+        <strong>retirada no balcão</strong>, endereço de <strong>entrega</strong> diferente do
+        fiscal, ou endereço do <strong>cadastro que mudou</strong> com ponto já estabelecido.
       </p>
 
       {erro && <div className="erro">{erro} — a API está no ar?</div>}
