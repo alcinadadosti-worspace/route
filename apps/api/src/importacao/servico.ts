@@ -1,6 +1,8 @@
 import {
+  aguardandoEscolhaDeModo,
   ehEnderecoRural,
   enderecosDivergem,
+  sugerirModoEntrega,
   temCarga,
   validarGeoPonto,
   type Cliente,
@@ -42,6 +44,7 @@ export async function importarXmls(
     prontosParaRota: 0,
     pendentesDeMapeamento: 0,
     pendentesDeDecisao: 0,
+    retiradaAConfirmar: 0,
     geocodificados: 0,
     aproximados: 0,
     alertas: [],
@@ -239,6 +242,23 @@ async function processarArquivo(
     });
   }
 
+  // Retirada no balcão (ver retirada.ts): metade das notas nunca entra no
+  // caminhão. O `modFrete` sugere, mas quem decide é o escritório — importar já
+  // classificando esconderia o erro, porque um pedido que devia sair
+  // simplesmente não sairia e ninguém saberia por quê. Só pergunta quando a
+  // sugestão é RETIRADA: `modFrete='1'` não tem dúvida (nenhuma das 1686 notas
+  // desse grupo na base real sequer se parece com retirada).
+  const sugestao = sugerirModoEntrega(nota.modFrete);
+  if (sugestao === 'retirada') {
+    status = 'pendente_de_decisao';
+    relatorio.retiradaAConfirmar = (relatorio.retiradaAConfirmar ?? 0) + 1;
+    alertas.push({
+      clienteId: nota.destinatario.clienteId,
+      nome: nota.destinatario.nome,
+      mensagem: 'Nota com cara de retirada no balcão — confirme na aba Decisões se vai para rota.',
+    });
+  }
+
   const cdId = nota.emitenteCnpj ? (cdPorCnpj.get(nota.emitenteCnpj) ?? null) : null;
   relatorio.porCd[cdId ?? '—'] = (relatorio.porCd[cdId ?? '—'] ?? 0) + 1;
   // Um terço das notas reais chega com qVol=0 e pesoB=0.000 (o ERP preenche a
@@ -268,6 +288,7 @@ async function processarArquivo(
     // fica idêntico ao de antes do recurso (sem chaves indefinidas no doc).
     ...(enderecoEntrega ? { enderecoEntrega, coordenadaEntrega } : {}),
     ...(enderecoAnterior ? { enderecoAnterior } : {}),
+    ...(nota.modFrete ? { modFrete: nota.modFrete } : {}),
     cdId,
   };
   await repo.salvarPedido(nota.chaveAcesso, pedido);
@@ -449,6 +470,12 @@ export async function decidirEnderecoEntrega(
       await repo.salvarPedido(pedidoId, { ...pedido, usarEnderecoEntrega: false });
       return { ok: true, status: 'pendente_de_decisao' };
     }
+    // Falta escolher entre rota e retirada nesta nota: promover agora soltaria
+    // para o caminhão um pedido que ninguém confirmou que sai.
+    if (aguardandoEscolhaDeModo(pedido)) {
+      await repo.salvarPedido(pedidoId, { ...pedido, usarEnderecoEntrega: false });
+      return { ok: true, status: 'pendente_de_decisao' };
+    }
     const cliente = await repo.obterCliente(pedido.clienteId);
     const status: StatusPedido = cliente?.coordenada ? 'pronto_para_rota' : 'pendente_de_mapeamento';
     await repo.salvarPedido(pedidoId, { ...pedido, usarEnderecoEntrega: false, status });
@@ -467,13 +494,18 @@ export async function decidirEnderecoEntrega(
       erro: 'Posicione o pin do endereço de entrega no mapa antes de confirmar',
     };
   }
+  // Mesmo cuidado do ramo 'fiscal': com a escolha de rota × retirada em aberto,
+  // o pedido continua na fila de decisão mesmo já tendo endereço resolvido.
+  const status: StatusPedido = aguardandoEscolhaDeModo(pedido)
+    ? 'pendente_de_decisao'
+    : 'pronto_para_rota';
   await repo.salvarPedido(pedidoId, {
     ...pedido,
     usarEnderecoEntrega: true,
     coordenadaEntrega: coord,
-    status: 'pronto_para_rota',
+    status,
   });
-  return { ok: true, status: 'pronto_para_rota' };
+  return { ok: true, status };
 }
 
 /**
@@ -554,6 +586,67 @@ export async function decidirMudancaEndereco(
 }
 
 /**
+ * Rota × retirada (ver `retirada.ts`): metade das notas do dia nunca entra no
+ * caminhão porque a revendedora vem ao CD buscar. O `modFrete` da NF-e sugere,
+ * mas a palavra final é do escritório — e é REVERSÍVEL enquanto o pedido não
+ * saiu: se a revendedora não aparecer, ele volta para a fila da rota.
+ *
+ * Escolher `retirada` NÃO apaga o pedido nem o esconde: ele fica na aba
+ * Pedidos com status próprio, contável no fim do mês. Sumir seria pior que
+ * errar, porque ninguém procura o que não sabe que existe.
+ */
+export async function decidirModoEntrega(
+  repo: Repositorio,
+  pedidoId: string,
+  escolha: 'rota' | 'retirada',
+): Promise<ResultadoDecisao> {
+  if (escolha !== 'rota' && escolha !== 'retirada') {
+    return { ok: false, status: 400, erro: 'Escolha inválida (rota ou retirada)' };
+  }
+  const pedido = await repo.obterPedido(pedidoId);
+  if (!pedido) return { ok: false, status: 404, erro: 'Pedido não encontrado' };
+  // O que já está no caminhão ou foi resolvido em campo não se desfaz daqui —
+  // para tirar de uma rota publicada existe o caminho próprio (remover.ts).
+  if (pedido.status === 'em_rota' || pedido.status === 'entregue' || pedido.status === 'insucesso') {
+    return {
+      ok: false,
+      status: 409,
+      erro: `Pedido ${pedido.numeroNota} já saiu para a rota — use a aba Rotas para desfazer`,
+    };
+  }
+
+  if (escolha === 'retirada') {
+    await repo.salvarPedido(pedidoId, {
+      ...pedido,
+      modoEntrega: 'retirada',
+      status: 'retirada',
+    });
+    return { ok: true, status: 'retirada' };
+  }
+
+  // escolha === 'rota': só volta ao fluxo normal quando as OUTRAS perguntas da
+  // nota já foram respondidas. A mesma nota pode levantar as três, e responder
+  // esta não responde as de endereço.
+  const comEscolha: Pedido = { ...pedido, modoEntrega: 'rota' };
+  const cliente = await repo.obterCliente(pedido.clienteId);
+  const entregaEmAberto =
+    Boolean(pedido.enderecoEntrega) && pedido.usarEnderecoEntrega === undefined;
+  // O marcador do cadastro vive no CLIENTE (`enderecoEmRevisao`), não no
+  // pedido: `enderecoAnterior` fica no doc mesmo depois de respondida. Ler o
+  // cliente é o que distingue "ainda em aberto" de "já resolvida" — sem isso,
+  // reverter uma retirada para rota reabriria uma pergunta já fechada.
+  const cadastroEmAberto = Boolean(pedido.enderecoAnterior) && Boolean(cliente?.enderecoEmRevisao);
+  if (entregaEmAberto || cadastroEmAberto) {
+    await repo.salvarPedido(pedidoId, { ...comEscolha, status: 'pendente_de_decisao' });
+    return { ok: true, status: 'pendente_de_decisao' };
+  }
+
+  const status: StatusPedido = cliente?.coordenada ? 'pronto_para_rota' : 'pendente_de_mapeamento';
+  await repo.salvarPedido(pedidoId, { ...comEscolha, status });
+  return { ok: true, status };
+}
+
+/**
  * Refaz o ponto de um cliente a pedido do escritório (RF-23). Existe porque
  * havia um beco sem saída: uma vez `mapeado`, o pin não tem correção. O app do
  * motorista só oferece o ajuste para destino `aproximado`/`nao_mapeado`, então
@@ -619,6 +712,9 @@ async function liberarPedidosEmRevisao(
     if (dados.clienteId !== clienteId) continue;
     if (dados.status !== 'pendente_de_decisao' || !dados.enderecoAnterior) continue;
     if (dados.enderecoEntrega && dados.usarEnderecoEntrega === undefined) continue;
+    // Mesma razão dos outros dois pontos: a nota pode ter ficado presa também
+    // pela escolha entre rota e retirada, que esta liberação não responde.
+    if (aguardandoEscolhaDeModo(dados)) continue;
     await repo.salvarPedido(id, { ...dados, status });
   }
 }

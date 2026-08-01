@@ -4,6 +4,7 @@ import multipart from '@fastify/multipart';
 import {
   importarXmls,
   decidirEnderecoEntrega,
+  decidirModoEntrega,
   decidirMudancaEndereco,
   refazerPontoDoCliente,
   type ArquivoXml,
@@ -159,6 +160,28 @@ export async function criarApp({
         chave,
         corpo.escolha as 'manter' | 'remapear',
         geocodificador,
+      );
+      if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+      return { status: resultado.status };
+    },
+  );
+
+  // Rota × retirada: metade das notas do dia não sai no caminhão porque a
+  // revendedora vem buscar no CD. O `modFrete` da nota sugere, o escritório
+  // decide, e a escolha é reversível enquanto o pedido não saiu.
+  app.post(
+    '/api/pedidos/:chave/modo-entrega',
+    { config: { papeis: ESCRITORIO } },
+    async (req, reply) => {
+      const { chave } = req.params as { chave: string };
+      if (!/^\d{44}$/.test(chave)) {
+        return reply.code(404).send({ erro: 'Pedido não encontrado' });
+      }
+      const corpo = (req.body ?? {}) as { escolha?: 'rota' | 'retirada' };
+      const resultado = await decidirModoEntrega(
+        repo,
+        chave,
+        corpo.escolha as 'rota' | 'retirada',
       );
       if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
       return { status: resultado.status };

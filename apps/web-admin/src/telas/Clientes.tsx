@@ -15,8 +15,9 @@ const ROTULO_MAPEAMENTO: Record<string, { texto: string; classe: string }> = {
 
 const ROTULO_STATUS_PEDIDO: Record<string, string> = {
   pendente_de_mapeamento: 'Pendente de mapeamento',
-  pendente_de_decisao: 'Aguardando endereço',
+  pendente_de_decisao: 'Aguardando decisão',
   pronto_para_rota: 'Pronto para rota',
+  retirada: 'Retirada no balcão',
   importado: 'Importado',
   em_rota: 'Em rota',
   entregue: 'Entregue',

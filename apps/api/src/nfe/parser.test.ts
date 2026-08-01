@@ -113,3 +113,38 @@ test('bloco <entrega> sem logradouro (só documento) é ignorado', async () => {
   assert.ok(resultado.ok);
   assert.equal(resultado.nota.enderecoEntrega, undefined);
 });
+
+test('nota de ENTRADA é recusada — mercadoria voltando não gera entrega', async () => {
+  // As 66 notas tpNF=0 das 3507 reais passavam no parser e viravam pedido, com
+  // nome de revendedora e endereço legítimos: o motorista iria à porta buscar
+  // quem já devolveu. Nada na tela as distinguia de uma venda.
+  const resultado = await parseNfe(xml.replace('<tpNF>1</tpNF>', '<tpNF>0</tpNF>'));
+  assert.equal(resultado.ok, false);
+  assert.match(resultado.ok ? '' : resultado.motivo, /não gera entrega/);
+});
+
+test('a recusa nomeia devolução quando finNFe=4 — o operador precisa saber o que chegou', async () => {
+  const resultado = await parseNfe(
+    xml.replace('<tpNF>1</tpNF>', '<tpNF>0</tpNF>').replace('<finNFe>1</finNFe>', '<finNFe>4</finNFe>'),
+  );
+  assert.equal(resultado.ok, false);
+  assert.match(resultado.ok ? '' : resultado.motivo, /devolução/);
+});
+
+test('modFrete é lido como fato da nota (sugere retirada × rota)', async () => {
+  const nove = await parseNfe(xml.replace('<modFrete>0</modFrete>', '<modFrete>9</modFrete>'));
+  assert.ok(nove.ok);
+  assert.equal(nove.nota.modFrete, '9');
+
+  const um = await parseNfe(xml.replace('<modFrete>0</modFrete>', '<modFrete>1</modFrete>'));
+  assert.ok(um.ok);
+  assert.equal(um.nota.modFrete, '1');
+});
+
+test('modFrete fora de 1/9 não vira palpite', async () => {
+  // A fixture traz 0 (CIF), que não existe nas notas reais deste emissor.
+  // Chutar num código novo classificaria errado em silêncio.
+  const resultado = await parseNfe(xml);
+  assert.ok(resultado.ok);
+  assert.equal(resultado.nota.modFrete, undefined);
+});

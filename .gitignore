@@ -11,7 +11,12 @@ Thumbs.db
 *firebase-adminsdk*.json
 *service-account*.json
 
-# Notas fiscais reais (CPF/nome) — nunca versionar
+# Notas fiscais reais (CPF/nome) — nunca versionar.
+# O sufixo do ERP varia: `-proc-nfe.xml` numas, `-proc-nfe_<uuid>.xml` noutras —
+# por isso o glob com `*` DEPOIS de `proc-nfe`, senão as 318 notas de
+# `presencial/` entrariam no commit com CPF e nome de revendedora.
 XML_gerado_*/
 notas-teste/
-*-proc-nfe.xml
+presencial/
+*-proc-nfe*.xml
+rota.xml

@@ -134,6 +134,17 @@ export async function decidirMudancaEndereco(
 }
 
 /**
+ * Rota × retirada: o `modFrete` da nota sugere que a revendedora vem buscar no
+ * CD, e o escritório confirma. Reversível enquanto o pedido não saiu.
+ */
+export async function decidirModoEntrega(
+  pedidoId: string,
+  escolha: 'rota' | 'retirada',
+): Promise<{ status: string }> {
+  return post(`${BASE}/api/pedidos/${encodeURIComponent(pedidoId)}/modo-entrega`, { escolha });
+}
+
+/**
  * Apaga uma nota. Estando numa rota publicada, a parada sai da rota junto (e a
  * rota some se era a última). Só o que já foi executado em campo é intocável.
  * O cliente e o que ele ensinou sobre o local ficam.

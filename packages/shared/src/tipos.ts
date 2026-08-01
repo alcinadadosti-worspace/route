@@ -16,6 +16,7 @@ export type StatusPedido =
   | 'pendente_de_mapeamento'
   | 'pendente_de_decisao'
   | 'pronto_para_rota'
+  | 'retirada'
   | 'em_rota'
   | 'entregue'
   | 'insucesso';
@@ -113,6 +114,24 @@ export interface Pedido {
    * na mão, como sempre foi.
    */
   cdId?: string | null;
+  /**
+   * `transp/modFrete` da NF-e, guardado como FATO da nota (não como decisão).
+   * `'9'` = sem ocorrência de transporte; `'1'` = frete por conta do
+   * destinatário. Medido nas 3507 notas reais e nas 318 que o escritório
+   * rotulou como retirada: as 318 são `'9'`, sem uma exceção, e nenhuma nota
+   * `'1'` sequer se parece com elas (todas têm caixa e lote de remessa).
+   *
+   * Serve para SUGERIR `modoEntrega` na aba Decisões — nunca para decidir
+   * sozinho. Ausente em pedidos importados antes deste campo existir.
+   */
+  modFrete?: '1' | '9';
+  /**
+   * Escolha do escritório: este pedido sai no caminhão ou a revendedora retira?
+   * Ausente = ainda não perguntado (o pedido fica `pendente_de_decisao` e não
+   * entra em rota). A escolha é reversível enquanto o pedido não saiu: se a
+   * revendedora não aparecer, o escritório devolve para a fila.
+   */
+  modoEntrega?: 'rota' | 'retirada';
 }
 
 /**
@@ -460,9 +479,17 @@ export interface RelatorioImportacao {
   rejeitados: Array<{ arquivo: string; motivo: string }>;
   prontosParaRota: number;
   pendentesDeMapeamento: number;
-  /** Notas com endereço de entrega divergente do fiscal — aguardam a escolha do
-   * escritório na aba Decisões (seção 8.4). */
+  /** Notas que a importação não roteiriza sozinha — aguardam o escritório na aba
+   * Decisões. Soma as três perguntas possíveis (endereço de entrega divergente,
+   * cadastro que mudou de lugar, e rota × retirada). */
   pendentesDeDecisao: number;
+  /**
+   * Quantas das `pendentesDeDecisao` são a pergunta de RETIRADA no balcão.
+   * Contada à parte porque é metade de uma importação típica, enquanto as de
+   * endereço são raras: sem separar, o operador leria "60 aguardando endereço"
+   * e procuraria um problema que não existe. Ausente em relatórios antigos.
+   */
+  retiradaAConfirmar?: number;
   /** Destinos urbanos resolvidos pela geocodificação automática (seção 9). */
   geocodificados: number;
   /** Destinos aproximados (rural/impreciso, mas no município certo): despacháveis

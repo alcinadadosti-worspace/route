@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   decidirEnderecoEntrega,
+  decidirModoEntrega,
   decidirMudancaEndereco,
   importarXmls,
   refazerPontoDoCliente,
@@ -821,4 +822,159 @@ test('remessa que cruza vários lotes mantém contagem exata e ordem dos rejeita
   assert.equal(relatorio.rejeitados.length, 1);
   assert.equal(relatorio.rejeitados[0]!.arquivo, 'ruim.xml');
   assert.equal((await repo.listarPedidos()).length, 45);
+});
+
+/* ---------- Rota × retirada no balcão (ver retirada.ts) ---------- */
+
+/** Cliente já mapeado, para o pedido nascer despachável e a única pergunta ser a do modo. */
+async function comClienteMapeado(repo: RepositorioMemoria, conteudo: string): Promise<string> {
+  const parse = await parseNfe(conteudo);
+  assert.ok(parse.ok);
+  const clienteId = parse.nota.destinatario.clienteId;
+  await repo.salvarCliente(clienteId, {
+    nome: 'MARIA JOSE DA SILVA',
+    documentoMascarado: '***.***.***-82',
+    telefone: '+5582999887766',
+    email: null,
+    enderecoFiscal: parse.nota.destinatario.enderecoFiscal,
+    coordenada: { lat: -9.925, lng: -36.47 },
+    statusMapeamento: 'mapeado',
+    trilhaAtivaId: null,
+    mapeadoPor: 'motorista-1',
+    mapeadoEm: '2026-03-01T10:00:00-03:00',
+    fotoReferenciaPath: null,
+    observacoes: '',
+  });
+  return clienteId;
+}
+
+const comRetirada = (base: string) => base.replace('<modFrete>0</modFrete>', '<modFrete>9</modFrete>');
+
+test('nota com cara de retirada NÃO vira rota sozinha: pergunta ao escritório', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: comRetirada(xml) }], repo);
+
+  // Mesmo com o cliente mapeado (que normalmente daria pronto_para_rota).
+  assert.equal(relatorio.prontosParaRota, 0);
+  assert.equal(relatorio.pendentesDeDecisao, 1);
+  const pedido = (await repo.listarPedidos())[0]!;
+  assert.equal(pedido.status, 'pendente_de_decisao');
+  assert.equal(pedido.modFrete, '9');
+  assert.equal(pedido.modoEntrega, undefined);
+  assert.match(relatorio.alertas[0]?.mensagem ?? '', /retirada/i);
+  // Contada à parte: metade de uma importação típica cai aqui, e somar tudo
+  // num campo rotulado "aguardando endereço" faria o operador caçar um
+  // problema que não existe.
+  assert.equal(relatorio.retiradaAConfirmar, 1);
+});
+
+test('nota de rota segue direto — modFrete=1 não levanta pergunta', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  const rota = xml.replace('<modFrete>0</modFrete>', '<modFrete>1</modFrete>');
+  const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: rota }], repo);
+
+  assert.equal(relatorio.prontosParaRota, 1);
+  assert.equal((await repo.listarPedidos())[0]!.status, 'pronto_para_rota');
+});
+
+test('escritório confirma retirada: status próprio, sem sumir da lista', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  await importarXmls([{ nome: 'a.xml', conteudo: comRetirada(xml) }], repo);
+  const id = (await repo.listarPedidos())[0]!.id;
+
+  const r = await decidirModoEntrega(repo, id, 'retirada');
+  assert.ok(r.ok);
+  assert.equal(r.status, 'retirada');
+  const pedido = await repo.obterPedido(id);
+  assert.equal(pedido?.status, 'retirada');
+  assert.equal(pedido?.modoEntrega, 'retirada');
+});
+
+test('escritório manda para a rota: volta ao fluxo normal', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  await importarXmls([{ nome: 'a.xml', conteudo: comRetirada(xml) }], repo);
+  const id = (await repo.listarPedidos())[0]!.id;
+
+  const r = await decidirModoEntrega(repo, id, 'rota');
+  assert.ok(r.ok);
+  assert.equal(r.status, 'pronto_para_rota');
+  assert.equal((await repo.obterPedido(id))?.modoEntrega, 'rota');
+});
+
+test('a escolha é REVERSÍVEL: a revendedora não apareceu, o pedido volta para a fila', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  await importarXmls([{ nome: 'a.xml', conteudo: comRetirada(xml) }], repo);
+  const id = (await repo.listarPedidos())[0]!.id;
+
+  await decidirModoEntrega(repo, id, 'retirada');
+  const volta = await decidirModoEntrega(repo, id, 'rota');
+  assert.ok(volta.ok);
+  assert.equal(volta.status, 'pronto_para_rota');
+});
+
+test('pedido que já saiu não se desfaz daqui', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  await importarXmls([{ nome: 'a.xml', conteudo: comRetirada(xml) }], repo);
+  const id = (await repo.listarPedidos())[0]!.id;
+  const pedido = (await repo.obterPedido(id))!;
+  await repo.salvarPedido(id, { ...pedido, status: 'em_rota', rotaId: 'r1' });
+
+  const r = await decidirModoEntrega(repo, id, 'retirada');
+  assert.equal(r.ok, false);
+  assert.equal(r.ok ? 0 : r.status, 409);
+});
+
+test('escolha inválida não grava nada', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  await importarXmls([{ nome: 'a.xml', conteudo: comRetirada(xml) }], repo);
+  const id = (await repo.listarPedidos())[0]!.id;
+
+  const r = await decidirModoEntrega(repo, id, 'balcao' as 'rota');
+  assert.equal(r.ok, false);
+  assert.equal((await repo.obterPedido(id))?.status, 'pendente_de_decisao');
+});
+
+test('nota com DUAS perguntas: responder o modo não solta a do endereço', async () => {
+  // A mesma nota pode levantar as duas. Sem esta guarda, escolher "vai para
+  // rota" mandaria para o caminhão um pedido cujo endereço ninguém escolheu.
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  const duasPerguntas = comRetirada(xml).replace(
+    '</dest>',
+    '</dest><entrega><xLgr>RUA DA ENTREGA</xLgr><nro>500</nro><xBairro>CENTRO</xBairro>' +
+      '<xMun>MACEIO</xMun><UF>AL</UF><CEP>57000000</CEP></entrega>',
+  );
+  await importarXmls([{ nome: 'a.xml', conteudo: duasPerguntas }], repo);
+  const id = (await repo.listarPedidos())[0]!.id;
+
+  const r = await decidirModoEntrega(repo, id, 'rota');
+  assert.ok(r.ok);
+  assert.equal(r.status, 'pendente_de_decisao');
+  assert.equal((await repo.obterPedido(id))?.modoEntrega, 'rota');
+});
+
+test('e o caminho inverso: responder o endereço não solta a do modo', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  const duasPerguntas = comRetirada(xml).replace(
+    '</dest>',
+    '</dest><entrega><xLgr>RUA DA ENTREGA</xLgr><nro>500</nro><xBairro>CENTRO</xBairro>' +
+      '<xMun>MACEIO</xMun><UF>AL</UF><CEP>57000000</CEP></entrega>',
+  );
+  await importarXmls([{ nome: 'a.xml', conteudo: duasPerguntas }], repo);
+  const id = (await repo.listarPedidos())[0]!.id;
+
+  const r = await decidirEnderecoEntrega(repo, id, 'fiscal');
+  assert.ok(r.ok);
+  assert.equal(r.status, 'pendente_de_decisao');
+  // Respondidas as duas, aí sim sai.
+  const fim = await decidirModoEntrega(repo, id, 'rota');
+  assert.equal(fim.ok && fim.status, 'pronto_para_rota');
 });

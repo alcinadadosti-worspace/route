@@ -354,3 +354,38 @@ test('pedido já executado não volta para uma rota nova', async () => {
     if (!r.ok) assert.equal(r.status, 409);
   }
 });
+
+test('pedido marcado como RETIRADA é bloqueado na coleta, com o motivo certo', async () => {
+  // Não é erro de quem montou a rota: o escritório tirou este pedido da fila de
+  // propósito. A mensagem precisa dizer isso e onde devolver — senão o operador
+  // procura defeito no lugar errado.
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('c1', clienteCom({ lat: -9.42, lng: -36.64 }, 'CLIENTE UM'));
+  await repo.salvarPedido('p1', {
+    ...pedidoDe('c1'),
+    status: 'retirada',
+    modFrete: '9',
+    modoEntrega: 'retirada',
+  });
+
+  const coleta = await coletarParadas(['p1'], repo);
+  assert.equal(coleta.ok, false);
+  if (!coleta.ok) {
+    assert.equal(coleta.status, 422);
+    assert.match(coleta.erro, /retirada/i);
+  }
+});
+
+test('pedido preso na escolha de rota × retirada diz QUAL pergunta falta', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('c1', clienteCom({ lat: -9.42, lng: -36.64 }, 'CLIENTE UM'));
+  await repo.salvarPedido('p1', {
+    ...pedidoDe('c1'),
+    status: 'pendente_de_decisao',
+    modFrete: '9',
+  });
+
+  const coleta = await coletarParadas(['p1'], repo);
+  assert.equal(coleta.ok, false);
+  if (!coleta.ok) assert.match(coleta.erro, /rota e retirada/i);
+});

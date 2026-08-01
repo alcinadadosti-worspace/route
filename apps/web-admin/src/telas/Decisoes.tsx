@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Cliente, EnderecoFiscal, GeoPonto, Pedido } from '@rota/shared';
+import { aguardandoEscolhaDeModo, retiradaDuvidosa } from '@rota/shared';
 import {
   decidirEnderecoEntrega,
+  decidirModoEntrega,
   decidirMudancaEndereco,
   listarClientes,
   listarPedidos,
@@ -35,6 +37,18 @@ export function Decisoes() {
   useEffect(carregar, []);
 
   const aguardando = pedidos.filter((p) => p.status === 'pendente_de_decisao');
+  /**
+   * A pergunta de rota × retirada vem PRIMEIRO e sozinha: ela é metade da
+   * importação (~60 notas/dia), enquanto as de endereço são raras. Sai num
+   * bloco com confirmação em lote — uma tela de 60 cartões para clicar um a um
+   * viraria "marcar tudo e seguir", que é pior que decidir automático porque
+   * dá a ilusão de que alguém conferiu.
+   *
+   * Nota que levanta as duas perguntas aparece só aqui; respondida "vai para
+   * rota", ela reaparece embaixo como cartão de endereço.
+   */
+  const escolhaDeModo = aguardando.filter(aguardandoEscolhaDeModo);
+  const decisoesDeEndereco = aguardando.filter((p) => !aguardandoEscolhaDeModo(p));
 
   /**
    * Sempre recarrega em vez de só tirar o cartão da tela. Uma decisão mexe em
@@ -64,7 +78,15 @@ export function Decisoes() {
         <div className="vazio">Nenhuma decisão pendente. 👍</div>
       )}
 
-      {aguardando.map((pedido) =>
+      {escolhaDeModo.length > 0 && (
+        <BlocoRetirada
+          pedidos={escolhaDeModo}
+          clientes={clientes}
+          aoResolver={resolvido}
+        />
+      )}
+
+      {decisoesDeEndereco.map((pedido) =>
         // A pergunta da entrega vem primeiro; `usarEnderecoEntrega` definido
         // significa que ela já foi respondida e sobrou a do cadastro.
         pedido.enderecoEntrega && pedido.usarEnderecoEntrega === undefined ? (
@@ -85,6 +107,167 @@ export function Decisoes() {
       )}
     </section>
   );
+}
+
+/**
+ * Rota × retirada. Metade das notas do dia não sai no caminhão: a revendedora
+ * vem ao CD, paga e leva. O `modFrete` da NF-e sugere isso (nas 318 notas que o
+ * escritório separou como retirada, as 318 eram `modFrete='9'`), mas quem
+ * decide é quem conhece a operação.
+ *
+ * O desenho da tela vem do VOLUME: são ~60 notas/dia. As óbvias vão em lote;
+ * as duvidosas — `modFrete='9'` MAS com lote de remessa, ou seja, o ERP
+ * agrupou aquela mercadoria num carregamento — ficam destacadas para olhar uma
+ * a uma. É onde a regra pode errar, e é o único lugar que merece atenção.
+ */
+function BlocoRetirada({
+  pedidos,
+  clientes,
+  aoResolver,
+}: {
+  pedidos: Array<{ id: string } & Pedido>;
+  clientes: Record<string, Cliente>;
+  aoResolver: () => void;
+}) {
+  const [salvando, setSalvando] = useState(false);
+  /** Progresso do lote. A API é uma chamada por nota e a instância do Render
+   * pode estar fria: sem isto, confirmar 60 notas deixa a tela muda por vários
+   * segundos e quem está usando conclui que travou e recarrega no meio. */
+  const [progresso, setProgresso] = useState<{ feitas: number; total: number } | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const duvidosas = pedidos.filter(retiradaDuvidosa);
+  const diretas = pedidos.filter((p) => !retiradaDuvidosa(p));
+
+  async function decidir(ids: string[], escolha: 'rota' | 'retirada') {
+    if (ids.length === 0) return;
+    setSalvando(true);
+    setErro(null);
+    setProgresso(ids.length > 1 ? { feitas: 0, total: ids.length } : null);
+    try {
+      // Sequencial de propósito: são poucas dezenas, e uma falha no meio deixa
+      // o que já foi decidido gravado — recarregar mostra o que sobrou, em vez
+      // de perder tudo por causa de uma nota.
+      for (const [i, id] of ids.entries()) {
+        await decidirModoEntrega(id, escolha);
+        if (ids.length > 1) setProgresso({ feitas: i + 1, total: ids.length });
+      }
+      aoResolver();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha ao salvar');
+      // Recarrega mesmo com erro: o que já gravou some da fila, e sobra na tela
+      // exatamente o que falta decidir.
+      aoResolver();
+    } finally {
+      setSalvando(false);
+      setProgresso(null);
+    }
+  }
+
+  return (
+    <div className="decisao">
+      <div className="decisao-cabecalho">
+        <strong>Rota ou retirada no balcão?</strong>
+        <span className="chip pendente">{pedidos.length} nota(s)</span>
+      </div>
+      <p style={{ color: 'var(--texto-2)', marginTop: 0 }}>
+        A nota fiscal marca <strong>sem ocorrência de transporte</strong>, o que costuma significar
+        que a revendedora vem buscar no CD. Confirme antes de montar a rota — o que ficar como
+        retirada não some, fica na aba Pedidos e pode voltar para a fila.
+      </p>
+
+      {erro && <div className="erro">{erro}</div>}
+
+      {duvidosas.length > 0 && (
+        <>
+          <div className="decisao-rotulo" style={{ marginTop: '1rem' }}>
+            ⚠ {duvidosas.length} com lote de remessa — o ERP agrupou para carregar. Confira uma a
+            uma:
+          </div>
+          {duvidosas.map((p) => (
+            <LinhaRetirada
+              key={p.id}
+              pedido={p}
+              cliente={clientes[p.clienteId] ?? null}
+              salvando={salvando}
+              aoDecidir={(escolha) => void decidir([p.id], escolha)}
+            />
+          ))}
+        </>
+      )}
+
+      {diretas.length > 0 && (
+        <>
+          <div className="decisao-rotulo" style={{ marginTop: '1rem' }}>
+            {diretas.length} sem lote de remessa — nada foi separado para carregar:
+          </div>
+          {diretas.map((p) => (
+            <LinhaRetirada
+              key={p.id}
+              pedido={p}
+              cliente={clientes[p.clienteId] ?? null}
+              salvando={salvando}
+              aoDecidir={(escolha) => void decidir([p.id], escolha)}
+            />
+          ))}
+          <div className="acoes-rota">
+            <button
+              className="primaria"
+              disabled={salvando}
+              onClick={() => void decidir(diretas.map((p) => p.id), 'retirada')}
+            >
+              {progresso
+                ? `Salvando… ${progresso.feitas} de ${progresso.total}`
+                : salvando
+                  ? 'Salvando…'
+                  : `Confirmar as ${diretas.length} como retirada`}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Uma nota da fila de rota × retirada: o que a pessoa precisa ver para decidir. */
+function LinhaRetirada({
+  pedido,
+  cliente,
+  salvando,
+  aoDecidir,
+}: {
+  pedido: { id: string } & Pedido;
+  cliente: Cliente | null;
+  salvando: boolean;
+  aoDecidir: (escolha: 'rota' | 'retirada') => void;
+}) {
+  const municipio = cliente?.enderecoFiscal.municipio ?? '—';
+  const unidades = pedido.itens.reduce((s, i) => s + i.quantidade, 0);
+  return (
+    <div className="decisao-opcao" style={{ alignItems: 'center', gap: '0.75rem' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="decisao-rotulo">{cliente?.nome ?? 'cliente não carregado'}</div>
+        <div className="decisao-aviso">
+          <span className="mono">
+            Nota {pedido.numeroNota}/{pedido.serie}
+          </span>{' '}
+          · {municipio} · {unidades} un · {formatarValor(pedido.valorTotal)}
+          {pedido.lote ? ` · lote ${pedido.lote}` : ''}
+        </div>
+      </div>
+      <button disabled={salvando} onClick={() => aoDecidir('rota')}>
+        Vai para rota
+      </button>
+      <button disabled={salvando} onClick={() => aoDecidir('retirada')}>
+        Retirada
+      </button>
+    </div>
+  );
+}
+
+/** pt-BR, como todo número que o escritório lê (seção 14). */
+function formatarValor(valor: number): string {
+  return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
 /**

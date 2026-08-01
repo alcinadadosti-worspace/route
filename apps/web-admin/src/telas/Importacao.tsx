@@ -88,7 +88,15 @@ export function Importacao() {
             <Metrica valor={relatorio.geocodificados} rotulo="Geocodificados" />
             <Metrica valor={relatorio.aproximados} rotulo="Aproximados (a mapear)" />
             <Metrica valor={relatorio.pendentesDeMapeamento} rotulo="Pendentes de mapeamento" />
-            <Metrica valor={relatorio.pendentesDeDecisao} rotulo="Aguardando escolha de endereço" />
+            {/* A subtração espelha a aba Decisões: a nota que levanta as duas
+                perguntas aparece lá só na de retirada, e a de endereço reaparece
+                depois de respondida. Contar o mesmo pedido nas duas métricas
+                faria o operador procurar um cartão que ainda não está na tela. */}
+            <Metrica valor={relatorio.retiradaAConfirmar ?? 0} rotulo="Retirada a confirmar" />
+            <Metrica
+              valor={relatorio.pendentesDeDecisao - (relatorio.retiradaAConfirmar ?? 0)}
+              rotulo="Aguardando escolha de endereço"
+            />
             <Metrica valor={relatorio.rejeitados.length} rotulo="Rejeitados" />
             <Metrica valor={relatorio.semCarga ?? 0} rotulo="Sem volume/peso" />
           </div>

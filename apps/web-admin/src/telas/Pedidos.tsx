@@ -12,13 +12,15 @@ const APAGAVEIS = new Set([
   'pendente_de_mapeamento',
   'pendente_de_decisao',
   'pronto_para_rota',
+  'retirada',
   'em_rota',
 ]);
 
 const ROTULO_STATUS: Record<string, { texto: string; classe: string }> = {
   pendente_de_mapeamento: { texto: 'Pendente de mapeamento', classe: 'pendente' },
-  pendente_de_decisao: { texto: 'Aguardando escolha de endereço', classe: 'pendente' },
+  pendente_de_decisao: { texto: 'Aguardando decisão', classe: 'pendente' },
   pronto_para_rota: { texto: 'Pronto para rota', classe: 'pronto' },
+  retirada: { texto: 'Retirada no balcão', classe: '' },
   importado: { texto: 'Importado', classe: '' },
   em_rota: { texto: 'Em rota', classe: '' },
   entregue: { texto: 'Entregue', classe: 'pronto' },

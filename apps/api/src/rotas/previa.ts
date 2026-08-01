@@ -1,4 +1,5 @@
 import {
+  aguardandoEscolhaDeModo,
   precisaMapearEmCampo,
   type ItemPedido,
   type GeoPonto,
@@ -96,13 +97,26 @@ export async function coletarParadas(
     // (8.4) roteirizaria o endereço fiscal no palpite, e cadastro que mudou de
     // lugar (8.3) roteirizaria o ponto do endereço antigo.
     if (pedido.status === 'pendente_de_decisao') {
-      const pergunta = pedido.enderecoEntrega
-        ? 'escolha de endereço de entrega'
-        : 'confirmação do ponto após mudança de endereço';
+      const pergunta = aguardandoEscolhaDeModo(pedido)
+        ? 'a escolha entre rota e retirada'
+        : pedido.enderecoEntrega
+          ? 'escolha de endereço de entrega'
+          : 'confirmação do ponto após mudança de endereço';
       return {
         ok: false,
         status: 422,
         erro: `Pedido ${pedido.numeroNota} aguarda ${pergunta} (aba Decisões)`,
+      };
+    }
+
+    // Retirada no balcão: o escritório já respondeu que esta nota não sai no
+    // caminhão. Não é erro de quem montou a rota — é um pedido que foi
+    // deliberadamente tirado da fila e pode voltar pela aba Decisões.
+    if (pedido.status === 'retirada') {
+      return {
+        ok: false,
+        status: 422,
+        erro: `Pedido ${pedido.numeroNota} está marcado como retirada no balcão (aba Decisões para devolver à rota)`,
       };
     }
 

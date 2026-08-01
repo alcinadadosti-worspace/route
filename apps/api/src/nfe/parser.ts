@@ -38,6 +38,9 @@ export interface NotaImportada {
   lote: string | null;
   /** Endereço de entrega divergente do fiscal (bloco `<entrega>`), se houver. */
   enderecoEntrega?: EnderecoFiscal;
+  /** `transp/modFrete` — sugere retirada × rota na aba Decisões (ver retirada.ts).
+   * `undefined` quando a nota traz um código fora de '1'/'9'. */
+  modFrete?: '1' | '9';
   /**
    * CNPJ do EMITENTE (só dígitos): a filial que emitiu a nota. É o que
    * identifica o CD de origem sem ninguém digitar nada (seção 8.5).
@@ -91,6 +94,18 @@ export async function parseNfe(
     return { ok: false, motivo: `Nota não autorizada (cStat=${cStat || 'ausente'})` };
   }
 
+  // Nota de ENTRADA não gera entrega: é mercadoria voltando, não saindo.
+  // Sem esta guarda as 66 devoluções/bonificações de entrada das notas reais
+  // viravam pedido — com nome de revendedora e endereço legítimos, sem nada
+  // que as distinguisse na tela. O motorista iria à porta buscar quem já
+  // devolveu. (`tpNF`: 0 = entrada, 1 = saída.)
+  const tpNF = String(ide.tpNF ?? '');
+  if (tpNF !== '1') {
+    const finNFe = String(ide.finNFe ?? '');
+    const oQue = finNFe === '4' ? 'devolução' : 'entrada';
+    return { ok: false, motivo: `Nota de ${oQue} (tpNF=${tpNF || 'ausente'}) — não gera entrega` };
+  }
+
   const chaveAcesso = String(infNFe['@_Id'] ?? '').replace(/^NFe/, '');
   if (!/^\d{44}$/.test(chaveAcesso)) {
     return { ok: false, motivo: 'Chave de acesso inválida' };
@@ -131,6 +146,12 @@ export async function parseNfe(
   const volumes = vols.reduce((s, v) => s + Number(v?.qVol ?? 0), 0);
   const pesoBrutoKg = vols.reduce((s, v) => s + Number(v?.pesoB ?? 0), 0);
 
+  // `modFrete` sugere retirada × rota (ver retirada.ts). Só '1' e '9' aparecem
+  // nas notas reais deste emissor; qualquer outro valor vira `undefined` para
+  // a aba Decisões perguntar sem palpite, em vez de chutar num código novo.
+  const modFreteBruto = String(infNFe.transp?.modFrete ?? '');
+  const modFrete = modFreteBruto === '1' || modFreteBruto === '9' ? modFreteBruto : undefined;
+
   const { numeroPedido, lote } = extrairPedidoELote(infNFe.infAdic?.infCpl);
 
   return {
@@ -155,6 +176,7 @@ export async function parseNfe(
       numeroPedido,
       lote,
       enderecoEntrega,
+      modFrete,
       emitenteCnpj: somenteDigitos(String(infNFe.emit?.CNPJ ?? '')) || null,
     },
   };
