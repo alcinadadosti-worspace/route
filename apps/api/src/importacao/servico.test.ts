@@ -869,6 +869,37 @@ test('nota com cara de retirada NÃO vira rota sozinha: pergunta ao escritório'
   assert.equal(relatorio.retiradaAConfirmar, 1);
 });
 
+test('retirada em volume gera UM alerta-resumo, não um por nota', async () => {
+  // Metade das notas do dia é retirada. Uma linha de alerta por nota (~60/dia)
+  // afogaria os alertas raros que pedem leitura — mudança de cadastro, entrega
+  // divergente. O detalhe fica na métrica; o alerta é o resumo.
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  const CHAVE = '27260314750618000155550010002761651000070282';
+  const notas = ['11', '22', '33'].map((fim, i) => ({
+    nome: `n${i}.xml`,
+    conteudo: comRetirada(xml).replaceAll(CHAVE, CHAVE.slice(0, 42) + fim),
+  }));
+  const relatorio = await importarXmls(notas, repo);
+
+  assert.equal(relatorio.retiradaAConfirmar, 3);
+  const deRetirada = relatorio.alertas.filter((a) => /retirada/i.test(a.mensagem));
+  assert.equal(deRetirada.length, 1);
+  assert.match(deRetirada[0]!.mensagem, /3 nota/);
+});
+
+test('confirmar retirada duas vezes é inócuo (toque duplo na tela)', async () => {
+  const repo = new RepositorioMemoria();
+  await comClienteMapeado(repo, xml);
+  await importarXmls([{ nome: 'a.xml', conteudo: comRetirada(xml) }], repo);
+  const id = (await repo.listarPedidos())[0]!.id;
+
+  await decidirModoEntrega(repo, id, 'retirada');
+  const segunda = await decidirModoEntrega(repo, id, 'retirada');
+  assert.ok(segunda.ok);
+  assert.equal((await repo.obterPedido(id))?.status, 'retirada');
+});
+
 test('nota de rota segue direto — modFrete=1 não levanta pergunta', async () => {
   const repo = new RepositorioMemoria();
   await comClienteMapeado(repo, xml);

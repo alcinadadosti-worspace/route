@@ -120,6 +120,17 @@ export async function importarXmls(
     }
   }
 
+  // Retirada é VOLUME (metade das notas do dia): o aviso é um resumo, não uma
+  // linha por nota — senão sessenta linhas iguais afogam o alerta raro que
+  // realmente pede leitura. A contagem detalhada já está na métrica própria.
+  if ((relatorio.retiradaAConfirmar ?? 0) > 0) {
+    relatorio.alertas.push({
+      clienteId: '',
+      nome: 'Retirada no balcão',
+      mensagem: `${relatorio.retiradaAConfirmar} nota(s) com cara de retirada — confirme na aba Decisões antes de montar a rota.`,
+    });
+  }
+
   return relatorio;
 }
 
@@ -249,15 +260,14 @@ async function processarArquivo(
   // simplesmente não sairia e ninguém saberia por quê. Só pergunta quando a
   // sugestão é RETIRADA: `modFrete='1'` não tem dúvida (nenhuma das 1686 notas
   // desse grupo na base real sequer se parece com retirada).
+  // SEM alerta por nota, de propósito: retirada é metade de uma importação
+  // típica (~60 notas/dia), e uma linha por nota afogaria os alertas raros que
+  // pedem leitura (mudança de cadastro, entrega divergente). O aviso é UM
+  // resumo por importação, montado no fim de importarXmls.
   const sugestao = sugerirModoEntrega(nota.modFrete);
   if (sugestao === 'retirada') {
     status = 'pendente_de_decisao';
     relatorio.retiradaAConfirmar = (relatorio.retiradaAConfirmar ?? 0) + 1;
-    alertas.push({
-      clienteId: nota.destinatario.clienteId,
-      nome: nota.destinatario.nome,
-      mensagem: 'Nota com cara de retirada no balcão — confirme na aba Decisões se vai para rota.',
-    });
   }
 
   const cdId = nota.emitenteCnpj ? (cdPorCnpj.get(nota.emitenteCnpj) ?? null) : null;
