@@ -17,6 +17,35 @@ export function distanciaEmMetros(a: GeoPonto, b: GeoPonto): number {
   return 2 * RAIO_TERRA_M * Math.asin(Math.sqrt(h));
 }
 
+/**
+ * Deslocamento mínimo para o rumo ser considerado direção, e não ruído.
+ * 5 m serve para GPS preciso; abaixo disso, duas leituras seguidas do mesmo
+ * lugar já dariam um ângulo qualquer.
+ */
+export const DESLOCAMENTO_MINIMO_RUMO_M = 5;
+
+/**
+ * O deslocamento entre duas leituras diz mesmo a DIREÇÃO do movimento?
+ *
+ * Comparar contra um limiar fixo não basta: com precisão de ±20 m (comum sob
+ * árvore, em rua estreita ou logo depois de ligar o GPS), duas leituras do
+ * motorista PARADO diferem 10–30 m só de ruído. Isso passava de qualquer
+ * limiar pequeno e virava um rumo aleatório — a seta da navegação girando
+ * sozinha com o carro parado.
+ *
+ * E é o pior caso possível: o rumo por deslocamento é o ÚLTIMO fallback, usado
+ * só quando não há bússola nem rumo do GPS — ou seja, exatamente no iOS parado.
+ *
+ * O deslocamento precisa superar o erro do aparelho para significar movimento.
+ */
+export function deslocamentoDizDirecao(distanciaM: number, precisaoM: number): boolean {
+  if (!Number.isFinite(distanciaM)) return false;
+  const exigido = Number.isFinite(precisaoM)
+    ? Math.max(DESLOCAMENTO_MINIMO_RUMO_M, precisaoM)
+    : DESLOCAMENTO_MINIMO_RUMO_M;
+  return distanciaM >= exigido;
+}
+
 /** Rumo inicial de `de` para `para` — graus a partir do norte, sentido horário. */
 export function rumoEmGraus(de: GeoPonto, para: GeoPonto): number {
   const lat1 = grausParaRad(de.lat);

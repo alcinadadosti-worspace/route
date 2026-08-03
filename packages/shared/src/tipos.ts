@@ -176,7 +176,16 @@ export interface ParadaRota {
   volumes: number;
   pesoBrutoKg: number;
   coordenada: GeoPonto;
+  /** Minutos ACUMULADOS de direção desde o CD (não a perna): é o que responde
+   * "que horas eu chego aí" e alimenta a janela do aviso ao cliente. */
   etaMin: number;
+  /**
+   * Km da PERNA — do ponto anterior até esta parada —, e NÃO o acumulado.
+   * A diferença de semântica em relação ao `etaMin` logo acima é armadilha
+   * pronta: numa rota real medida, as paradas saem 57,3 · 5,3 · 10,8 · 49,8 km
+   * enquanto os ETAs saem 52 · 60 · 76 · 135 min. Somar estes números dá a
+   * quilometragem da rota; comparar um com o outro não significa nada.
+   */
   distanciaKm: number;
   status: StatusPedido;
   /** Denormalizado da situação de mapeamento do cliente (seção 9): o app do

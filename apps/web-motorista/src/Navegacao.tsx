@@ -3,6 +3,7 @@ import type { StyleSpecification } from 'maplibre-gl';
 import {
   decodificarPolyline,
   distanciaAoTracadoEmMetros,
+  deslocamentoDizDirecao,
   distanciaEmMetros,
   linkWhatsApp,
   mensagemDeChegada,
@@ -128,7 +129,12 @@ export function Navegacao({
       anteriorRef.current = leitura;
       return;
     }
-    if (distanciaEmMetros(anterior, leitura) >= 5) {
+    // O limiar acompanha a PRECISAO do aparelho: com +-20 m, duas leituras do
+    // motorista parado diferem mais que 5 m so de ruido, e o rumo saia
+    // aleatorio — a seta girando com o carro parado. Como este e o ultimo
+    // fallback (sem bussola e sem rumo do GPS), o caso ruim e justamente o
+    // aparelho parado em iOS.
+    if (deslocamentoDizDirecao(distanciaEmMetros(anterior, leitura), leitura.precisaoM)) {
       setRumoDeslocamento(rumoEmGraus(anterior, leitura));
       anteriorRef.current = leitura;
     }

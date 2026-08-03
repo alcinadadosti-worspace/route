@@ -13,6 +13,7 @@ import {
 import { extrairPedidoELote } from './infcpl.js';
 import { codificarPolyline, decodificarPolyline } from './polyline.js';
 import {
+  deslocamentoDizDirecao,
   distanciaAoTracadoEmMetros,
   distanciaEmMetros,
   rumoEmGraus,
@@ -543,4 +544,26 @@ test('sem lista e sem quantidade, o bloco some — placeholder não vaza ao clie
   );
   assert.doesNotMatch(texto, /Itens entregues/);
   assert.doesNotMatch(texto, /\{/);
+});
+
+/* ---------- o deslocamento diz a direção, ou é ruído do GPS? ---------- */
+
+test('parado com GPS ruim NÃO vira rumo — era a seta girando sozinha', () => {
+  // ±20 m de precisão: duas leituras do mesmo lugar podem diferir 15 m só de
+  // ruído. Como este é o ÚLTIMO fallback (sem bússola nem rumo do GPS), o caso
+  // ruim é justamente o aparelho parado em iOS.
+  assert.equal(deslocamentoDizDirecao(15, 20), false);
+});
+
+test('movimento real supera o erro do aparelho', () => {
+  assert.equal(deslocamentoDizDirecao(50, 20), true);
+  // GPS preciso: o piso de 5 m volta a mandar.
+  assert.equal(deslocamentoDizDirecao(6, 3), true);
+  assert.equal(deslocamentoDizDirecao(4, 3), false);
+});
+
+test('sem precisão conhecida, cai no piso — não trava a navegação', () => {
+  assert.equal(deslocamentoDizDirecao(10, NaN), true);
+  assert.equal(deslocamentoDizDirecao(2, NaN), false);
+  assert.equal(deslocamentoDizDirecao(NaN, 10), false);
 });
