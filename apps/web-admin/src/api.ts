@@ -3,6 +3,7 @@ import type {
   Cliente,
   Entrega,
   Pedido,
+  PosicaoMotorista,
   PreviaRota,
   RelatorioImportacao,
   GrupoSugerido,
@@ -243,4 +244,12 @@ export async function agruparPorRegiao(
   const resposta = await apiFetch(`${BASE}/api/rotas/agrupamento${q}`);
   if (!resposta.ok) throw new Error(erroHttp(resposta.status));
   return resposta.json();
+}
+
+/** Última posição dos motoristas nas rotas em execução (seção 11.4). */
+export async function listarPosicoes(): Promise<Record<string, PosicaoMotorista>> {
+  const resposta = await apiFetch(`${BASE}/api/posicoes`);
+  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
+  const dados = (await resposta.json()) as { posicoes: Record<string, PosicaoMotorista> };
+  return dados.posicoes ?? {};
 }

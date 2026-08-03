@@ -181,3 +181,24 @@ test('estourar o teto não vira 500: o relatório sai com o aviso de remessa int
   assert.match(aviso.motivo, /reenvie/);
   await app.close();
 });
+
+test('/api/posicoes é rota de ESCRITÓRIO: motorista não acompanha o colega', async () => {
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const r = await app.inject({
+    method: 'GET',
+    url: '/api/posicoes',
+    headers: bearer('tk-motorista'),
+  });
+  assert.equal(r.statusCode, 403);
+  await app.close();
+});
+
+test('/api/posicoes devolve só as rotas EM EXECUÇÃO', async () => {
+  // Rota concluída não tem posição a mostrar: fora do expediente ninguém é
+  // seguido, e o app do motorista para de mandar sozinho.
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const r = await app.inject({ method: 'GET', url: '/api/posicoes', headers: bearer('tk-admin') });
+  assert.equal(r.statusCode, 200);
+  assert.deepEqual(JSON.parse(r.body), { posicoes: {} });
+  await app.close();
+});

@@ -5,6 +5,7 @@ import type {
   ConfigGeral,
   Entrega,
   Pedido,
+  PosicaoMotorista,
   Rota,
   Trilha,
   TrilhaBruta,
@@ -118,6 +119,16 @@ class RepositorioFirestore implements Repositorio {
       .select('clienteId')
       .get();
     return new Set(resposta.docs.map((d) => (d.data() as { clienteId: string }).clienteId));
+  }
+
+  async posicoesDasRotas(rotaIds: string[]): Promise<Record<string, PosicaoMotorista>> {
+    if (rotaIds.length === 0) return {};
+    const docs = await this.db.getAll(
+      ...rotaIds.map((id) => this.db.collection('posicoes').doc(id)),
+    );
+    const saida: Record<string, PosicaoMotorista> = {};
+    for (const d of docs) if (d.exists) saida[d.id] = d.data() as PosicaoMotorista;
+    return saida;
   }
 
   async listarPedidos(): Promise<Array<{ id: string } & Pedido>> {

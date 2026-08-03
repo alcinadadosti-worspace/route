@@ -21,6 +21,7 @@ import { DossieLocal } from './DossieLocal';
 import { Comprovante } from './Comprovante';
 import { useWakeLock } from './useWakeLock';
 import { usePosicao } from './usePosicao';
+import { useCompartilharPosicao } from './useCompartilharPosicao';
 import { useBussola } from './useBussola';
 import { GravadorTrilha } from './gravadorTrilha';
 import { confirmarPin, recalcularTracado, salvarTrilhaBruta } from './servicoMapeamento';
@@ -95,6 +96,10 @@ export function Navegacao({
 
   useWakeLock(true);
   const { leitura, erro: erroGps } = usePosicao(true);
+  // O escritorio acompanha a posicao enquanto a rota corre. Consome a leitura
+  // que esta tela ja tem — nao liga GPS proprio — e para sozinho quando a rota
+  // conclui.
+  useCompartilharPosicao({ id: rota.id, status: rota.status }, leitura, uid);
   const bussola = useBussola();
 
   // Gravação (seção 11.1): automática quando falta o pin; manual no botão.

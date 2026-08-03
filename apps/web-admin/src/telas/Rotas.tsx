@@ -2,8 +2,10 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   distanciaEmMetros,
   formatarCarga,
+  posicaoEstaVelha,
   type CentroDistribuicao,
   type GrupoSugerido,
+  type PosicaoMotorista,
   type Cliente,
   type Entrega,
   type Pedido,
@@ -19,6 +21,7 @@ import {
   listarClientes,
   listarEntregasDaRota,
   listarPedidos,
+  listarPosicoes,
   listarRotas,
   listarUsuarios,
   previaDeRota,
@@ -152,6 +155,33 @@ export function Rotas() {
     () => pedidos.filter((p) => p.status === 'pendente_de_mapeamento'),
     [pedidos],
   );
+
+  /**
+   * Onde os motoristas estão agora. Busca de tempos em tempos enquanto houver
+   * rota em execução — e SÓ enquanto houver: sem rota na rua não há o que
+   * perguntar, e bater na API à toa é acordar instância no Render por nada.
+   */
+  const [posicoes, setPosicoes] = useState<Record<string, PosicaoMotorista>>({});
+  const [agoraMs, setAgoraMs] = useState(() => Date.now());
+  const temRotaNaRua = rotas.some((r) => r.status === 'em_execucao');
+  useEffect(() => {
+    if (!temRotaNaRua) return;
+    let vivo = true;
+    const buscar = () => {
+      listarPosicoes()
+        .then((p) => vivo && setPosicoes(p))
+        .catch(() => undefined);
+      // O relógio anda junto: "há 3 min" precisa envelhecer na tela mesmo sem
+      // posição nova chegando — é assim que dá para perceber que parou de vir.
+      if (vivo) setAgoraMs(Date.now());
+    };
+    buscar();
+    const timer = setInterval(buscar, 20_000);
+    return () => {
+      vivo = false;
+      clearInterval(timer);
+    };
+  }, [temRotaNaRua]);
 
   /** Sugestão de regiões (null = ainda não pedida nesta sessão da tela). */
   const [grupos, setGrupos] = useState<GrupoSugerido[] | null>(null);
@@ -437,6 +467,7 @@ export function Rotas() {
                 <th>Motorista</th>
                 <th>Partida</th>
                 <th>Progresso</th>
+                <th>Onde está</th>
                 <th>Avisados</th>
                 <th>Insucessos</th>
                 <th>km</th>
@@ -462,6 +493,13 @@ export function Rotas() {
                       <td>{r.origemNome}</td>
                       <td className="mono">
                         {entregues + insucessos}/{r.paradas.length} {aberta ? '▲' : '▾'}
+                      </td>
+                      <td>
+                        <PosicaoDoMotorista
+                          posicao={posicoes[r.id] ?? null}
+                          rota={r}
+                          agoraMs={agoraMs}
+                        />
                       </td>
                       <td className="mono">
                         {avisados}/{r.paradas.length}
@@ -929,5 +967,59 @@ export function Rotas() {
         </section>
       )}
     </>
+  );
+}
+
+/**
+ * Onde o motorista está, e há quanto tempo se sabe disso.
+ *
+ * O "há quanto tempo" não é enfeite: em rota rural o sinal cai, e mostrar um
+ * ponto de 40 minutos atrás como se fosse atual faria o escritório dizer ao
+ * cliente uma coisa que já não é verdade. Passado o limite, a tela para de
+ * fingir que sabe.
+ *
+ * A distância sai até a PARADA que está sendo feita — é o que responde "o
+ * cliente ligou, quando chega?". Sem parada em aberto, mostra só a hora.
+ */
+function PosicaoDoMotorista({
+  posicao,
+  rota,
+  agoraMs,
+}: {
+  posicao: PosicaoMotorista | null;
+  rota: { id: string } & Rota;
+  agoraMs: number;
+}) {
+  if (!posicao) {
+    return <span className="sub">— sem posição</span>;
+  }
+  const idadeMin = Math.max(0, Math.round((agoraMs - Date.parse(posicao.em)) / 60_000));
+  const velha = posicaoEstaVelha(posicao, agoraMs);
+
+  // Próxima parada por resolver: é para onde ele está indo.
+  const proxima = rota.paradas.find((p) => p.status !== 'entregue' && p.status !== 'insucesso');
+  const km =
+    proxima && !velha
+      ? Math.round(distanciaEmMetros(posicao, proxima.coordenada) / 100) / 10
+      : null;
+
+  return (
+    <div className={`posicao-motorista${velha ? ' velha' : ''}`}>
+      <a
+        href={`https://www.google.com/maps?q=${posicao.lat},${posicao.lng}`}
+        target="_blank"
+        rel="noreferrer"
+        title="Abrir no mapa"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {velha ? '⚠' : '📍'} {idadeMin === 0 ? 'agora' : `há ${idadeMin} min`}
+      </a>
+      {km != null && proxima && (
+        <div className="sub">
+          {km} km de {proxima.nome.split(' ')[0]}
+        </div>
+      )}
+      {velha && <div className="sub">sem sinal ou app fechado</div>}
+    </div>
   );
 }

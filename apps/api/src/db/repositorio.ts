@@ -4,6 +4,7 @@ import type {
   ConfigGeral,
   Entrega,
   Pedido,
+  PosicaoMotorista,
   Rota,
   Trilha,
   TrilhaBruta,
@@ -38,6 +39,8 @@ export interface Repositorio {
   obterRota(rotaId: string): Promise<({ id: string } & Rota) | null>;
   apagarRota(rotaId: string): Promise<void>;
   listarRotas(): Promise<Array<{ id: string } & Rota>>;
+  /** Última posição compartilhada pelo motorista de cada rota (seção 11.4). */
+  posicoesDasRotas(rotaIds: string[]): Promise<Record<string, PosicaoMotorista>>;
   atualizarCliente(clienteId: string, campos: Partial<Cliente>): Promise<void>;
   /**
    * Gravação em LOTE para importação de volume. Existe porque doc a doc não
@@ -202,6 +205,22 @@ export class RepositorioMemoria implements Repositorio {
 
   async idsDePedidos(): Promise<Set<string>> {
     return new Set(this.pedidos.keys());
+  }
+
+  private posicoes = new Map<string, PosicaoMotorista>();
+
+  async posicoesDasRotas(rotaIds: string[]): Promise<Record<string, PosicaoMotorista>> {
+    const saida: Record<string, PosicaoMotorista> = {};
+    for (const id of rotaIds) {
+      const p = this.posicoes.get(id);
+      if (p) saida[id] = p;
+    }
+    return saida;
+  }
+
+  /** Só para teste: o app do motorista escreve direto no Firestore. */
+  async salvarPosicao(rotaId: string, posicao: PosicaoMotorista): Promise<void> {
+    this.posicoes.set(rotaId, posicao);
   }
 
   async clientesPorIds(ids: string[]): Promise<Array<{ id: string } & Cliente>> {

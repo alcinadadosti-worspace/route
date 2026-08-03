@@ -293,6 +293,18 @@ export async function criarApp({
 
   app.get('/api/rotas', { config: { papeis: ESCRITORIO } }, async () => repo.listarRotas());
 
+  /**
+   * Última posição dos motoristas nas rotas em execução (seção 11.4). Endpoint
+   * próprio, e não embutido em `/api/rotas`: o painel busca isto de tempos em
+   * tempos enquanto acompanha o dia, e a lista de rotas é pesada (carrega o
+   * array inteiro de paradas de cada uma).
+   */
+  app.get('/api/posicoes', { config: { papeis: ESCRITORIO } }, async () => {
+    const rotas = await repo.listarRotas();
+    const emExecucao = rotas.filter((r) => r.status === 'em_execucao').map((r) => r.id);
+    return { posicoes: await repo.posicoesDasRotas(emExecucao) };
+  });
+
   // O que a parada NÃO guarda: por que falhou, a que horas e de onde o motorista
   // confirmou. Isso vive só no registro de entrega, e sem este endpoint o
   // escritório via "insucesso" sem motivo — nada com que ligar para o cliente.

@@ -39,6 +39,7 @@ import { paradasPorResolver, separarRotas, type AbaRota } from './rotaAtiva';
 import { dispararProcessamento, ordemSugerida } from './servicoMapeamento';
 import { processarFilaComprovantes, processarFilaFotos } from './servicoFotos';
 import { usePosicao } from './usePosicao';
+import { useCompartilharPosicao } from './useCompartilharPosicao';
 import { aplicarOrdemSugerida, ordemIncerta, ordenarPorProximidade } from './proximidade';
 import { formatarDistancia } from './formato';
 
@@ -410,11 +411,24 @@ export function App() {
     [paradas, filtro],
   );
 
-  // Visão "mais perto de mim" (não altera a rota publicada). O GPS só liga
-  // quando o motorista pede — na lista, um watch permanente seria bateria à toa
-  // — e desliga durante a navegação, que tem o watch dela: dois `watchPosition`
-  // no mesmo aparelho é o dobro de acordar o GPS sem nenhum ganho.
-  const { leitura: posicaoLista } = usePosicao(porProximidade && !navegandoPara);
+  /**
+   * O GPS da LISTA liga em dois casos: quando o motorista pede "mais perto de
+   * mim", e quando a rota esta em execucao e o escritorio acompanha a posicao.
+   * Nunca durante a navegacao — ela tem o watch dela, e dois `watchPosition` no
+   * mesmo aparelho e o dobro de acordar o GPS pelo mesmo dado.
+   */
+  const rotaEmExecucao = rota?.status === 'em_execucao';
+  const { leitura: posicaoLista } = usePosicao(
+    (porProximidade || rotaEmExecucao) && !navegandoPara,
+  );
+  // Compartilhamento com o escritorio enquanto ele NAO esta navegando; dentro
+  // da navegacao quem compartilha e a propria tela, com a leitura que ela ja
+  // tem. Para sozinho quando a rota conclui.
+  const { compartilhando } = useCompartilharPosicao(
+    rota ? { id: rota.id, status: rota.status } : null,
+    navegandoPara ? null : posicaoLista,
+    usuario?.uid ?? null,
+  );
   const posicao = useMemo(
     () => (posicaoLista ? { lat: posicaoLista.lat, lng: posicaoLista.lng } : null),
     [posicaoLista],
@@ -577,6 +591,15 @@ export function App() {
             </div>
           </div>
         </div>
+        {/* O motorista VE que esta compartilhando. Nao e detalhe de
+            interface: monitorar quem trabalha sem que a pessoa saiba nao se
+            faz, e um indicador discreto e permanente resolve isso sem virar
+            alarme. */}
+        {compartilhando && (
+          <span className="compartilhando" title="A posição está sendo compartilhada com o escritório enquanto a rota está em execução">
+            📡 escritório acompanha
+          </span>
+        )}
         <div className="topo-acoes">
           <button
             className="tema-botao"

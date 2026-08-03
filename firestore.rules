@@ -143,6 +143,31 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    /**
+     * Posição do motorista durante a rota (seção 11.4). Doc por ROTA, e não
+     * dentro dela: o app do motorista escuta a própria rota em tempo real, e
+     * gravar a posição ali dispararia leitura no celular dele a cada
+     * atualização.
+     *
+     * Escreve só o DONO da rota, e só a própria posição — sem `donoDaRota` um
+     * logado qualquer publicaria a localização de outro. Ler é do escritório:
+     * o motorista não acompanha o colega.
+     */
+    match /posicoes/{rotaId} {
+      allow read: if escritorio();
+      allow write: if logado()
+        && donoDaRota(rotaId)
+        && request.resource.data.motoristaId == request.auth.uid
+        && request.resource.data.keys().hasOnly(
+             ['lat', 'lng', 'precisaoM', 'rumo', 'velocidadeMs', 'em', 'motoristaId'])
+        && request.resource.data.lat is number
+        && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
+        && request.resource.data.lng is number
+        && request.resource.data.lng >= -180 && request.resource.data.lng <= 180
+        && request.resource.data.em is string;
+      allow delete: if false;
+    }
+
     // Registro de entrega/insucesso (seção 7.5): criado em campo, imutável.
     // Amarrado ao autor e a uma rota do próprio motorista, com forma validada
     // — senão vira forja de auditoria (registro falso, sem atribuição).

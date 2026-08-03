@@ -739,3 +739,12 @@ tr.dossie-linha .dossie-bloco {
   font-size: 0.8rem;
   color: var(--texto-2);
 }
+
+/* Posição do motorista no acompanhamento. "Velha" fica apagada de propósito:
+   dado antigo mostrado como atual é pior que dado nenhum. */
+.posicao-motorista a {
+  text-decoration: none;
+}
+.posicao-motorista.velha {
+  opacity: 0.55;
+}

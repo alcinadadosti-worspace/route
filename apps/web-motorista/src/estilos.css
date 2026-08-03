@@ -1183,3 +1183,12 @@
   color: var(--texto-2);
   opacity: 0.8;
 }
+
+/* "O escritório acompanha": discreto e permanente. Alarme seria pior — o
+   motorista aprenderia a ignorar, e a transparência viraria ruído. */
+.compartilhando {
+  font-size: 0.72rem;
+  color: var(--texto-2);
+  opacity: 0.85;
+  white-space: nowrap;
+}
