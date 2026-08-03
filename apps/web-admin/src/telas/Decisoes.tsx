@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Cliente, EnderecoFiscal, GeoPonto, Pedido } from '@rota/shared';
-import { aguardandoEscolhaDeModo, retiradaDuvidosa } from '@rota/shared';
+import { aguardandoEscolhaDeModo, quantidadeDeItens, retiradaDuvidosa } from '@rota/shared';
 import {
   decidirEnderecoEntrega,
   decidirModoEntrega,
@@ -246,7 +246,7 @@ function LinhaRetirada({
   aoDecidir: (escolha: 'rota' | 'retirada') => void;
 }) {
   const municipio = cliente?.enderecoFiscal.municipio ?? '—';
-  const unidades = pedido.itens.reduce((s, i) => s + i.quantidade, 0);
+  const unidades = quantidadeDeItens(pedido);
   return (
     <div className="decisao-opcao" style={{ alignItems: 'center', gap: '0.75rem' }}>
       <div style={{ flex: 1, minWidth: 0 }}>

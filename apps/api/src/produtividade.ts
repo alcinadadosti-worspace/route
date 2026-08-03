@@ -1,4 +1,4 @@
-import { temCarga } from '@rota/shared';
+import { produtosDistintos, quantidadeDeItens, temCarga } from '@rota/shared';
 import type {
   Cliente,
   Entrega,
@@ -170,14 +170,14 @@ export function calcularProdutividade(
       // Mercadoria que saiu do caminhão. ITEM é a soma das quantidades (`qCom`),
       // que é o que a operação chama de item; a contagem de linhas vai separada,
       // porque é três vezes menor nas notas reais.
-      // `?? []` porque um único doc de rota sem `itens` derrubaria a aba INTEIRA
-      // com um TypeError — falha desproporcional ao defeito.
-      const itens = parada.itens ?? [];
-      daqui.produtosDistintos += itens.length;
-      daqui.itensEntregues += itens.reduce(
-        (soma, item) => soma + (Number.isFinite(item?.quantidade) ? item.quantidade : 0),
-        0,
-      );
+      //
+      // Pela regra compartilhada, e não somando `itens` na mão: pedido vindo da
+      // PLANILHA do ERP não tem lista nenhuma, só a quantidade — contar linhas
+      // aqui fazia o relatório do mês dizer "0 itens entregues" com o caminhão
+      // cheio. `produtosDistintos` devolve null nesse caso (não sabemos), e
+      // "não sei" não pode virar "nenhum" numa métrica que o escritório lê.
+      daqui.itensEntregues += quantidadeDeItens(parada);
+      daqui.produtosDistintos += produtosDistintos(parada) ?? 0;
       if (temCarga(parada.volumes, parada.pesoBrutoKg)) {
         if (parada.volumes > 0) daqui.volumesEntregues += parada.volumes;
         if (parada.pesoBrutoKg > 0) daqui.pesoEntregueKg += parada.pesoBrutoKg;

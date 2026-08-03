@@ -458,6 +458,9 @@ export function App() {
       numeroPedido: p.numeroPedido,
       numeroNota: p.numeroNota ?? daChave?.numeroNota,
       itens: p.itensNota,
+      // Pedido da planilha nao tem lista, so o total — sem isto o recibo
+      // omitia a mercadoria inteira.
+      quantidadeMateriais: p.itens,
     });
   }
 

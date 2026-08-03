@@ -128,6 +128,13 @@ export interface NotaDoRecibo {
   numeroPedido?: string | null;
   numeroNota?: number | null;
   itens?: ItemPedido[];
+  /**
+   * Quantidade de produtos quando não há LISTA — é o caso do pedido importado
+   * pela planilha do ERP, que manda o total e não o detalhe. Sem isto o recibo
+   * simplesmente omitia os itens, e a revendedora recebia um comprovante que
+   * não diz quanta coisa chegou.
+   */
+  quantidadeMateriais?: number | null;
 }
 
 /**
@@ -192,7 +199,17 @@ export function mensagemDeRecibo(
   if (cortados > 0) linhas.push(`• … e mais ${cortados} item(ns)`);
   // Cabeçalho próprio: sem ele a lista começava colada na referência e as duas
   // viravam um bloco só de olho.
-  const blocoItens = linhas.length > 0 ? `\n\n*Itens entregues:*\n${linhas.join('\n')}` : '';
+  //
+  // Sem LISTA mas com quantidade (pedido vindo da planilha do ERP, que manda o
+  // total e não o detalhe), diz o total: um comprovante que não fala da
+  // mercadoria não serve de comprovante.
+  const quantidade = nota.quantidadeMateriais;
+  const blocoItens =
+    linhas.length > 0
+      ? `\n\n*Itens entregues:*\n${linhas.join('\n')}`
+      : Number.isFinite(quantidade) && (quantidade as number) > 0
+        ? `\n\n*Itens entregues:* ${quantidade} produto(s)`
+        : '';
 
   return parametros.textoRecibo
     .replaceAll('{hora}', hora(confirmadaEm))

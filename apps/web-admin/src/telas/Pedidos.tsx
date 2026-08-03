@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { formatarCarga, type Cliente, type Pedido } from '@rota/shared';
+import { formatarCarga, quantidadeDeItens, type Cliente, type Pedido } from '@rota/shared';
 import { apagarPedido, listarClientes, listarPedidos } from '../api';
 import { FotoReferencia } from '../FotoReferencia';
 
@@ -131,7 +131,7 @@ export function Pedidos() {
                     {p.numeroPedido ?? '—'} · {p.lote ?? '—'}
                   </td>
                   <td>{p.emitidoEm.slice(0, 10)}</td>
-                  <td>{p.itens.length}</td>
+                  <td>{quantidadeDeItens(p)}</td>
                   <td>
                     {formatarCarga(p.volumes, p.pesoBrutoKg)}
                   </td>

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { normalizar, type Cliente, type Pedido } from '@rota/shared';
+import { normalizar, quantidadeDeItens, type Cliente, type Pedido } from '@rota/shared';
 import { listarClientes, listarPedidos, refazerPontoDoCliente } from '../api';
 import { FotoReferencia } from '../FotoReferencia';
 
@@ -172,7 +172,7 @@ export function Clientes() {
                               </span>
                               <span>{p.emitidoEm.slice(0, 10)}</span>
                               <span>
-                                {p.itens.length} itens · {p.volumes} vol
+                                {quantidadeDeItens(p)} itens · {p.volumes} vol
                               </span>
                               <span className="mono">
                                 {p.valorTotal.toLocaleString('pt-BR', {

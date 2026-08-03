@@ -492,3 +492,42 @@ test('recibo carrega a hora da ENTREGA, não a de quando foi montado', () => {
   );
   assert.match(mensagemDeRecibo(enviado, 'Maria', PARAMETROS_AVISO_PADRAO), /16h40/);
 });
+
+test('recibo de pedido da PLANILHA diz a quantidade — não pode omitir a mercadoria', () => {
+  // A planilha do ERP manda o total, não a lista. Sem tratar, o bloco de itens
+  // sumia inteiro e a revendedora recebia um comprovante que não diz quanta
+  // coisa chegou.
+  const texto = mensagemDeRecibo(
+    new Date('2026-08-03T14:05:00-03:00'),
+    'Maria',
+    PARAMETROS_AVISO_PADRAO,
+    { numeroPedido: '523636997', numeroNota: 293604, itens: [], quantidadeMateriais: 7 },
+  );
+  assert.match(texto, /Itens entregues:\* 7 produto/);
+  assert.match(texto, /523636997/);
+});
+
+test('recibo com LISTA continua listando (a lista manda sobre o total)', () => {
+  const texto = mensagemDeRecibo(
+    new Date('2026-08-03T14:05:00-03:00'),
+    null,
+    PARAMETROS_AVISO_PADRAO,
+    {
+      itens: [{ codigo: 'a', descricao: 'GEL 240ML', quantidade: 2 }],
+      quantidadeMateriais: 99,
+    },
+  );
+  assert.match(texto, /2x GEL 240ML/);
+  assert.doesNotMatch(texto, /99 produto/);
+});
+
+test('sem lista e sem quantidade, o bloco some — placeholder não vaza ao cliente', () => {
+  const texto = mensagemDeRecibo(
+    new Date('2026-08-03T14:05:00-03:00'),
+    null,
+    PARAMETROS_AVISO_PADRAO,
+    {},
+  );
+  assert.doesNotMatch(texto, /Itens entregues/);
+  assert.doesNotMatch(texto, /\{/);
+});
