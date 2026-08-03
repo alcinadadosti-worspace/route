@@ -120,3 +120,64 @@ test('modo-entrega: escolha inválida → 400 com a mensagem do serviço', async
   assert.match(JSON.parse(r.body).erro, /rota ou retirada/);
   await app.close();
 });
+
+/* ---------- /api/importacoes: limites dimensionados pela remessa REAL ---------- */
+
+/** Monta um corpo multipart com N arquivos minúsculos (conteúdo inválido de
+ * propósito — o que se testa aqui é o TRANSPORTE, não o parser). */
+function corpoMultipart(n: number): { payload: string; headers: Record<string, string> } {
+  const b = 'fronteira-teste';
+  const partes: string[] = [];
+  for (let i = 0; i < n; i++) {
+    partes.push(
+      `--${b}\r\ncontent-disposition: form-data; name="arquivos"; filename="n${i}.xml"\r\n` +
+        `content-type: text/xml\r\n\r\nnao-e-xml\r\n`,
+    );
+  }
+  partes.push(`--${b}--\r\n`);
+  return {
+    payload: partes.join(''),
+    headers: { 'content-type': `multipart/form-data; boundary=${b}` },
+  };
+}
+
+test('importação aceita a remessa do tamanho REAL: 125 arquivos (o lote diário) num envio só', async () => {
+  // O teto antigo era 60, dimensionado antes de medir o volume: o lote diário
+  // do ERP tem ~125 notas e um ciclo inteiro tem ~2050. Com 60, o dia REAL
+  // estourava o limite TODO DIA — e, por ser streaming, os 60 primeiros
+  // entravam e o resto virava 500: importação parcial escondida num erro.
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const { payload, headers } = corpoMultipart(125);
+  const r = await app.inject({
+    method: 'POST',
+    url: '/api/importacoes',
+    headers: { ...headers, ...bearer('tk-admin') },
+    payload,
+  });
+  assert.equal(r.statusCode, 200);
+  const rel = JSON.parse(r.body);
+  assert.equal(rel.total, 125);
+  // nada de "(remessa interrompida)" no fim
+  assert.ok(!rel.rejeitados.some((x: { arquivo: string }) => x.arquivo.includes('interrompida')));
+  await app.close();
+});
+
+test('estourar o teto não vira 500: o relatório sai com o aviso de remessa interrompida', async () => {
+  // Streaming: o que veio antes do estouro JÁ FOI processado. Um 500 esconderia
+  // isso do operador. O teto real é 4000; aqui manda 4001.
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const { payload, headers } = corpoMultipart(4001);
+  const r = await app.inject({
+    method: 'POST',
+    url: '/api/importacoes',
+    headers: { ...headers, ...bearer('tk-admin') },
+    payload,
+  });
+  assert.equal(r.statusCode, 200);
+  const rel = JSON.parse(r.body);
+  assert.equal(rel.total, 4000); // processou até o teto
+  const aviso = rel.rejeitados.at(-1);
+  assert.match(aviso.arquivo, /interrompida/);
+  assert.match(aviso.motivo, /reenvie/);
+  await app.close();
+});

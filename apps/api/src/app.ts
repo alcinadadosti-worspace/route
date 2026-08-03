@@ -62,9 +62,16 @@ export async function criarApp({
 
   await app.register(cors, { origin: true });
   await app.register(multipart, {
-    // Uma remessa de importação é dezenas de notas, não centenas; teto menor
-    // reduz o pico de memória de um upload malicioso na instância pequena.
-    limits: { fileSize: 5 * 1024 * 1024, files: 60 },
+    // O teto de 60 nasceu da premissa "uma remessa é dezenas de notas" — e a
+    // realidade a derrubou: o lote diário do ERP é ~125 notas e o escritório
+    // importa até um CICLO inteiro de uma vez (2046 arquivos, medido). Com
+    // streaming o pico de memória é ~1 arquivo independente da contagem, então
+    // o teto protege contra abuso, não contra a remessa real: 4000 cobre um
+    // ciclo com folga e continua sendo um limite.
+    // `parts` TAMBÉM, e maior que files: o default do plugin é 1000 partes e
+    // ele conta arquivos + campos — sem isto, um ciclo de 2046 arquivos parava
+    // em 1000 mesmo com `files` folgado (pego por teste, não por sorte).
+    limits: { fileSize: 5 * 1024 * 1024, files: 4000, parts: 4200 },
   });
 
   // Autenticação (seção 13): verifica o ID token do Firebase. Deny-by-default
@@ -100,15 +107,33 @@ export async function criarApp({
   // Streaming: lê e parseia uma nota por vez (pico de memória ~1 arquivo, não
   // a remessa toda), passando um gerador para o serviço.
   app.post('/api/importacoes', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
+    // Erro NO MEIO do stream (limite de arquivos/tamanho estourado): como a
+    // importação é streaming, o que veio antes JÁ FOI GRAVADO. Deixar o erro
+    // virar 500 esconderia a importação parcial — o operador não saberia que
+    // metade entrou. O erro vira uma linha no relatório, e reenviar a remessa
+    // inteira é seguro (dedupe pela chave de acesso).
+    let erroDeStream: string | null = null;
     async function* lerArquivos(): AsyncIterable<ArquivoXml> {
-      for await (const parte of req.files()) {
-        const buffer = await parte.toBuffer();
-        yield { nome: parte.filename, conteudo: buffer.toString('utf8') };
+      try {
+        for await (const parte of req.files()) {
+          const buffer = await parte.toBuffer();
+          yield { nome: parte.filename, conteudo: buffer.toString('utf8') };
+        }
+      } catch (e) {
+        erroDeStream = e instanceof Error ? e.message : 'falha na leitura do upload';
       }
     }
     const relatorio = await importarXmls(lerArquivos(), repo, geocodificador);
     if (relatorio.total === 0) {
-      return reply.code(400).send({ erro: 'Nenhum arquivo XML enviado' });
+      return reply
+        .code(400)
+        .send({ erro: erroDeStream ?? 'Nenhum arquivo XML enviado' });
+    }
+    if (erroDeStream) {
+      relatorio.rejeitados.push({
+        arquivo: '(remessa interrompida)',
+        motivo: `Upload interrompido (${erroDeStream}) — o que aparece acima FOI importado; reenvie a remessa completa, os repetidos são ignorados.`,
+      });
     }
     return relatorio;
   });
