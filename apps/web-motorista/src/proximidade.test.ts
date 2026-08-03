@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aplicarOrdemSugerida, ordenarPorProximidade, type ParadaOrdenavel } from './proximidade.js';
+import {
+  aplicarOrdemSugerida,
+  ordemIncerta,
+  ordenarPorProximidade,
+  type ParadaOrdenavel,
+} from './proximidade.js';
 import { formatarDistancia } from './formato.js';
 
 /** Três paradas ao longo de uma linha, ~1 km, ~3 km e ~5 km ao norte da base. */
@@ -81,4 +86,42 @@ test('formatação de distância troca para km e usa vírgula', () => {
   assert.equal(formatarDistancia(null), '— m');
   assert.equal(formatarDistancia(840), '840 m');
   assert.equal(formatarDistancia(12340), '12,3 km');
+});
+
+/* ---------- o GPS sabe mesmo qual é a mais perto? ---------- */
+
+const pendente = (distanciaM: number) => ({
+  coordenada: { lat: 0, lng: 0 },
+  status: 'pendente' as const,
+  distanciaM,
+});
+
+test('diferença MENOR que o erro do GPS: a ordem é incerta e quem usa precisa saber', () => {
+  // 1ª a 800 m, 2ª a 850 m, aparelho com ±1200 m (leitura de rede, não GNSS):
+  // o GPS não distingue as duas. Era o caso que passava despercebido — a lista
+  // usava a leitura crua enquanto todo o resto do app filtra precisão.
+  assert.equal(ordemIncerta([pendente(800), pendente(850)], 1200), true);
+});
+
+test('diferença MAIOR que o erro: a ordem vale, mesmo com GPS mediano', () => {
+  // Numa rota rural com paradas a quilômetros, ±300 m não atrapalha nada —
+  // avisar aqui seria ruído que ensina a ignorar avisos.
+  assert.equal(ordemIncerta([pendente(1000), pendente(6000)], 300), false);
+});
+
+test('sem leitura de precisão, ou com menos de duas disputando, não avisa', () => {
+  assert.equal(ordemIncerta([pendente(100), pendente(2000)], null), false);
+  assert.equal(ordemIncerta([pendente(100)], 500), false);
+  assert.equal(ordemIncerta([], 500), false);
+});
+
+test('parada resolvida não conta na disputa — ela não é candidata a próxima', () => {
+  const entregue = {
+    coordenada: { lat: 0, lng: 0 },
+    status: 'entregue' as const,
+    distanciaM: 10,
+  };
+  // A entregue está a 10 m, mas quem disputa são as duas pendentes (bem
+  // separadas): não há incerteza.
+  assert.equal(ordemIncerta([entregue, pendente(1000), pendente(9000)], 200), false);
 });

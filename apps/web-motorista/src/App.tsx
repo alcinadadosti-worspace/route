@@ -39,7 +39,7 @@ import { paradasPorResolver, separarRotas, type AbaRota } from './rotaAtiva';
 import { dispararProcessamento, ordemSugerida } from './servicoMapeamento';
 import { processarFilaComprovantes, processarFilaFotos } from './servicoFotos';
 import { usePosicao } from './usePosicao';
-import { aplicarOrdemSugerida, ordenarPorProximidade } from './proximidade';
+import { aplicarOrdemSugerida, ordemIncerta, ordenarPorProximidade } from './proximidade';
 import { formatarDistancia } from './formato';
 
 /**
@@ -425,6 +425,17 @@ export function App() {
       ? aplicarOrdemSugerida(paradasFiltradas, ordemEstrada, posicao)
       : ordenarPorProximidade(paradasFiltradas, posicao);
   }, [paradasFiltradas, porProximidade, ordemEstrada, posicao]);
+  /**
+   * O GPS distingue mesmo a 1ª da 2ª? `watchPosition` entrega primeiro uma
+   * posição de rede (±km em zona rural) e só depois refina — nesse intervalo a
+   * ordem sai embaralhada com cara de certa. Só vale para a linha reta: a
+   * ordem por estrada vem do OSRM, que já parte da posição enviada.
+   */
+  const incerta = useMemo(
+    () => !ordemEstrada && ordemIncerta(paradasNaTela, posicaoLista?.precisaoM ?? null),
+    [paradasNaTela, ordemEstrada, posicaoLista],
+  );
+
   // A primeira ainda por entregar é "a próxima" — só faz sentido com a lista
   // realmente ordenada por distância (ou pela sugestão da estrada).
   const proximaPedidoId =
@@ -801,7 +812,18 @@ export function App() {
             ? `⚠ ${erroOrdem} — seguindo pela distância em linha reta.`
             : ordemEstrada
               ? 'Ordem por distância de estrada, a partir de onde você está.'
-              : 'Ordem por distância em linha reta (funciona sem sinal). A ordem oficial da rota não muda.'}
+              : incerta
+                ? `⚠ GPS com ±${Math.round(posicaoLista?.precisaoM ?? 0)} m — as primeiras estão perto demais uma da outra para o aparelho separar. Espere o sinal firmar ou use "refinar por estrada".`
+                : 'Ordem por distância em linha reta (funciona sem sinal). A ordem oficial da rota não muda.'}
+          {/* A dúvida que aparece na primeira vez que alguém usa: "a mais perto
+              de mim é a PARADA 04, por que ela não é a 01?". Porque as duas
+              ordens respondem perguntas diferentes — e a oficial nem parte de
+              onde o motorista está. */}
+          <div className="ordenacao-explica">
+            Os números (PARADA 01, 02…) são a ordem do escritório, calculada
+            saindo do CD e voltando pra ele — por isso a mais perto de você pode
+            ter número alto.
+          </div>
         </div>
       )}
 

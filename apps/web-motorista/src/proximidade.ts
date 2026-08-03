@@ -60,6 +60,33 @@ export function ordenarPorProximidade<T extends ParadaOrdenavel>(
 }
 
 /**
+ * O GPS consegue mesmo dizer QUAL é a mais perto?
+ *
+ * Só a lista por proximidade usava a leitura crua — o gravador de trilha, o
+ * detector de chegada e a navegação todos descartam ou exibem a precisão, e
+ * aqui ela era simplesmente ignorada. `watchPosition` costuma entregar
+ * PRIMEIRO uma posição de rede (±1 a 3 km em zona rural, onde não há Wi-Fi
+ * para triangular) e só depois refinar com o GNSS: nesse intervalo a ordem sai
+ * embaralhada, com cara de certa.
+ *
+ * O aviso não é por um limite fixo — seria ruído numa rota de paradas a 5 km e
+ * silêncio numa de paradas na mesma rua. A pergunta certa é comparativa: se a
+ * diferença entre a 1ª e a 2ª é MENOR que o erro do aparelho, o GPS não sabe
+ * qual vem primeiro, e quem está usando merece saber disso.
+ */
+export function ordemIncerta<T extends ParadaOrdenavel>(
+  paradas: ComDistancia<T>[],
+  precisaoM: number | null,
+): boolean {
+  if (precisaoM == null || !Number.isFinite(precisaoM)) return false;
+  const disputando = paradas.filter((p) => !resolvida(p.status)).slice(0, 2);
+  if (disputando.length < 2) return false;
+  const [primeira, segunda] = disputando;
+  if (primeira!.distanciaM == null || segunda!.distanciaM == null) return false;
+  return Math.abs(segunda!.distanciaM - primeira!.distanciaM) < precisaoM;
+}
+
+/**
  * Aplica a ordem sugerida pela API (lista de pedidoIds já otimizada por
  * estrada). Quem não está na lista — paradas resolvidas, ou uma parada que
  * chegou depois do cálculo — vai para o fim, na ordem publicada, em vez de

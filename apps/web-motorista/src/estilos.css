@@ -1172,3 +1172,14 @@
   color: #121212;
   font-weight: 700;
 }
+
+/* Explicação de por que a ordem oficial difere da ordem por proximidade.
+   Menor e mais discreta que o aviso acima dela: é contexto permanente, não
+   alerta — quem já entendeu não precisa reler todo dia. */
+.ordenacao-explica {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--texto-2);
+  opacity: 0.8;
+}
