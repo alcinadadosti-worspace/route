@@ -1192,3 +1192,29 @@
   opacity: 0.85;
   white-space: nowrap;
 }
+
+/* Limite de erro: o que quebrou vira aviso legível em vez de tela preta.
+   Usado de pé, na chuva — daí o alvo de toque cheio e o contraste alto. */
+.tela-quebrou {
+  margin: 16px;
+  padding: 16px;
+  border: 2px solid var(--ambar);
+  border-radius: var(--raio);
+  background: var(--superficie);
+}
+
+.tela-quebrou strong {
+  display: block;
+  font-size: 1.1rem;
+  margin-bottom: 6px;
+}
+
+.tela-quebrou p {
+  margin: 0 0 12px;
+  opacity: 0.85;
+}
+
+.tela-quebrou button {
+  width: 100%;
+  min-height: var(--alvo-toque);
+}

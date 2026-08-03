@@ -18,6 +18,7 @@ import {
   type Rota,
 } from '@rota/shared';
 import { MapaNavegacao, type OutraParada } from './MapaNavegacao';
+import { LimiteDeErro } from './LimiteDeErro';
 import { DossieLocal } from './DossieLocal';
 import { Comprovante } from './Comprovante';
 import { useWakeLock } from './useWakeLock';
@@ -423,19 +424,23 @@ export function Navegacao({
         </div>
       )}
 
-      <MapaNavegacao
-        key={estiloKey}
-        estilo={estilo}
-        pin={pinNoMapa}
-        tracado={pontosTracado}
-        trilha={trilha}
-        modoTrilha={modoTrilha}
-        posicao={leitura}
-        ajustandoPin={ajustandoPin}
-        aoAjustarPin={setPinAjustado}
-        outrasParadas={outrasParadas}
-        aoTrocarParada={trocarPara}
-      />
+      {/* Mapa quebrado não pode impedir a entrega: o painel de baixo — endereço,
+          referência, "como chegar" e o botão de confirmar — continua de pé. */}
+      <LimiteDeErro oQue="O mapa da navegação">
+        <MapaNavegacao
+          key={estiloKey}
+          estilo={estilo}
+          pin={pinNoMapa}
+          tracado={pontosTracado}
+          trilha={trilha}
+          modoTrilha={modoTrilha}
+          posicao={leitura}
+          ajustandoPin={ajustandoPin}
+          aoAjustarPin={setPinAjustado}
+          outrasParadas={outrasParadas}
+          aoTrocarParada={trocarPara}
+        />
+      </LimiteDeErro>
       {outrasParadas.length > 0 && (
         <div className="nav-dica-mapa">
           Toque no número de outra parada no mapa para navegar até ela.

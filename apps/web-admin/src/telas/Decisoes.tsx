@@ -9,6 +9,7 @@ import {
   listarPedidos,
 } from '../api';
 import { MapaDecisao } from '../MapaDecisao';
+import { LimiteDeErro } from '../LimiteDeErro';
 
 /**
  * Decisões — o que a importação não resolve sozinha. TRÊS perguntas caem aqui,
@@ -438,11 +439,13 @@ function CartaoDecisao({
         <span className="chip pendente">Entrega em local diverso</span>
       </div>
 
-      <MapaDecisao
-        fiscal={cliente?.coordenada ?? null}
-        entrega={coordEntrega ?? cliente?.coordenada ?? null}
-        aoMoverEntrega={setCoordEntrega}
-      />
+      <LimiteDeErro oQue="O mapa da decisão">
+        <MapaDecisao
+          fiscal={cliente?.coordenada ?? null}
+          entrega={coordEntrega ?? cliente?.coordenada ?? null}
+          aoMoverEntrega={setCoordEntrega}
+        />
+      </LimiteDeErro>
 
       <div className="decisao-opcoes">
         <label className={`decisao-opcao${escolha === 'fiscal' ? ' ativa' : ''}`}>

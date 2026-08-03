@@ -16,6 +16,7 @@ import {
   type ResultadoEntrega,
 } from '@rota/shared';
 import { Mapa } from './Mapa';
+import { LimiteDeErro } from './LimiteDeErro';
 import { Login } from './Login';
 import { Navegacao } from './Navegacao';
 import { DossieLocal, FotoReferencia } from './DossieLocal';
@@ -657,15 +658,17 @@ export function App() {
           mostrar as paradas do dia. */}
       {rota &&
         (mapaOffline.pronto && cd ? (
-          <Mapa
-            cd={cd}
-            paradas={pontosMapa}
-            polyline={rota.polylinePlanejada}
-            estilo={estilo}
-            aoEscolherParada={setNavegandoPara}
-            paradaFocada={paradaFocada}
-            aoFocarParada={setParadaFocada}
-          />
+          <LimiteDeErro oQue="O mapa do dia">
+            <Mapa
+              cd={cd}
+              paradas={pontosMapa}
+              polyline={rota.polylinePlanejada}
+              estilo={estilo}
+              aoEscolherParada={setNavegandoPara}
+              paradaFocada={paradaFocada}
+              aoFocarParada={setParadaFocada}
+            />
+          </LimiteDeErro>
         ) : (
           <div className="mapa" />
         ))}

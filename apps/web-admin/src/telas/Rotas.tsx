@@ -31,6 +31,7 @@ import {
 } from '../api';
 import { MapaRota } from '../MapaRota';
 import { MapaAcompanhamento } from '../MapaAcompanhamento';
+import { LimiteDeErro } from '../LimiteDeErro';
 import { FotoReferencia } from '../FotoReferencia';
 
 /** Status da parada em português — o enum cru não é para o operador ler. */
@@ -593,11 +594,17 @@ export function Rotas() {
                               perguntando, a pergunta é espacial — "o caminhão já
                               passou pela minha rua?" —, e texto obriga quem lê a
                               montar a geografia de cabeça. */}
-                          <MapaAcompanhamento
-                            rota={r}
-                            posicao={posicoes[r.id] ?? null}
-                            agoraMs={agoraMs}
-                          />
+                          {/* O mapa é o pedaço mais frágil da tela: depende de
+                              WebGL, de doc do banco e de biblioteca de terceiro.
+                              Isolado, ele falha sozinho — a lista de paradas
+                              abaixo continua respondendo quem ligou. */}
+                          <LimiteDeErro oQue="O mapa do acompanhamento">
+                            <MapaAcompanhamento
+                              rota={r}
+                              posicao={posicoes[r.id] ?? null}
+                              agoraMs={agoraMs}
+                            />
+                          </LimiteDeErro>
                           {/* Parada a parada com o aviso ao cliente: diante de um
                               "ausente", saber se ele tinha sido avisado é o que
                               separa aprendizado de reclamação (seção 11.8). */}
@@ -966,7 +973,9 @@ export function Rotas() {
             </div>
           </div>
 
-          <MapaRota previa={previa} />
+          <LimiteDeErro oQue="O mapa da prévia">
+            <MapaRota previa={previa} />
+          </LimiteDeErro>
 
           <table>
             <thead>

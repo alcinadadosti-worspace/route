@@ -799,3 +799,12 @@ tr.dossie-linha .dossie-bloco {
   content: '';
   margin: 0;
 }
+
+/* Mensagem do limite de erro: curta na tela, rastro inteiro no console. */
+.detalhe-erro {
+  font-family: var(--fonte-mono);
+  font-size: 0.8rem;
+  opacity: 0.75;
+  margin: 6px 0 8px;
+  word-break: break-word;
+}

@@ -150,13 +150,23 @@ export function MapaAcompanhamento({
       const elemento = document.createElement('div');
       elemento.className = 'marcador-motorista';
       elemento.textContent = '🚚';
-      marcadorMotoristaRef.current = new Marker({ element: elemento }).addTo(mapa);
+      // A COORDENADA VEM ANTES DE ENTRAR NO MAPA. `addTo` projeta a posição na
+      // hora; sem coordenada o MapLibre lê `.lng` de `undefined`, e a exceção
+      // sobe pelo React e desmonta o painel inteiro — a tela ficava preta assim
+      // que o motorista começava a trabalhar e a primeira posição chegava.
+      marcadorMotoristaRef.current = new Marker({ element: elemento })
+        .setLngLat([ponto.lng, ponto.lat])
+        .addTo(mapa);
     }
+    // Precisão ausente em doc antigo não vira "GPS ±undefined m" na tela.
+    const precisao = Number.isFinite(posicao.precisaoM)
+      ? `GPS ±${posicao.precisaoM} m`
+      : 'precisão desconhecida';
     marcadorMotoristaRef.current
       .setLngLat([ponto.lng, ponto.lat])
       .setPopup(
         new Popup({ offset: 20 }).setText(
-          `Motorista · ${haQuantoTempo(posicao.em, agoraMs)} · GPS ±${posicao.precisaoM} m`,
+          `Motorista · ${haQuantoTempo(posicao.em, agoraMs)} · ${precisao}`,
         ),
       );
   }, [posicao, agoraMs]);
