@@ -7,8 +7,10 @@ import {
   decidirModoEntrega,
   decidirMudancaEndereco,
   refazerPontoDoCliente,
+  mesclarRelatorios,
   type ArquivoXml,
 } from './importacao/servico.js';
+import { importarPlanilha } from './importacao/servico-planilha.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
 import { FORMATO_ROTA_ID } from './rotas/comum.js';
 import { calcularProdutividade } from './produtividade.js';
@@ -113,10 +115,18 @@ export async function criarApp({
     // metade entrou. O erro vira uma linha no relatório, e reenviar a remessa
     // inteira é seguro (dedupe pela chave de acesso).
     let erroDeStream: string | null = null;
+    // A planilha do ERP (xlsx) entra pela MESMA porta dos XMLs: o operador
+    // solta o que tiver. Os XMLs seguem em streaming; a planilha e bufferizada
+    // (e UM arquivo de poucos MB) e processada depois que o stream termina.
+    const planilhas: Array<{ nome: string; conteudo: Buffer }> = [];
     async function* lerArquivos(): AsyncIterable<ArquivoXml> {
       try {
         for await (const parte of req.files()) {
           const buffer = await parte.toBuffer();
+          if (parte.filename.toLowerCase().endsWith('.xlsx')) {
+            planilhas.push({ nome: parte.filename, conteudo: buffer });
+            continue;
+          }
           yield { nome: parte.filename, conteudo: buffer.toString('utf8') };
         }
       } catch (e) {
@@ -124,6 +134,12 @@ export async function criarApp({
       }
     }
     const relatorio = await importarXmls(lerArquivos(), repo, geocodificador);
+    for (const planilha of planilhas) {
+      mesclarRelatorios(
+        relatorio,
+        await importarPlanilha(planilha.nome, planilha.conteudo, repo, geocodificador),
+      );
+    }
     if (relatorio.total === 0) {
       return reply
         .code(400)
@@ -150,7 +166,7 @@ export async function criarApp({
       const { chave } = req.params as { chave: string };
       // Todo pedido tem por ID a chave de acesso (44 dígitos). Validar aqui evita
       // que uma chave malformada vire caminho inválido no Firestore (500 cru).
-      if (!/^\d{44}$/.test(chave)) {
+      if (!/^(\d{9}|\d{44})$/.test(chave)) {
         return reply.code(404).send({ erro: 'Pedido não encontrado' });
       }
       const corpo = (req.body ?? {}) as {
@@ -176,7 +192,7 @@ export async function criarApp({
     { config: { papeis: ESCRITORIO } },
     async (req, reply) => {
       const { chave } = req.params as { chave: string };
-      if (!/^\d{44}$/.test(chave)) {
+      if (!/^(\d{9}|\d{44})$/.test(chave)) {
         return reply.code(404).send({ erro: 'Pedido não encontrado' });
       }
       const corpo = (req.body ?? {}) as { escolha?: 'manter' | 'remapear' };
@@ -199,7 +215,7 @@ export async function criarApp({
     { config: { papeis: ESCRITORIO } },
     async (req, reply) => {
       const { chave } = req.params as { chave: string };
-      if (!/^\d{44}$/.test(chave)) {
+      if (!/^(\d{9}|\d{44})$/.test(chave)) {
         return reply.code(404).send({ erro: 'Pedido não encontrado' });
       }
       const corpo = (req.body ?? {}) as { escolha?: 'rota' | 'retirada' };
@@ -217,7 +233,7 @@ export async function criarApp({
   // junto; só o que já foi executado em campo é intocável (ver remover.ts).
   app.delete('/api/pedidos/:chave', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
     const { chave } = req.params as { chave: string };
-    if (!/^\d{44}$/.test(chave)) {
+    if (!/^(\d{9}|\d{44})$/.test(chave)) {
       return reply.code(404).send({ erro: 'Pedido não encontrado' });
     }
     const resultado = await removerPedido(repo, chave);

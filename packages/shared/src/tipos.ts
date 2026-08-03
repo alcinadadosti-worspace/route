@@ -63,6 +63,13 @@ export interface Cliente {
    * escaparia com o ponto vencido. Ausente (cadastro antigo) = null.
    */
   enderecoEmRevisao?: EnderecoFiscal | null;
+  /**
+   * Segmentação da revendedora no ERP (`Papel` da planilha: Cobre → Diamante,
+   * mais variantes "GB", "Revendedor" e "Consumidor Final"). Texto livre de
+   * propósito — a lista real tem 10 valores e o ERP pode inventar outros;
+   * validar aqui derrubaria importação por causa de rótulo novo.
+   */
+  papel?: string | null;
 }
 
 export interface ItemPedido {
@@ -130,8 +137,18 @@ export interface Pedido {
    * Ausente = ainda não perguntado (o pedido fica `pendente_de_decisao` e não
    * entra em rota). A escolha é reversível enquanto o pedido não saiu: se a
    * revendedora não aparecer, o escritório devolve para a fila.
+   *
+   * Na importação por PLANILHA o ERP responde sozinho (`Tipo de Entrega` é
+   * explícito) e o campo já nasce preenchido, sem passar pela aba Decisões —
+   * decisão do usuário em 01/08/2026, porque ali não há inferência.
    */
   modoEntrega?: 'rota' | 'retirada';
+  /**
+   * Quantidade FÍSICA de produtos (`QtdeMateriais` da planilha do ERP). A
+   * importação por planilha não traz a lista de itens — sem este campo, o app
+   * do motorista mostraria "0 itens" na porta do cliente com a caixa cheia.
+   */
+  quantidadeMateriais?: number;
 }
 
 /**
@@ -166,6 +183,10 @@ export interface ParadaRota {
    * motorista liga o "navegar e mapear" por aqui, sem depender do doc do cliente
    * estar no cache offline. Ausente em rotas antigas → o app recai no cliente. */
   precisaMapear?: boolean;
+  /** Quantidade física de produtos quando o pedido veio da PLANILHA (que não
+   * traz a lista de itens) — sem isto o app do motorista diria "0 itens" na
+   * porta do cliente. Ausente em rotas de pedidos importados por XML. */
+  quantidadeMateriais?: number;
   /**
    * Quando o motorista avisou o cliente pelo WhatsApp (seção 11.8). Serve ao
    * escritório: diante de um "ausente", saber se o cliente tinha sido avisado
@@ -488,8 +509,15 @@ export interface RelatorioImportacao {
    * Contada à parte porque é metade de uma importação típica, enquanto as de
    * endereço são raras: sem separar, o operador leria "60 aguardando endereço"
    * e procuraria um problema que não existe. Ausente em relatórios antigos.
+   * Só a importação por XML usa (na planilha o ERP decide, não pergunta).
    */
   retiradaAConfirmar?: number;
+  /** Importação por planilha: pedidos que o ERP já marcou como retirada no
+   * balcão — classificados direto, sem passar pela aba Decisões. */
+  retiradas?: number;
+  /** Importação por planilha: linhas com `SituaçãoComercial = Cancelado`,
+   * ignoradas de propósito (pedido cancelado não gera entrega). */
+  canceladas?: number;
   /** Destinos urbanos resolvidos pela geocodificação automática (seção 9). */
   geocodificados: number;
   /** Destinos aproximados (rural/impreciso, mas no município certo): despacháveis

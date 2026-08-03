@@ -145,7 +145,7 @@ export async function importarXmls(
 const CONCORRENCIA = 20;
 
 /** Agrupa o iteravel de entrada (que pode ser stream) em lotes de `tamanho`. */
-async function* emLotes<T>(
+export async function* emLotes<T>(
   itens: AsyncIterable<T> | Iterable<T>,
   tamanho: number,
 ): AsyncGenerator<T[]> {
@@ -325,7 +325,7 @@ async function processarArquivo(
  * `relatorio` é nulo quando a chamada não vem de uma importação (reclassificação
  * depois de o escritório descartar um ponto vencido) — não há o que contabilizar.
  */
-async function classificarDestino(
+export async function classificarDestino(
   clienteId: string,
   cliente: Cliente,
   repo: Repositorio,
@@ -396,7 +396,7 @@ interface ResultadoUpsert {
  * Seção 8.3: a nota é mais recente que o cadastro — atualiza contato e endereço
  * fiscal, preservando coordenada, statusMapeamento e trilhas.
  */
-async function upsertCliente(nota: NotaImportada, repo: Repositorio): Promise<ResultadoUpsert> {
+export async function upsertCliente(nota: NotaImportada, repo: Repositorio): Promise<ResultadoUpsert> {
   const { clienteId } = nota.destinatario;
   const existente = await repo.obterCliente(clienteId);
 
@@ -751,3 +751,34 @@ async function liberarPedidosEmRevisao(
 }
 
 export { ehEnderecoRural };
+
+/**
+ * Soma dois relatórios de importação num só — a remessa pode misturar XMLs e a
+ * planilha do ERP na mesma leva, e o operador lê UM resultado. Contadores
+ * somam; listas concatenam na ordem de processamento.
+ */
+export function mesclarRelatorios(
+  destino: RelatorioImportacao,
+  origem: RelatorioImportacao,
+): RelatorioImportacao {
+  destino.total += origem.total;
+  destino.importados += origem.importados;
+  destino.duplicados += origem.duplicados;
+  destino.prontosParaRota += origem.prontosParaRota;
+  destino.pendentesDeMapeamento += origem.pendentesDeMapeamento;
+  destino.pendentesDeDecisao += origem.pendentesDeDecisao;
+  destino.geocodificados += origem.geocodificados;
+  destino.aproximados += origem.aproximados;
+  destino.semCarga += origem.semCarga;
+  if (origem.retiradaAConfirmar) {
+    destino.retiradaAConfirmar = (destino.retiradaAConfirmar ?? 0) + origem.retiradaAConfirmar;
+  }
+  if (origem.retiradas) destino.retiradas = (destino.retiradas ?? 0) + origem.retiradas;
+  if (origem.canceladas) destino.canceladas = (destino.canceladas ?? 0) + origem.canceladas;
+  destino.rejeitados.push(...origem.rejeitados);
+  destino.alertas.push(...origem.alertas);
+  for (const [cd, n] of Object.entries(origem.porCd)) {
+    destino.porCd[cd] = (destino.porCd[cd] ?? 0) + n;
+  }
+  return destino;
+}

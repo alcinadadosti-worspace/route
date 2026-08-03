@@ -39,6 +39,9 @@ export interface CandidataParada {
   itens: ItemPedido[];
   volumes: number;
   pesoBrutoKg: number;
+  /** Pedido vindo da planilha não tem lista de itens — este número responde
+   * "quantos produtos" para o motorista e para o romaneio. */
+  quantidadeMateriais?: number;
   coordenada: GeoPonto;
   /** Denormalizado para a ParadaRota: liga o "navegar e mapear" no app do
    * motorista sem depender do doc do cliente estar no cache offline. */
@@ -142,6 +145,9 @@ export async function coletarParadas(
       itens: pedido.itens,
       volumes: pedido.volumes,
       pesoBrutoKg: pedido.pesoBrutoKg,
+      ...(pedido.quantidadeMateriais !== undefined
+        ? { quantidadeMateriais: pedido.quantidadeMateriais }
+        : {}),
       coordenada,
       // Entrega em local diverso já é um ponto escolhido pelo escritório; senão,
       // reflete a situação de mapeamento do cliente (aproximado → mapear em campo).

@@ -214,7 +214,10 @@ export function App() {
               coordenada: p.coordenada,
               // `?? []` porque um único doc de rota sem `itens` derrubaria a
               // lista INTEIRA com um TypeError — falha desproporcional.
-              itens: (p.itens ?? []).length,
+              // Pedido importado da planilha não tem a LISTA de itens — só a
+              // quantidade física. Sem o fallback, a porta do cliente mostraria
+              // "0 itens" com a caixa cheia.
+              itens: p.quantidadeMateriais ?? (p.itens ?? []).length,
               itensNota: p.itens ?? [],
               numeroPedido: p.numeroPedido ?? null,
               numeroNota: p.numeroNota,

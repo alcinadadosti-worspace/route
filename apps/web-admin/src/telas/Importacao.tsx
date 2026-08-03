@@ -27,15 +27,15 @@ export function Importacao() {
     // tentativa mais provável depois de uma importação que falhou (API dormindo).
     if (inputRef.current) inputRef.current.value = '';
     if (escolhidos.length === 0) return;
-    const xmls = escolhidos.filter((f) => f.name.toLowerCase().endsWith('.xml'));
-    if (xmls.length === 0) {
-      setErro('Nenhum arquivo .xml entre os selecionados.');
+    const aceitos = escolhidos.filter((f) => /\.(xml|xlsx)$/i.test(f.name));
+    if (aceitos.length === 0) {
+      setErro('Nenhum arquivo .xlsx (planilha do ERP) ou .xml entre os selecionados.');
       return;
     }
     setEnviando(true);
     setErro(null);
     try {
-      setRelatorio(await importarXmls(xmls));
+      setRelatorio(await importarXmls(aceitos));
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha na importação');
     } finally {
@@ -47,7 +47,7 @@ export function Importacao() {
     <section className="cartao">
       <h2>Importação do dia</h2>
       <p style={{ color: 'var(--texto-2)' }}>
-        Arraste os XMLs das NF-e (procNFe, modelo 55) ou clique para selecionar. Reimportar o
+        Arraste a planilha ConsultaPedidos do ERP (.xlsx) — ou XMLs de NF-e — ou clique para selecionar. Reimportar o
         mesmo arquivo é inócuo — a chave de acesso deduplica.
       </p>
 
@@ -65,11 +65,11 @@ export function Importacao() {
           void enviar(e.dataTransfer.files);
         }}
       >
-        {enviando ? 'PROCESSANDO…' : 'SOLTE OS XMLs AQUI'}
+        {enviando ? 'PROCESSANDO…' : 'SOLTE A PLANILHA (OU XMLs) AQUI'}
         <input
           ref={inputRef}
           type="file"
-          accept=".xml"
+          accept=".xml,.xlsx"
           multiple
           hidden
           onChange={(e) => void enviar(e.target.files)}
@@ -92,7 +92,17 @@ export function Importacao() {
                 perguntas aparece lá só na de retirada, e a de endereço reaparece
                 depois de respondida. Contar o mesmo pedido nas duas métricas
                 faria o operador procurar um cartão que ainda não está na tela. */}
-            <Metrica valor={relatorio.retiradaAConfirmar ?? 0} rotulo="Retirada a confirmar" />
+            {/* Planilha: o ERP decide sozinho (Tipo de Entrega explícito). */}
+            {(relatorio.retiradas ?? 0) > 0 && (
+              <Metrica valor={relatorio.retiradas ?? 0} rotulo="Retirada no balcão" />
+            )}
+            {(relatorio.canceladas ?? 0) > 0 && (
+              <Metrica valor={relatorio.canceladas ?? 0} rotulo="Canceladas (ignoradas)" />
+            )}
+            {/* XML: retirada é palpite do modFrete e pede confirmação. */}
+            {(relatorio.retiradaAConfirmar ?? 0) > 0 && (
+              <Metrica valor={relatorio.retiradaAConfirmar ?? 0} rotulo="Retirada a confirmar" />
+            )}
             <Metrica
               valor={relatorio.pendentesDeDecisao - (relatorio.retiradaAConfirmar ?? 0)}
               rotulo="Aguardando escolha de endereço"

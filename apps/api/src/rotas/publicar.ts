@@ -96,6 +96,7 @@ export async function publicarRota(
       itens: c.itens,
       volumes: c.volumes,
       pesoBrutoKg: c.pesoBrutoKg,
+      ...(c.quantidadeMateriais !== undefined ? { quantidadeMateriais: c.quantidadeMateriais } : {}),
       coordenada: c.coordenada,
       // Acumula segundos crus e arredonda uma vez: o ETA de uma parada nunca
       // ultrapassa a duração total da rota (que também é arredondada do total cru).
