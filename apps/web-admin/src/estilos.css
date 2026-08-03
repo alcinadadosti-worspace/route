@@ -748,3 +748,54 @@ tr.dossie-linha .dossie-bloco {
 .posicao-motorista.velha {
   opacity: 0.55;
 }
+
+/* Mapa do acompanhamento. As paradas mudam de cor pelo STATUS: aqui o que
+   interessa não é a ordem de visita, é o que já saiu do caminhão. */
+.mapa-acompanhamento {
+  margin-bottom: 12px;
+}
+.marcador-parada.acomp-entregue {
+  background: #3fbf6f;
+  border-color: #16341f;
+  color: #0d2413;
+}
+.marcador-parada.acomp-insucesso {
+  background: #e04f4f;
+  border-color: #3a1414;
+  color: #2a0d0d;
+}
+.marcador-motorista {
+  font-size: 26px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
+  cursor: pointer;
+}
+.legenda-mapa {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 0.78rem;
+  color: var(--texto-2);
+}
+.legenda::before {
+  content: '●';
+  margin-right: 4px;
+}
+.legenda.entregue::before {
+  color: #3fbf6f;
+}
+.legenda.insucesso::before {
+  color: #e04f4f;
+}
+.legenda.pendente::before {
+  color: var(--laranja-seg);
+}
+.legenda.apagada {
+  opacity: 0.55;
+}
+.legenda.apagada::before,
+.legenda:not(.entregue):not(.insucesso):not(.pendente)::before {
+  content: '';
+  margin: 0;
+}

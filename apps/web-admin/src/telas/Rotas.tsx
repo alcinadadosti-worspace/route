@@ -28,6 +28,7 @@ import {
   publicarRota,
 } from '../api';
 import { MapaRota } from '../MapaRota';
+import { MapaAcompanhamento } from '../MapaAcompanhamento';
 import { FotoReferencia } from '../FotoReferencia';
 
 /** Status da parada em português — o enum cru não é para o operador ler. */
@@ -531,6 +532,15 @@ export function Rotas() {
                     {aberta && (
                       <tr>
                         <td colSpan={9}>
+                          {/* O mapa vem ANTES da lista: quando o cliente liga
+                              perguntando, a pergunta é espacial — "o caminhão já
+                              passou pela minha rua?" —, e texto obriga quem lê a
+                              montar a geografia de cabeça. */}
+                          <MapaAcompanhamento
+                            rota={r}
+                            posicao={posicoes[r.id] ?? null}
+                            agoraMs={agoraMs}
+                          />
                           {/* Parada a parada com o aviso ao cliente: diante de um
                               "ausente", saber se ele tinha sido avisado é o que
                               separa aprendizado de reclamação (seção 11.8). */}
