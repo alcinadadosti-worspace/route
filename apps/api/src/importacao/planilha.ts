@@ -166,18 +166,37 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
   return { ok: true, linhas };
 }
 
-/** `EnderecoFiscal` a partir de um bloco da planilha. O número da casa mora no
- * complemento; vai VERBATIM — a geocodificação e o motorista toleram "S/N",
- * e inventar um número seria pior. */
+/**
+ * `EnderecoFiscal` a partir de um bloco da planilha. O número da casa mora no
+ * COMPLEMENTO (não há coluna própria) e vai quase verbatim: "S/N" fica "S/N",
+ * porque a geocodificação e o motorista toleram, e inventar número é pior.
+ *
+ * A limpeza que existe é uma só, e é obrigatória: parte das revendedoras digita
+ * a COORDENADA GPS junto do número ("67 -10.404108,-36.431132"). Esse texto
+ * inteiro iria para a busca do Google e estragaria a consulta do endereço —
+ * justamente o cliente que ganhou pin exato acabaria com o endereço ilegível
+ * no cadastro e na tela do motorista. Fica só o que vem antes da coordenada.
+ */
 export function enderecoDeBloco(b: BlocoEndereco): EnderecoFiscal {
   return {
     logradouro: b.logradouro,
-    numero: b.complemento || 'S/N',
+    numero: numeroLimpo(b.complemento),
     bairro: b.bairro,
     municipio: b.cidade,
     uf: b.uf,
     cep: somenteDigitos(b.cep),
   };
+}
+
+/** Corta a partir do primeiro sinal de coordenada (o `-` de uma latitude ou o
+ * grau do formato DMS). Sobrando nada, vira "S/N". */
+function numeroLimpo(complemento: string): string {
+  const semGps = complemento
+    .replace(/-?\d{1,2}[.,]\d{4,9}\s*[;,]?\s*-?\d{1,2}[.,]\d{4,9}/g, '')
+    .replace(/\d{1,2}[°º][^,;]*[SN][^,;]*[°º][^,;]*[WOE]/gi, '')
+    .replace(/[\s;,.-]+$/, '')
+    .trim();
+  return semGps || 'S/N';
 }
 
 /**

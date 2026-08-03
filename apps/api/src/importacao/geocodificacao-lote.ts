@@ -23,6 +23,12 @@ export interface ResultadoLote {
   processados: number;
   geocodificados: number;
   aproximados: number;
+  /**
+   * Endereços que a Google não soube localizar. O painel SOMA isto em `pular`
+   * na chamada seguinte — sem isso, o lote seguinte pegaria de novo os mesmos
+   * primeiros da fila (eles continuam sem coordenada), o laço nunca terminaria
+   * e a operação pagaria em círculos pelo endereço que não existe no mapa.
+   */
   semResultado: number;
 }
 
@@ -33,32 +39,34 @@ export const TAMANHO_DO_LOTE = 100;
 export async function localizarEnderecos(
   repo: Repositorio,
   geocodificador: Geocodificador | null,
-  limite = TAMANHO_DO_LOTE,
+  opcoes: { limite?: number; pular?: number } = {},
 ): Promise<ResultadoLote> {
-  if (!geocodificador) {
-    return { restantes: 0, processados: 0, geocodificados: 0, aproximados: 0, semResultado: 0 };
-  }
+  const limite = opcoes.limite ?? TAMANHO_DO_LOTE;
+  const pular = Math.max(0, opcoes.pular ?? 0);
 
-  const [clientes, pedidos] = await Promise.all([repo.listarClientes(), repo.listarPedidos()]);
-
-  // Só clientes SEM ponto que têm pedido esperando entrega. Sem o segundo
-  // filtro, a operação pagaria para localizar quem só faz retirada — que é
-  // metade da base e nunca recebe visita.
-  const esperandoEntrega = new Set(
-    pedidos
-      .filter((p) => p.status === 'pendente_de_mapeamento')
-      .map((p) => p.clienteId),
-  );
-  const pendentes = clientes.filter((c) => !c.coordenada && esperandoEntrega.has(c.id));
-  const lote = pendentes.slice(0, limite);
-
-  const resultado: ResultadoLote = {
-    restantes: Math.max(0, pendentes.length - lote.length),
-    processados: lote.length,
+  const vazio: ResultadoLote = {
+    restantes: 0,
+    processados: 0,
     geocodificados: 0,
     aproximados: 0,
     semResultado: 0,
   };
+  if (!geocodificador) return vazio;
+
+  // A fila sai dos PEDIDOS que esperam ponto, não de uma varredura de clientes:
+  // é a lista exata (pedido só fica `pendente_de_mapeamento` porque o cliente
+  // não tem coordenada) e já exclui quem só faz retirada — metade da base, que
+  // nunca recebe visita e cujo endereço seria dinheiro jogado fora.
+  // Ordenado para o fatiamento ser estável entre chamadas: sem ordem definida,
+  // `pular` saltaria clientes diferentes a cada lote.
+  const fila = [...(await repo.clientesComEntregaPendente())].sort();
+  const idsDoLote = fila.slice(pular, pular + limite);
+  const lote = await repo.clientesPorIds(idsDoLote);
+
+  const resultado: ResultadoLote = { ...vazio, processados: lote.length };
+  // `restantes` conta a fila INTEIRA, não o pedaço buscado — senão o painel
+  // pararia achando que acabou no primeiro lote.
+  resultado.restantes = Math.max(0, fila.length - (pular + idsDoLote.length));
   if (lote.length === 0) return resultado;
 
   // Concorrência modesta: a Google limita taxa, e estourar o limite devolve
@@ -67,36 +75,27 @@ export async function localizarEnderecos(
   const CONCORRENCIA = 10;
   const escritas: Array<{ colecao: 'clientes'; id: string; dados: Partial<Cliente>; merge: true }> =
     [];
-  const comPonto = new Map<string, Cliente['coordenada']>();
+  const comPonto = new Set<string>();
 
   for (let i = 0; i < lote.length; i += CONCORRENCIA) {
     const fatia = lote.slice(i, i + CONCORRENCIA);
     await Promise.all(
       fatia.map(async ({ id, ...cliente }) => {
         const r = await geocodificador.geocodificar(cliente.enderecoFiscal).catch(() => null);
-        if (!r) {
-          resultado.semResultado += 1;
-          return;
-        }
         // Ponto preciso, ou aproximado NO MUNICÍPIO CERTO (rural): os dois
         // servem de partida — o motorista entrega e o app aprende a trilha na
         // primeira viagem. Fora do município é ponto errado com cara de certo.
-        if (r.precisa) {
-          resultado.geocodificados += 1;
-          comPonto.set(id, r.coordenada);
+        if (r && (r.precisa || r.municipioConfere)) {
+          if (r.precisa) resultado.geocodificados += 1;
+          else resultado.aproximados += 1;
+          comPonto.add(id);
           escritas.push({
             colecao: 'clientes',
             id,
-            dados: { coordenada: r.coordenada, statusMapeamento: 'geocodificado' },
-            merge: true,
-          });
-        } else if (r.municipioConfere) {
-          resultado.aproximados += 1;
-          comPonto.set(id, r.coordenada);
-          escritas.push({
-            colecao: 'clientes',
-            id,
-            dados: { coordenada: r.coordenada, statusMapeamento: 'aproximado' },
+            dados: {
+              coordenada: r.coordenada,
+              statusMapeamento: r.precisa ? 'geocodificado' : 'aproximado',
+            },
             merge: true,
           });
         } else {
@@ -110,14 +109,16 @@ export async function localizarEnderecos(
   // mesma leva — senão ficariam parados apontando para um cliente que já tem
   // coordenada, e só a montagem da rota reclamaria.
   const escritasPedidos: Array<{ colecao: 'pedidos'; id: string; dados: Pedido }> = [];
-  for (const { id, ...pedido } of pedidos) {
-    if (pedido.status !== 'pendente_de_mapeamento') continue;
-    if (!comPonto.has(pedido.clienteId)) continue;
-    escritasPedidos.push({
-      colecao: 'pedidos',
-      id,
-      dados: { ...pedido, status: statusForaDeRota(pedido, true) },
-    });
+  if (comPonto.size > 0) {
+    for (const { id, ...pedido } of await repo.listarPedidos()) {
+      if (pedido.status !== 'pendente_de_mapeamento') continue;
+      if (!comPonto.has(pedido.clienteId)) continue;
+      escritasPedidos.push({
+        colecao: 'pedidos',
+        id,
+        dados: { ...pedido, status: statusForaDeRota(pedido, true) },
+      });
+    }
   }
 
   await repo.gravarEmLote([...escritas, ...escritasPedidos]);

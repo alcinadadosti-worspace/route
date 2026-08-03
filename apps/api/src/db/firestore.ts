@@ -99,6 +99,27 @@ class RepositorioFirestore implements Repositorio {
     return new Set(resposta.docs.map((d) => d.id));
   }
 
+  /** `getAll` busca os N documentos numa ida só (a cota conta por documento,
+   * mas a latência é de uma viagem). Vazio devolve vazio — `getAll()` sem
+   * referências rejeita no Admin SDK. */
+  async clientesPorIds(ids: string[]): Promise<Array<{ id: string } & Cliente>> {
+    if (ids.length === 0) return [];
+    const docs = await this.db.getAll(...ids.map((id) => this.clientes.doc(id)));
+    return docs
+      .filter((d) => d.exists)
+      .map((d) => ({ ...(d.data() as Cliente), id: d.id }));
+  }
+
+  async clientesComEntregaPendente(): Promise<Set<string>> {
+    // `select` traz só o campo que interessa: a cota conta por documento, mas a
+    // rede não precisa carregar o pedido inteiro.
+    const resposta = await this.pedidos
+      .where('status', '==', 'pendente_de_mapeamento')
+      .select('clienteId')
+      .get();
+    return new Set(resposta.docs.map((d) => (d.data() as { clienteId: string }).clienteId));
+  }
+
   async listarPedidos(): Promise<Array<{ id: string } & Pedido>> {
     const resposta = await this.pedidos.orderBy('emitidoEm', 'desc').get();
     return resposta.docs.map((d) => ({ ...(d.data() as Pedido), id: d.id }));

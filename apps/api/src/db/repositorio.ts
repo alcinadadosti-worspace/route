@@ -55,6 +55,17 @@ export interface Repositorio {
   /** Só os IDs dos pedidos, numa consulta — o dedupe de uma remessa grande não
    * pode ser 2000 `get` individuais. */
   idsDePedidos(): Promise<Set<string>>;
+  /**
+   * Busca vários clientes por id numa ida só. A localização em lotes precisa
+   * exatamente de N clientes — reler a coleção inteira a cada lote gastaria a
+   * cota diária do Firestore num ciclo só (~1400 clientes × 10 lotes).
+   */
+  clientesPorIds(ids: string[]): Promise<Array<{ id: string } & Cliente>>;
+  /** `clienteId` dos pedidos que esperam ponto. É exatamente a fila da
+   * localização: pedido só fica `pendente_de_mapeamento` porque o cliente não
+   * tem coordenada, e quem só faz retirada nunca entra (a operação não paga
+   * para localizar quem vem buscar). */
+  clientesComEntregaPendente(): Promise<Set<string>>;
   salvarTrilhaBruta(id: string, bruta: TrilhaBruta): Promise<void>;
   listarTrilhasBrutasPendentes(): Promise<Array<{ id: string } & TrilhaBruta>>;
   atualizarTrilhaBruta(id: string, campos: Partial<TrilhaBruta>): Promise<void>;
@@ -178,8 +189,11 @@ export class RepositorioMemoria implements Repositorio {
       if (e.colecao === 'pedidos') {
         this.pedidos.set(e.id, e.dados);
       } else if (e.merge) {
+        // `set(merge)` do Firestore CRIA o doc quando não existe — o fake tem
+        // de fazer o mesmo, senão um teste passa aqui e o comportamento diverge
+        // em produção.
         const atual = this.clientes.get(e.id);
-        if (atual) this.clientes.set(e.id, { ...atual, ...e.dados });
+        this.clientes.set(e.id, { ...(atual ?? ({} as Cliente)), ...e.dados } as Cliente);
       } else {
         this.clientes.set(e.id, e.dados as Cliente);
       }
@@ -188,6 +202,23 @@ export class RepositorioMemoria implements Repositorio {
 
   async idsDePedidos(): Promise<Set<string>> {
     return new Set(this.pedidos.keys());
+  }
+
+  async clientesPorIds(ids: string[]): Promise<Array<{ id: string } & Cliente>> {
+    const saida: Array<{ id: string } & Cliente> = [];
+    for (const id of ids) {
+      const c = this.clientes.get(id);
+      if (c) saida.push({ ...c, id });
+    }
+    return saida;
+  }
+
+  async clientesComEntregaPendente(): Promise<Set<string>> {
+    const ids = new Set<string>();
+    for (const p of this.pedidos.values()) {
+      if (p.status === 'pendente_de_mapeamento') ids.add(p.clienteId);
+    }
+    return ids;
   }
 
   async salvarTrilhaBruta(id: string, bruta: TrilhaBruta): Promise<void> {

@@ -160,8 +160,13 @@ export async function criarApp({
   // ciclo, fazer isso dentro da importação estourava o tempo da requisição (o
   // navegador reportava como erro de CORS). O painel chama em lotes e mostra
   // progresso; `restantes` diz quando parar.
-  app.post('/api/geocodificacoes', { config: { papeis: ESCRITORIO } }, async () => {
-    return localizarEnderecos(repo, geocodificador);
+  app.post('/api/geocodificacoes', { config: { papeis: ESCRITORIO } }, async (req) => {
+    // `pular` acumula as FALHAS das chamadas anteriores: endereço que a Google
+    // não localiza continua sem coordenada e voltaria à frente da fila. Sem
+    // saltar, o painel repetiria o mesmo lote para sempre — pagando por ele.
+    const corpo = (req.body ?? {}) as { pular?: number };
+    const pular = Number.isFinite(corpo.pular) ? Number(corpo.pular) : 0;
+    return localizarEnderecos(repo, geocodificador, { pular });
   });
 
   app.get('/api/pedidos', { config: { papeis: ESCRITORIO } }, async () => repo.listarPedidos());

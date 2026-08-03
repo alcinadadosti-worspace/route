@@ -138,14 +138,14 @@ export async function decidirMudancaEndereco(
  * ~1300 endereços num ciclo — então roda fora da importação, em lotes, com o
  * painel repetindo enquanto `restantes` for maior que zero.
  */
-export async function localizarEnderecos(): Promise<{
+export async function localizarEnderecos(pular = 0): Promise<{
   restantes: number;
   processados: number;
   geocodificados: number;
   aproximados: number;
   semResultado: number;
 }> {
-  return post(`${BASE}/api/geocodificacoes`, {});
+  return post(`${BASE}/api/geocodificacoes`, { pular });
 }
 
 /**

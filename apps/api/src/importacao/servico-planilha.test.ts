@@ -316,3 +316,46 @@ test('extrairCoordenada: os formatos reais do cadastro, e lixo fora de AL não p
   assert.equal(extrairCoordenada(['-23.55052, -46.633308']), null);
   assert.equal(extrairCoordenada(['PROX A PISCINA DO VAL', null, undefined]), null);
 });
+
+test('coordenada digitada junto do número não vaza para o endereço', async () => {
+  // "67 -10.404108,-36.431132" no complemento: o texto inteiro iria para a
+  // busca do Google e para a tela do motorista. Fica só o número.
+  const repo = new RepositorioMemoria();
+  await importarPlanilha(
+    'c.xlsx',
+    xlsxDe([
+      linhaRota({ Complemento: '67 -10.404108,-36.431132', LogradouroEntrega: 'POVOADO SERRA',
+        ComplementoEntregaRetirada: '67 -10.404108,-36.431132', CodigoPedido: '555555555' }),
+    ]),
+    repo,
+  );
+  const cliente = (await repo.listarClientes())[0]!;
+  assert.equal(cliente.enderecoFiscal.numero, '67');
+  assert.deepEqual(cliente.coordenada, { lat: -10.404108, lng: -36.431132 });
+});
+
+test('o mesmo cliente em várias linhas gera UMA escrita, não uma por linha', async () => {
+  // 2019 pedidos para 1366 clientes no ciclo real: uma escrita por linha seriam
+  // ~650 gravações redundantes, e misturaria `set` completo com `merge` parcial
+  // do mesmo doc no mesmo lote.
+  const repo = new RepositorioMemoria();
+  const original = repo.gravarEmLote.bind(repo);
+  let escritasDeCliente = 0;
+  repo.gravarEmLote = async (escritas) => {
+    escritasDeCliente += escritas.filter((e) => e.colecao === 'clientes').length;
+    return original(escritas);
+  };
+
+  await importarPlanilha(
+    'c.xlsx',
+    xlsxDe([
+      linhaRota({ CodigoPedido: '600000001' }),
+      linhaRota({ CodigoPedido: '600000002' }),
+      linhaRota({ CodigoPedido: '600000003' }),
+    ]),
+    repo,
+  );
+  assert.equal((await repo.listarPedidos()).length, 3);
+  assert.equal((await repo.listarClientes()).length, 1);
+  assert.equal(escritasDeCliente, 1);
+});

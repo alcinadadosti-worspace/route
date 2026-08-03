@@ -86,10 +86,20 @@ export async function importarPlanilha(
     clientesExistentes.map(({ id, ...c }) => [id, c as Cliente]),
   );
 
-  const escritas: Array<
-    | { colecao: 'clientes'; id: string; dados: Partial<Cliente>; merge?: boolean }
-    | { colecao: 'pedidos'; id: string; dados: Pedido }
-  > = [];
+  const escritasDePedido: Array<{ colecao: 'pedidos'; id: string; dados: Pedido }> = [];
+  /**
+   * UMA escrita por cliente, não uma por linha. A mesma revendedora costuma ter
+   * várias notas no ciclo (2019 pedidos para 1366 clientes): empilhar uma
+   * escrita por linha mandaria ~650 gravações redundantes ao banco e — pior —
+   * misturaria um `set` do doc inteiro (1ª linha, cliente novo) com `merge`s
+   * parciais (linhas seguintes) do MESMO documento no mesmo lote, cuja ordem
+   * relativa não vale a pena depender. Acumular o estado final aqui resolve os
+   * dois de uma vez.
+   */
+  const escritasDeCliente = new Map<
+    string,
+    { dados: Partial<Cliente>; merge: boolean }
+  >();
   const vistos = new Set<string>();
   let pinsDoCadastro = 0;
   let aGeocodificar = 0;
@@ -186,7 +196,7 @@ export async function importarPlanilha(
         papel: linha.papel,
       };
       if (pinDoCadastro) pinsDoCadastro += 1;
-      escritas.push({ colecao: 'clientes', id: linha.pessoa, dados: cliente });
+      escritasDeCliente.set(linha.pessoa, { dados: cliente, merge: false });
     } else {
       // Mudança de endereço com ponto estabelecido (seção 8.3): o ponto foi
       // fixado para o endereço ANTIGO e pode não valer mais — o escritório
@@ -218,7 +228,14 @@ export async function importarPlanilha(
       if (referencia && !existente.observacoes) campos.observacoes = referencia;
 
       cliente = { ...existente, ...campos };
-      escritas.push({ colecao: 'clientes', id: linha.pessoa, dados: campos, merge: true });
+      // Cliente que NASCEU nesta remessa continua com a escrita completa: só
+      // acumula os campos por cima, sem virar `merge` de um doc que ainda não
+      // existe no banco.
+      const anterior = escritasDeCliente.get(linha.pessoa);
+      escritasDeCliente.set(linha.pessoa, {
+        dados: anterior ? { ...anterior.dados, ...campos } : campos,
+        merge: anterior ? anterior.merge : true,
+      });
     }
     clientes.set(linha.pessoa, cliente);
 
@@ -233,7 +250,7 @@ export async function importarPlanilha(
       });
     }
 
-    escritas.push({
+    escritasDePedido.push({
       colecao: 'pedidos',
       id: linha.codigoPedido,
       dados: {
@@ -268,7 +285,15 @@ export async function importarPlanilha(
     }
   }
 
-  await repo.gravarEmLote(escritas);
+  await repo.gravarEmLote([
+    ...[...escritasDeCliente].map(([id, e]) => ({
+      colecao: 'clientes' as const,
+      id,
+      dados: e.dados,
+      merge: e.merge,
+    })),
+    ...escritasDePedido,
+  ]);
 
   if (pinsDoCadastro > 0) {
     relatorio.alertas.push({

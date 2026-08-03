@@ -54,10 +54,15 @@ export function Importacao() {
     setErro(null);
     setLocalizando({ feitos: 0, restantes: 0 });
     let feitos = 0;
+    // `pular` acumula os endereços que a Google NÃO localizou: eles continuam
+    // sem coordenada e voltariam ao começo da fila. Sem saltá-los, este laço
+    // repetiria o mesmo lote para sempre — e cada volta é dinheiro gasto.
+    let pular = 0;
     try {
       for (;;) {
-        const r = await localizarEnderecos();
-        feitos += r.processados;
+        const r = await localizarEnderecos(pular);
+        feitos += r.geocodificados + r.aproximados;
+        pular += r.semResultado;
         setLocalizando({ feitos, restantes: r.restantes });
         if (r.restantes === 0 || r.processados === 0) break;
       }
