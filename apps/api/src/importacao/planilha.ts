@@ -1,5 +1,4 @@
 import { unzipSync } from 'fflate';
-import { XMLParser } from 'fast-xml-parser';
 import type { EnderecoFiscal, GeoPonto } from '@rota/shared';
 
 /**
@@ -13,6 +12,12 @@ import type { EnderecoFiscal, GeoPonto } from '@rota/shared';
  * O arquivo real é um xlsx SEM `sharedStrings.xml` (strings inline, prefixo de
  * namespace `x:`), uma aba só. Verificado byte a byte contra o export real do
  * ciclo 11 (2019 linhas) antes de escrever isto — não é suposição de formato.
+ *
+ * A leitura é em FLUXO, linha a linha, e não por árvore: com um parser DOM os
+ * 9 MB de XML viravam ~185 MB de objetos (20x de amplificação). Numa instância
+ * Render free de 512 MB isso estourava a memória — o processo morria, a
+ * requisição sumia sem resposta, e no navegador aparecia como "erro de CORS",
+ * que despista de vez. Aqui o pico é o texto mais UMA linha por vez.
  */
 
 export interface BlocoEndereco {
@@ -57,13 +62,18 @@ export type ResultadoPlanilha =
   | { ok: true; linhas: LinhaPlanilha[] }
   | { ok: false; motivo: string };
 
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '@_',
-  parseTagValue: false,
-  parseAttributeValue: false,
-  removeNSPrefix: true,
-});
+/** Sem estas colunas o arquivo não é o relatório que esperamos. */
+const OBRIGATORIAS = [
+  'codigopedido',
+  'notafiscal',
+  'pessoa',
+  'nomepessoa',
+  'tipodeentrega',
+  'situacaocomercial',
+  'logradouroentrega',
+  'cidadeentregaretirada',
+  'ufentregaretirada',
+];
 
 export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
   let arquivos: Record<string, Uint8Array>;
@@ -72,53 +82,39 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
   } catch {
     return { ok: false, motivo: 'Arquivo não é um .xlsx válido (zip corrompido)' };
   }
-  const caminhoSheet = Object.keys(arquivos).find((n) => /^xl\/worksheets\/sheet1\.xml$/.test(n));
-  if (!caminhoSheet) {
+  const caminho = Object.keys(arquivos).find((n) => n === 'xl/worksheets/sheet1.xml');
+  if (!caminho) {
     return { ok: false, motivo: 'Planilha sem a aba de dados (xl/worksheets/sheet1.xml)' };
   }
+  const xml = Buffer.from(arquivos[caminho]!).toString('utf8');
 
-  let doc: any;
-  try {
-    doc = parser.parse(Buffer.from(arquivos[caminhoSheet]!).toString('utf8'), true);
-  } catch {
-    return { ok: false, motivo: 'Não deu para ler o conteúdo da planilha' };
-  }
-
-  const rows: any[] = arr(doc?.worksheet?.sheetData?.row);
-  if (rows.length < 2) return { ok: false, motivo: 'Planilha sem linhas de dados' };
-
-  // Cabeçalho → coluna. Casamento por nome NORMALIZADO (sem acento, sem
-  // espaço), nunca por posição: o ERP pode reordenar colunas num export futuro
-  // e um mapeamento posicional leria o campo errado sem ninguém perceber.
-  const colunas = new Map<string, string>(); // letra → nome normalizado
-  for (const c of arr(rows[0]?.c)) {
-    const letra = letraDe(String(c?.['@_r'] ?? ''));
-    const nome = normalizar(texto(c));
-    if (letra && nome) colunas.set(letra, nome);
-  }
-  const obrigatorias = [
-    'codigopedido',
-    'notafiscal',
-    'pessoa',
-    'nomepessoa',
-    'tipodeentrega',
-    'situacaocomercial',
-    'logradouroentrega',
-    'cidadeentregaretirada',
-    'ufentregaretirada',
-  ];
-  const presentes = new Set(colunas.values());
-  const faltando = obrigatorias.filter((c) => !presentes.has(c));
-  if (faltando.length > 0) {
-    return { ok: false, motivo: `Planilha sem as colunas: ${faltando.join(', ')}` };
-  }
-
+  // Cabeçalho → coluna, casado por nome NORMALIZADO e nunca por posição: o ERP
+  // pode reordenar colunas num export futuro, e um mapeamento posicional leria
+  // o campo errado sem ninguém perceber.
+  const colunas = new Map<string, string>();
   const linhas: LinhaPlanilha[] = [];
-  for (const row of rows.slice(1)) {
-    const valores = new Map<string, string>(); // nome normalizado → valor
-    for (const c of arr(row?.c)) {
-      const nome = colunas.get(letraDe(String(c?.['@_r'] ?? '')));
-      if (nome) valores.set(nome, texto(c));
+  let viuCabecalho = false;
+
+  for (const bruta of varrerLinhas(xml)) {
+    if (!viuCabecalho) {
+      for (const [letra, valor] of celulas(bruta)) {
+        const nome = normalizar(valor);
+        if (nome) colunas.set(letra, nome);
+      }
+      if (colunas.size === 0) continue; // linha em branco antes do cabeçalho
+      viuCabecalho = true;
+      const presentes = new Set(colunas.values());
+      const faltando = OBRIGATORIAS.filter((c) => !presentes.has(c));
+      if (faltando.length > 0) {
+        return { ok: false, motivo: `Planilha sem as colunas: ${faltando.join(', ')}` };
+      }
+      continue;
+    }
+
+    const valores = new Map<string, string>();
+    for (const [letra, valor] of celulas(bruta)) {
+      const nome = colunas.get(letra);
+      if (nome) valores.set(nome, valor);
     }
     const v = (nome: string) => (valores.get(nome) ?? '').trim();
     if (!v('codigopedido')) continue; // linha vazia de rodapé
@@ -163,7 +159,50 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
     });
   }
 
+  if (!viuCabecalho) return { ok: false, motivo: 'Planilha sem linhas de dados' };
   return { ok: true, linhas };
+}
+
+/**
+ * `<row>…</row>` uma por vez. `row` não aninha, então um par não-guloso casa a
+ * linha inteira; `matchAll` é preguiçoso e não materializa todas de uma vez.
+ *
+ * As regex deste arquivo já foram corrompidas por edição via script: um `\b`
+ * escrito por interpolação virou o caractere BACKSPACE literal dentro do
+ * padrão, e a busca passou a procurar algo que nunca existe — zero linhas,
+ * sem erro nenhum. Mexer aqui é só com edição direta.
+ */
+function* varrerLinhas(xml: string): Generator<string> {
+  const re = /<(?:\w+:)?row\b[^>]*>([\s\S]*?)<\/(?:\w+:)?row>/g;
+  for (const m of xml.matchAll(re)) yield m[1]!;
+}
+
+/** `[letra da coluna, valor]` de cada célula. Suporta `<v>` (o que o ERP usa) e
+ * `<is><t>` (string inline), célula vazia auto-fechada, e desescapa entidades. */
+function* celulas(linha: string): Generator<[string, string]> {
+  const re = /<(?:\w+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?c>)/g;
+  for (const m of linha.matchAll(re)) {
+    const ref = /\br="([A-Z]+)\d+"/.exec(m[1] ?? '');
+    if (!ref) continue;
+    const interno = m[2];
+    if (interno === undefined) {
+      yield [ref[1]!, ''];
+      continue;
+    }
+    const valor = /<(?:\w+:)?(?:v|t)>([\s\S]*?)<\/(?:\w+:)?(?:v|t)>/.exec(interno);
+    yield [ref[1]!, valor ? desescapar(valor[1]!) : ''];
+  }
+}
+
+/** `&amp;` por último: desfazer antes reintroduziria entidades vindas do texto. */
+function desescapar(t: string): string {
+  return t
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)))
+    .replace(/&amp;/g, '&');
 }
 
 /**
@@ -173,9 +212,8 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
  *
  * A limpeza que existe é uma só, e é obrigatória: parte das revendedoras digita
  * a COORDENADA GPS junto do número ("67 -10.404108,-36.431132"). Esse texto
- * inteiro iria para a busca do Google e estragaria a consulta do endereço —
- * justamente o cliente que ganhou pin exato acabaria com o endereço ilegível
- * no cadastro e na tela do motorista. Fica só o que vem antes da coordenada.
+ * inteiro iria para a busca do Google e para a tela do motorista — justamente o
+ * cliente que ganhou pin exato ficaria com o endereço ilegível.
  */
 export function enderecoDeBloco(b: BlocoEndereco): EnderecoFiscal {
   return {
@@ -188,8 +226,7 @@ export function enderecoDeBloco(b: BlocoEndereco): EnderecoFiscal {
   };
 }
 
-/** Corta a partir do primeiro sinal de coordenada (o `-` de uma latitude ou o
- * grau do formato DMS). Sobrando nada, vira "S/N". */
+/** Tira a coordenada colada no número. Sobrando nada, vira "S/N". */
 function numeroLimpo(complemento: string): string {
   const semGps = complemento
     .replace(/-?\d{1,2}[.,]\d{4,9}\s*[;,]?\s*-?\d{1,2}[.,]\d{4,9}/g, '')
@@ -266,6 +303,9 @@ function pesoKg(bruto: string): number | null {
   return Math.round(gramas) / 1000;
 }
 
+/** `"Tipo de Entrega"` → `tipodeentrega`. O range de diacríticos vai como
+ * ESCAPE (`̀-ͯ`), nunca como caractere literal: o literal já se
+ * corrompeu numa edição e a normalização passou a devolver lixo em silêncio. */
 function normalizar(s: string): string {
   return s
     .normalize('NFD')
@@ -276,17 +316,4 @@ function normalizar(s: string): string {
 
 function somenteDigitos(s: string): string {
   return s.replace(/\D/g, '');
-}
-
-function letraDe(ref: string): string {
-  return /^([A-Z]+)\d+$/.exec(ref)?.[1] ?? '';
-}
-
-function texto(celula: any): string {
-  const v = celula?.v;
-  return v === undefined || v === null ? '' : String(v);
-}
-
-function arr(x: unknown): any[] {
-  return x === undefined || x === null ? [] : Array.isArray(x) ? x : [x];
 }

@@ -359,3 +359,35 @@ test('o mesmo cliente em várias linhas gera UMA escrita, não uma por linha', a
   assert.equal((await repo.listarClientes()).length, 1);
   assert.equal(escritasDeCliente, 1);
 });
+
+test('lê a planilha INTEIRA, não só as primeiras linhas', async () => {
+  // A varredura em fluxo (que substituiu o parser DOM para não estourar a
+  // memória) já se quebrou uma vez de forma silenciosa: um `\b` virou caractere
+  // de controle dentro da regex, ela deixou de casar QUALQUER linha e a
+  // importação respondeu "planilha sem linhas de dados" sem erro nenhum.
+  // Escala aqui é o que separa "leu" de "leu tudo".
+  const repo = new RepositorioMemoria();
+  const muitas = Array.from({ length: 500 }, (_, i) =>
+    linhaRota({
+      CodigoPedido: String(700000000 + i),
+      Pessoa: String(900000 + i),
+      NomePessoa: `REVENDEDORA ${i}`,
+    }),
+  );
+  const rel = await importarPlanilha('grande.xlsx', xlsxDe(muitas), repo);
+
+  assert.equal(rel.total, 500);
+  assert.equal(rel.importados, 500);
+  assert.equal((await repo.listarPedidos()).length, 500);
+  assert.equal((await repo.listarClientes()).length, 500);
+});
+
+test('valor com & e acento no nome sobrevivem ao desescape', async () => {
+  const repo = new RepositorioMemoria();
+  await importarPlanilha(
+    'c.xlsx',
+    xlsxDe([linhaRota({ NomePessoa: 'MARIA & JOSÉ DA CONCEIÇÃO', CodigoPedido: '800000001' })]),
+    repo,
+  );
+  assert.equal((await repo.listarClientes())[0]!.nome, 'MARIA & JOSÉ DA CONCEIÇÃO');
+});

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CentroDistribuicao, RelatorioImportacao } from '@rota/shared';
-import { importarXmls, listarCds, localizarEnderecos } from '../api';
+import { importarArquivos, listarCds, localizarEnderecos } from '../api';
 
-/** Fluxo 1 — o operador arrasta os XMLs das notas do dia (RF-01, RF-04). */
+/** Fluxo 1 — o operador solta a planilha do ERP (ou XMLs de NF-e) do dia (RF-01, RF-04). */
 export function Importacao() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [arrastando, setArrastando] = useState(false);
@@ -37,7 +37,7 @@ export function Importacao() {
     setEnviando(true);
     setErro(null);
     try {
-      setRelatorio(await importarXmls(aceitos));
+      setRelatorio(await importarArquivos(aceitos));
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha na importação');
     } finally {

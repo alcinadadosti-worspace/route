@@ -25,7 +25,7 @@ async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> 
   return fetch(url, { ...init, headers });
 }
 
-export async function importarXmls(arquivos: File[]): Promise<RelatorioImportacao> {
+export async function importarArquivos(arquivos: File[]): Promise<RelatorioImportacao> {
   const form = new FormData();
   for (const arquivo of arquivos) form.append('arquivos', arquivo, arquivo.name);
   const resposta = await apiFetch(`${BASE}/api/importacoes`, { method: 'POST', body: form });
