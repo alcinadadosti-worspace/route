@@ -14,3 +14,4 @@ export * from './trilha.js';
 export * from './aviso.js';
 export * from './agrupamento.js';
 export * from './posicao.js';
+export * from './datahora.js';

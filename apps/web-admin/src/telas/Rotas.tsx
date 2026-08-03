@@ -2,6 +2,8 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   distanciaEmMetros,
   formatarCarga,
+  formatarHora,
+  haQuantoTempo,
   posicaoEstaVelha,
   type CentroDistribuicao,
   type GrupoSugerido,
@@ -46,9 +48,8 @@ const ROTULO_RESULTADO: Record<string, string> = {
   recusa: 'Recusou a mercadoria',
 };
 
-function horaDe(iso: string): string {
-  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-}
+/** Hora de um campo ISO do banco. Data torta vira traço, nunca "Invalid Date". */
+const horaDe = formatarHora;
 
 const ROTULO_ROTA: Record<string, { texto: string; classe: string }> = {
   rascunho: { texto: 'Rascunho', classe: '' },
@@ -165,6 +166,13 @@ export function Rotas() {
   const [posicoes, setPosicoes] = useState<Record<string, PosicaoMotorista>>({});
   const [agoraMs, setAgoraMs] = useState(() => Date.now());
   /**
+   * Última vez que o painel CONSEGUIU falar com a API. Sem isto, API fora do ar
+   * e motorista sem sinal produzem o MESMO sintoma na tela — tudo parado com
+   * "há 25 min" —, e o operador conclui a causa errada: ligaria para o
+   * motorista quando o problema é o servidor.
+   */
+  const [contatoEm, setContatoEm] = useState<number | null>(null);
+  /**
    * Enquanto houver rota ABERTA (publicada ou em execução), o painel se
    * atualiza sozinho. Antes ele só ligava com rota JÁ em execução — quem
    * abrisse a tela de manhã, antes de o motorista começar, ficava com o
@@ -185,6 +193,7 @@ export function Rotas() {
       obterAcompanhamento()
         .then((a) => {
           if (!vivo) return;
+          setContatoEm(Date.now());
           setPosicoes(a.posicoes);
           const porId = new Map(a.rotas.map((r) => [r.id, r]));
           setRotas((atuais) =>
@@ -499,6 +508,14 @@ export function Rotas() {
           <button onClick={carregar}>Atualizar</button>
         </div>
         {aviso?.onde === 'acompanhamento' && <div className="alerta">{aviso.texto}</div>}
+        {/* API fora do ar e motorista sem sinal davam o MESMO sintoma: tudo
+            parado. Dizer qual é evita ligar para a pessoa errada. */}
+        {temRotaAberta && contatoEm !== null && agoraMs - contatoEm > 90_000 && (
+          <div className="alerta">
+            ⚠ Sem contato com o servidor {haQuantoTempo(new Date(contatoEm).toISOString(), agoraMs)}
+            {' '}— o que está na tela pode estar desatualizado. Não é sinal do motorista.
+          </div>
+        )}
         {rotas.length === 0 && <div className="vazio">Nenhuma rota publicada ainda.</div>}
         {rotas.length > 0 && (
           <table>
@@ -1043,7 +1060,10 @@ function PosicaoDoMotorista({
   if (!posicao) {
     return <span className="sub">— sem posição</span>;
   }
-  const idadeMin = Math.max(0, Math.round((agoraMs - Date.parse(posicao.em)) / 60_000));
+  // `haQuantoTempo` em vez da conta na mão: com `em` corrompido, `Date.parse`
+  // devolvia NaN e a tela mostrava "há NaN min" — que não diz nada a quem
+  // precisa decidir se liga para o motorista.
+  const quando = haQuantoTempo(posicao.em, agoraMs);
   const velha = posicaoEstaVelha(posicao, agoraMs);
 
   // Próxima parada por resolver: é para onde ele está indo.
@@ -1062,7 +1082,7 @@ function PosicaoDoMotorista({
         title="Abrir no mapa"
         onClick={(e) => e.stopPropagation()}
       >
-        {velha ? '⚠' : '📍'} {idadeMin === 0 ? 'agora' : `há ${idadeMin} min`}
+        {velha ? '⚠' : '📍'} {quando}
       </a>
       {km != null && proxima && (
         <div className="sub">

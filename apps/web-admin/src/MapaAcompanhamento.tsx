@@ -3,6 +3,7 @@ import { LngLatBounds, Map as MapaLibre, Marker, Popup } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   decodificarPolyline,
+  haQuantoTempo,
   posicaoEstaVelha,
   validarGeoPonto,
   type GeoPonto,
@@ -151,12 +152,11 @@ export function MapaAcompanhamento({
       elemento.textContent = '🚚';
       marcadorMotoristaRef.current = new Marker({ element: elemento }).addTo(mapa);
     }
-    const idadeMin = Math.max(0, Math.round((agoraMs - Date.parse(posicao.em)) / 60_000));
     marcadorMotoristaRef.current
       .setLngLat([ponto.lng, ponto.lat])
       .setPopup(
         new Popup({ offset: 20 }).setText(
-          `Motorista · ${idadeMin === 0 ? 'agora' : `há ${idadeMin} min`} · GPS ±${posicao.precisaoM} m`,
+          `Motorista · ${haQuantoTempo(posicao.em, agoraMs)} · GPS ±${posicao.precisaoM} m`,
         ),
       );
   }, [posicao, agoraMs]);

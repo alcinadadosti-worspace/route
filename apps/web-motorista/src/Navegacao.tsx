@@ -4,6 +4,7 @@ import {
   decodificarPolyline,
   distanciaAoTracadoEmMetros,
   deslocamentoDizDirecao,
+  formatarHora,
   distanciaEmMetros,
   linkWhatsApp,
   mensagemDeChegada,
@@ -480,10 +481,7 @@ export function Navegacao({
             {parada.chegouEm && (
               <div className="nav-chegada-carimbo">
                 ✔ chegada registrada às{' '}
-                {new Date(parada.chegouEm).toLocaleTimeString('pt-BR', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+                {formatarHora(parada.chegouEm)}
               </div>
             )}
           </div>
