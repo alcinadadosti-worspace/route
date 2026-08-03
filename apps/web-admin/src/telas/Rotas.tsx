@@ -3,6 +3,7 @@ import {
   distanciaEmMetros,
   formatarCarga,
   type CentroDistribuicao,
+  type GrupoSugerido,
   type Cliente,
   type Entrega,
   type Pedido,
@@ -11,6 +12,7 @@ import {
   type Usuario,
 } from '@rota/shared';
 import {
+  agruparPorRegiao,
   apagarPedido,
   apagarRota,
   listarCds,
@@ -150,6 +152,27 @@ export function Rotas() {
     () => pedidos.filter((p) => p.status === 'pendente_de_mapeamento'),
     [pedidos],
   );
+
+  /** Sugestão de regiões (null = ainda não pedida nesta sessão da tela). */
+  const [grupos, setGrupos] = useState<GrupoSugerido[] | null>(null);
+  const [carregandoGrupos, setCarregandoGrupos] = useState(false);
+  const [erroGrupos, setErroGrupos] = useState<string | null>(null);
+
+  async function sugerirGrupos() {
+    setCarregandoGrupos(true);
+    setErroGrupos(null);
+    try {
+      // Passa o CD quando já se sabe qual é: assim a sugestão sai ordenada pela
+      // distância dele e não mistura pedidos do outro galpão — que a montagem
+      // barraria depois, e sugerir seria oferecer o erro.
+      const r = await agruparPorRegiao(cdId || undefined);
+      setGrupos(r.grupos);
+    } catch (e) {
+      setErroGrupos(e instanceof Error ? e.message : 'Falha ao agrupar');
+    } finally {
+      setCarregandoGrupos(false);
+    }
+  }
 
   const todosProntosMarcados = prontos.length > 0 && prontos.every((p) => selecionados.has(p.id));
   const algumProntoMarcado = prontos.some((p) => selecionados.has(p.id));
@@ -644,6 +667,52 @@ export function Rotas() {
         {prontos.length === 0 && (
           <div className="vazio">
             Nenhum pedido pronto para rota — importe notas ou resolva os mapeamentos pendentes.
+          </div>
+        )}
+
+        {/* Agrupamento geográfico: o passo ANTES de otimizar a ordem. O OSRM
+            responde "em que ordem visitar estes N"; escolher QUAIS são os N no
+            olho só funciona com meia dúzia de pedidos. Não decide nada — cada
+            grupo é um clique que marca a seleção, e o operador segue do jeito
+            de sempre. */}
+        {prontos.length > 0 && (
+          <div className="agrupamento">
+            <div className="cabecalho-secao">
+              <strong>Sugestão de regiões</strong>
+              <button disabled={carregandoGrupos} onClick={() => void sugerirGrupos()}>
+                {carregandoGrupos ? 'agrupando…' : '🗺 agrupar por região'}
+              </button>
+            </div>
+            {erroGrupos && <div className="erro">{erroGrupos}</div>}
+            {grupos !== null && grupos.length === 0 && (
+              <div className="vazio">Nada a agrupar com os pedidos prontos de agora.</div>
+            )}
+            {grupos !== null && grupos.length > 0 && (
+              <>
+                <p style={{ color: 'var(--texto-2)', margin: '4px 0 8px' }}>
+                  Do mais distante para o mais perto do CD — a região longe é a que precisa do dia
+                  inteiro. Clicar marca os pedidos do grupo; a ordem das paradas continua saindo da
+                  otimização.
+                </p>
+                <div className="grupos">
+                  {grupos.map((g, i) => (
+                    <button
+                      key={i}
+                      className="grupo"
+                      onClick={() => setSelecionados(new Set(g.ids))}
+                      title={`Selecionar as ${g.ids.length} paradas desta região`}
+                    >
+                      <strong>{g.municipios.slice(0, 3).join(' · ')}</strong>
+                      {g.municipios.length > 3 && <span> +{g.municipios.length - 3}</span>}
+                      <div className="grupo-numeros">
+                        {g.ids.length} paradas · {g.extensaoKm} km de extensão
+                        {g.distanciaDoCdKm != null && ` · ${g.distanciaDoCdKm} km do CD`}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 

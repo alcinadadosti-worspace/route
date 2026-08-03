@@ -13,6 +13,7 @@ import {
 import { importarPlanilha } from './importacao/servico-planilha.js';
 import { localizarEnderecos } from './importacao/geocodificacao-lote.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
+import { agruparPorRegiao } from '@rota/shared';
 import { FORMATO_ROTA_ID } from './rotas/comum.js';
 import { calcularProdutividade } from './produtividade.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
@@ -398,6 +399,54 @@ export async function criarApp({
   });
 
   // RF-11: prévia de rota — ordem otimizada, traçado e estimativas via OSRM.
+  /**
+   * Sugestão de agrupamento geográfico dos pedidos prontos de um CD — o passo
+   * ANTES de otimizar a ordem. O `/trip` responde "em que ordem visitar estes
+   * N"; alguém precisa escolher QUAIS são os N, e no olho isso só funciona com
+   * meia dúzia de pedidos. Não grava nada: devolve grupos, e o operador
+   * seleciona o que quiser montar.
+   */
+  app.get('/api/rotas/agrupamento', { config: { papeis: ESCRITORIO } }, async (req) => {
+    const { cdId, maximoPorRota, minimoPorRota } = req.query as {
+      cdId?: string;
+      maximoPorRota?: string;
+      minimoPorRota?: string;
+    };
+    const [pedidos, clientes, cds] = await Promise.all([
+      repo.listarPedidos(),
+      repo.listarClientes(),
+      repo.obterCds(),
+    ]);
+    const porCliente = new Map(clientes.map((c) => [c.id, c]));
+    const pontos = [];
+    for (const pedido of pedidos) {
+      if (pedido.status !== 'pronto_para_rota') continue;
+      // Pedido de outro CD não entra: misturar galpões numa rota é erro de
+      // seleção que a montagem já barra — sugerir isso seria oferecer o erro.
+      if (cdId && pedido.cdId && pedido.cdId !== cdId) continue;
+      const cliente = porCliente.get(pedido.clienteId);
+      // Override de entrega (8.4) manda sobre o cadastro, como na coleta.
+      const coordenada =
+        pedido.usarEnderecoEntrega === true
+          ? (pedido.coordenadaEntrega ?? null)
+          : (cliente?.coordenada ?? null);
+      const municipio =
+        pedido.usarEnderecoEntrega === true && pedido.enderecoEntrega
+          ? pedido.enderecoEntrega.municipio
+          : (cliente?.enderecoFiscal.municipio ?? '');
+      if (!coordenada) continue;
+      pontos.push({ id: pedido.id, coordenada, municipio });
+    }
+
+    const origem = cdId ? (cds[cdId]?.coordenada ?? null) : null;
+    const grupos = agruparPorRegiao(pontos, {
+      origem,
+      maximoPorRota: Number(maximoPorRota) || undefined,
+      minimoPorRota: Number(minimoPorRota) || undefined,
+    });
+    return { grupos, totalProntos: pontos.length };
+  });
+
   app.post('/api/rotas/previa', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
     if (!osrm) {
       return reply.code(503).send({ erro: 'Roteirizador indisponível (OSRM_URL não configurada)' });

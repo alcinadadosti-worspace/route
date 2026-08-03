@@ -711,3 +711,31 @@ tr.dossie-linha .dossie-bloco {
   color: #121212;
   font-weight: 700;
 }
+
+/* Sugestão de regiões, acima da lista de prontos. Cada grupo é um alvo de
+   clique grande: o operador escolhe a região do dia e a seleção já vai marcada. */
+.agrupamento {
+  margin: 12px 0 16px;
+}
+.agrupamento .grupos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agrupamento .grupo {
+  flex: 1 1 220px;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  background: var(--fundo-2, transparent);
+  cursor: pointer;
+}
+.agrupamento .grupo:hover {
+  border-color: var(--acento, var(--texto-2));
+}
+.agrupamento .grupo-numeros {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--texto-2);
+}

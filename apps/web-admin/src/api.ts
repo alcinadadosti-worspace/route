@@ -5,6 +5,7 @@ import type {
   Pedido,
   PreviaRota,
   RelatorioImportacao,
+  GrupoSugerido,
   RelatorioProdutividade,
   Rota,
   Usuario,
@@ -228,4 +229,18 @@ function erroHttp(status: number): string {
   }
   if (status >= 500) return `Serviço indisponível (HTTP ${status}) — pode estar reiniciando.`;
   return `Falha na requisição (HTTP ${status}).`;
+}
+
+/**
+ * Sugestão de regiões para montar as rotas do dia — o passo antes de otimizar
+ * a ordem. Não grava nada: cada grupo é uma seleção pronta que o operador
+ * aceita ou ignora.
+ */
+export async function agruparPorRegiao(
+  cdId?: string,
+): Promise<{ grupos: GrupoSugerido[]; totalProntos: number }> {
+  const q = cdId ? `?cdId=${encodeURIComponent(cdId)}` : '';
+  const resposta = await apiFetch(`${BASE}/api/rotas/agrupamento${q}`);
+  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
+  return resposta.json();
 }
