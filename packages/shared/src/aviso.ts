@@ -23,7 +23,11 @@ export interface ParametrosAviso {
    * pior do que não ter avisado.
    */
   margemPorParadaMin: number;
-  /** Aviso do começo do dia. `{janela}` vira "entre 10h20 e 11h20". */
+  /**
+   * Aviso do começo do dia. O padrão NÃO promete horário — a estimativa fura ao
+   * longo do dia e a promessa quebrada vira cobrança. Quem quiser de volta põe
+   * `{janela}` no texto pela `config/geral.aviso`, e vira "entre 10h20 e 11h20".
+   */
   textoRota: string;
   /** Aviso de aproximação. `{quando}` vira "em uns 10 minutos". */
   textoChegando: string;
@@ -40,8 +44,14 @@ export const PARAMETROS_AVISO_PADRAO: ParametrosAviso = {
   minutosPorParada: 10,
   margemBaseMin: 20,
   margemPorParadaMin: 6,
+  // SEM horário de propósito (decisão da operação em 03/08/2026). A janela é
+  // uma estimativa que piora ao longo do dia: prometer "entre 16h40 e 18h" e
+  // chegar às 19h20 gera a cobrança que o aviso queria evitar. O que o aviso
+  // precisa é de UMA resposta — "tem alguém aí?" —, e isso não depende de hora.
+  // O `{janela}` continua funcionando para quem quiser de volta pela
+  // `config/geral.aviso`, sem deploy.
   textoRota:
-    'Olá! Aqui é da entrega do Grupo Alcina Maria. Saí para a rota e devo chegar aí {janela}. ' +
+    'Olá! Aqui é da entrega do Grupo Alcina Maria. Saí para a rota e passo aí hoje. ' +
     'Tem alguém no local para receber?',
   textoChegando: 'Estou chegando com a sua entrega {quando}.',
   textoRecibo: 'Entrega registrada às {hora}{quem}.{referencia}{itens}\n\nGrupo Alcina Maria.',

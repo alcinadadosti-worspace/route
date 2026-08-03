@@ -84,10 +84,23 @@ test('janela nunca começa no passado', () => {
   assert.equal(janela.deMin, 0);
 });
 
-test('mensagem do dia embute a janela; a de chegada, o tempo restante', () => {
+test('mensagem do dia NAO promete horario; a de chegada leva o tempo restante', () => {
+  // Decisao da operacao (03/08/2026): a janela piora ao longo do dia, e
+  // prometer "entre 16h40 e 18h" para chegar as 19h20 gera a cobranca que o
+  // aviso queria evitar. O que o aviso precisa e de UMA resposta — "tem
+  // alguem ai?" — e isso nao depende de hora.
   const rota = mensagemDeRota(OITO_DA_MANHA, 40, 3, PARAMETROS_AVISO_PADRAO);
-  assert.match(rota, /entre 8h30 e 9h50/);
+  assert.doesNotMatch(rota, /\d+h\d+/);
+  assert.match(rota, /passo aí hoje/);
+  assert.match(rota, /Tem alguém no local para receber\?/);
   assert.ok(!rota.includes('{janela}'), 'o modelo não pode vazar para o cliente');
+
+  // O recurso continua disponivel para quem quiser de volta sem deploy.
+  const comHora = mensagemDeRota(OITO_DA_MANHA, 40, 3, {
+    ...PARAMETROS_AVISO_PADRAO,
+    textoRota: 'Chego {janela}.',
+  });
+  assert.match(comHora, /entre 8h30 e 9h50/);
 
   assert.match(mensagemDeChegada(10, PARAMETROS_AVISO_PADRAO), /em uns 10 minutos/);
   assert.match(mensagemDeChegada(1, PARAMETROS_AVISO_PADRAO), /agora/);
