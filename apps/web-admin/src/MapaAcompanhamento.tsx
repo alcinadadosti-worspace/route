@@ -4,6 +4,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   decodificarPolyline,
   posicaoEstaVelha,
+  validarGeoPonto,
+  type GeoPonto,
   type PosicaoMotorista,
   type Rota,
 } from '@rota/shared';
@@ -41,11 +43,27 @@ export function MapaAcompanhamento({
 
     const tracado = decodificarPolyline(rota.polylinePlanejada ?? '');
     const linha: Array<[number, number]> = tracado.map((p) => [p.lng, p.lat]);
-    const cd: [number, number] = [rota.origemCoordenada.lng, rota.origemCoordenada.lat];
-    const limites = [...linha, cd, ...rota.paradas.map((p): [number, number] => [
-      p.coordenada.lng,
-      p.coordenada.lat,
-    ])].reduce((b, c) => b.extend(c), new LngLatBounds(cd, cd));
+    const origem = validarGeoPonto(rota.origemCoordenada);
+    // Sem origem válida não há por onde começar o enquadramento. Não deveria
+    // acontecer (a publicação exige o CD), mas um doc torto não pode derrubar
+    // a aba inteira de acompanhamento.
+    if (!origem) return;
+    const cd: [number, number] = [origem.lng, origem.lat];
+
+    // Parada sem coordenada utilizável fica FORA do mapa em vez de estourar o
+    // enquadramento com NaN — que levaria o MapLibre a um zoom impossível e
+    // apagaria o mapa inteiro por causa de uma parada.
+    const paradasNoMapa = rota.paradas
+      .map((p, i) => ({ parada: p, numero: i + 1, ponto: validarGeoPonto(p.coordenada) }))
+      .filter((x): x is { parada: (typeof rota.paradas)[number]; numero: number; ponto: GeoPonto } =>
+        x.ponto !== null,
+      );
+
+    const limites = [
+      ...linha,
+      cd,
+      ...paradasNoMapa.map((x): [number, number] => [x.ponto.lng, x.ponto.lat]),
+    ].reduce((b, c) => b.extend(c), new LngLatBounds(cd, cd));
 
     const mapa = new MapaLibre({
       container: containerRef.current,
@@ -89,10 +107,10 @@ export function MapaAcompanhamento({
 
     // Cor por STATUS: o que interessa aqui não é a ordem, é o que já saiu do
     // caminhão. Verde entregue, vermelho insucesso, laranja ainda por fazer.
-    for (const [i, parada] of rota.paradas.entries()) {
+    for (const { parada, numero, ponto } of paradasNoMapa) {
       const elemento = document.createElement('div');
       elemento.className = `marcador-parada acomp-${parada.status}`;
-      elemento.textContent = String(i + 1);
+      elemento.textContent = String(numero);
       const rotulo =
         parada.status === 'entregue'
           ? 'entregue'
@@ -100,8 +118,8 @@ export function MapaAcompanhamento({
             ? 'insucesso'
             : 'a entregar';
       new Marker({ element: elemento })
-        .setLngLat([parada.coordenada.lng, parada.coordenada.lat])
-        .setPopup(new Popup({ offset: 18 }).setText(`${i + 1}. ${parada.nome} — ${rotulo}`))
+        .setLngLat([ponto.lng, ponto.lat])
+        .setPopup(new Popup({ offset: 18 }).setText(`${numero}. ${parada.nome} — ${rotulo}`))
         .addTo(mapa);
     }
 
@@ -121,7 +139,8 @@ export function MapaAcompanhamento({
     if (!mapa) return;
     const velha = posicao ? posicaoEstaVelha(posicao, agoraMs) : true;
 
-    if (!posicao || velha) {
+    const ponto = posicao ? validarGeoPonto(posicao) : null;
+    if (!posicao || velha || !ponto) {
       marcadorMotoristaRef.current?.remove();
       marcadorMotoristaRef.current = null;
       return;
@@ -134,7 +153,7 @@ export function MapaAcompanhamento({
     }
     const idadeMin = Math.max(0, Math.round((agoraMs - Date.parse(posicao.em)) / 60_000));
     marcadorMotoristaRef.current
-      .setLngLat([posicao.lng, posicao.lat])
+      .setLngLat([ponto.lng, ponto.lat])
       .setPopup(
         new Popup({ offset: 20 }).setText(
           `Motorista · ${idadeMin === 0 ? 'agora' : `há ${idadeMin} min`} · GPS ±${posicao.precisaoM} m`,

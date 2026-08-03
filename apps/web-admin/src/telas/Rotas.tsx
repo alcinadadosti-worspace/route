@@ -21,7 +21,7 @@ import {
   listarClientes,
   listarEntregasDaRota,
   listarPedidos,
-  listarPosicoes,
+  obterAcompanhamento,
   listarRotas,
   listarUsuarios,
   previaDeRota,
@@ -164,13 +164,53 @@ export function Rotas() {
    */
   const [posicoes, setPosicoes] = useState<Record<string, PosicaoMotorista>>({});
   const [agoraMs, setAgoraMs] = useState(() => Date.now());
-  const temRotaNaRua = rotas.some((r) => r.status === 'em_execucao');
+  /**
+   * Enquanto houver rota ABERTA (publicada ou em execução), o painel se
+   * atualiza sozinho. Antes ele só ligava com rota JÁ em execução — quem
+   * abrisse a tela de manhã, antes de o motorista começar, ficava com o
+   * progresso congelado em "0/12" e sem rastreio, e nada dizia que era preciso
+   * clicar em Atualizar.
+   *
+   * Funde o que muda em cima do que já está na tela, em vez de recarregar
+   * tudo: o traçado da rota é o campo pesado, não muda nunca, e recarregá-lo a
+   * cada 20 s desmontaria o mapa que o operador está olhando.
+   */
+  const temRotaAberta = rotas.some(
+    (r) => r.status === 'publicada' || r.status === 'em_execucao',
+  );
   useEffect(() => {
-    if (!temRotaNaRua) return;
+    if (!temRotaAberta) return;
     let vivo = true;
     const buscar = () => {
-      listarPosicoes()
-        .then((p) => vivo && setPosicoes(p))
+      obterAcompanhamento()
+        .then((a) => {
+          if (!vivo) return;
+          setPosicoes(a.posicoes);
+          const porId = new Map(a.rotas.map((r) => [r.id, r]));
+          setRotas((atuais) =>
+            atuais.map((rota) => {
+              const novo = porId.get(rota.id);
+              if (!novo) return rota;
+              const statusPorPedido = new Map(novo.paradas.map((p) => [p.pedidoId, p]));
+              return {
+                ...rota,
+                status: novo.status,
+                concluidaEm: novo.concluidaEm,
+                paradas: rota.paradas.map((p) => {
+                  const atualizada = statusPorPedido.get(p.pedidoId);
+                  return atualizada
+                    ? {
+                        ...p,
+                        status: atualizada.status,
+                        avisadoEm: atualizada.avisadoEm,
+                        chegouEm: atualizada.chegouEm,
+                      }
+                    : p;
+                }),
+              };
+            }),
+          );
+        })
         .catch(() => undefined);
       // O relógio anda junto: "há 3 min" precisa envelhecer na tela mesmo sem
       // posição nova chegando — é assim que dá para perceber que parou de vir.
@@ -182,7 +222,7 @@ export function Rotas() {
       vivo = false;
       clearInterval(timer);
     };
-  }, [temRotaNaRua]);
+  }, [temRotaAberta]);
 
   /** Sugestão de regiões (null = ainda não pedida nesta sessão da tela). */
   const [grupos, setGrupos] = useState<GrupoSugerido[] | null>(null);

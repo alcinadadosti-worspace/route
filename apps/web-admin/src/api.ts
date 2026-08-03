@@ -3,6 +3,7 @@ import type {
   Cliente,
   Entrega,
   Pedido,
+  ParadaRota,
   PosicaoMotorista,
   PreviaRota,
   RelatorioImportacao,
@@ -242,6 +243,32 @@ export async function agruparPorRegiao(
 ): Promise<{ grupos: GrupoSugerido[]; totalProntos: number }> {
   const q = cdId ? `?cdId=${encodeURIComponent(cdId)}` : '';
   const resposta = await apiFetch(`${BASE}/api/rotas/agrupamento${q}`);
+  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
+  return resposta.json();
+}
+
+/**
+ * Acompanhamento ao vivo: o que muda enquanto o motorista roda (status da rota
+ * e das paradas) mais a posição. Leve de propósito — sem o traçado, que não
+ * muda e é o campo pesado.
+ */
+export interface Acompanhamento {
+  rotas: Array<{
+    id: string;
+    status: Rota['status'];
+    concluidaEm: string | null;
+    paradas: Array<{
+      pedidoId: string;
+      status: ParadaRota['status'];
+      avisadoEm: string | null;
+      chegouEm: string | null;
+    }>;
+  }>;
+  posicoes: Record<string, PosicaoMotorista>;
+}
+
+export async function obterAcompanhamento(): Promise<Acompanhamento> {
+  const resposta = await apiFetch(`${BASE}/api/acompanhamento`);
   if (!resposta.ok) throw new Error(erroHttp(resposta.status));
   return resposta.json();
 }

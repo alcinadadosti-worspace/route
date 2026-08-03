@@ -47,6 +47,12 @@ export interface Repositorio {
    * de rotas a cada volta esgotaria a cota diária do Firestore sozinha.
    */
   idsDeRotasEmExecucao(): Promise<string[]>;
+  /**
+   * Rotas ABERTAS (publicada ou em execução) para o acompanhamento ao vivo.
+   * Consulta filtrada: o painel busca isto a cada 20 s, e reler a coleção
+   * inteira a cada volta esgotaria a cota — o histórico só cresce.
+   */
+  rotasAbertas(): Promise<Array<{ id: string } & Rota>>;
   /** Apaga a posição compartilhada de uma rota. Dado de localização não
    * sobrevive à rota que o gerou. */
   apagarPosicao(rotaId: string): Promise<void>;
@@ -230,6 +236,14 @@ export class RepositorioMemoria implements Repositorio {
   async idsDeRotasEmExecucao(): Promise<string[]> {
     const saida: string[] = [];
     for (const [id, r] of this.rotas) if (r.status === 'em_execucao') saida.push(id);
+    return saida;
+  }
+
+  async rotasAbertas(): Promise<Array<{ id: string } & Rota>> {
+    const saida: Array<{ id: string } & Rota> = [];
+    for (const [id, r] of this.rotas) {
+      if (r.status === 'publicada' || r.status === 'em_execucao') saida.push({ ...r, id });
+    }
     return saida;
   }
 

@@ -202,3 +202,31 @@ test('/api/posicoes devolve só as rotas EM EXECUÇÃO', async () => {
   assert.deepEqual(JSON.parse(r.body), { posicoes: {} });
   await app.close();
 });
+
+test('/api/acompanhamento devolve as rotas ABERTAS, não só as em execução', async () => {
+  // O bug que motivou o endpoint: o painel só ligava o polling com rota JÁ em
+  // execução. Quem abrisse a tela antes de o motorista começar ficava com o
+  // progresso congelado em "0/12" e sem rastreio — e nada dizia que era preciso
+  // clicar em Atualizar.
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const r = await app.inject({
+    method: 'GET',
+    url: '/api/acompanhamento',
+    headers: bearer('tk-admin'),
+  });
+  assert.equal(r.statusCode, 200);
+  const corpo = JSON.parse(r.body);
+  assert.deepEqual(corpo, { rotas: [], posicoes: {} });
+  await app.close();
+});
+
+test('/api/acompanhamento é de ESCRITÓRIO', async () => {
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const r = await app.inject({
+    method: 'GET',
+    url: '/api/acompanhamento',
+    headers: bearer('tk-motorista'),
+  });
+  assert.equal(r.statusCode, 403);
+  await app.close();
+});

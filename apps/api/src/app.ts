@@ -307,6 +307,34 @@ export async function criarApp({
     return { posicoes: await repo.posicoesDasRotas(emExecucao) };
   });
 
+  /**
+   * Acompanhamento AO VIVO do dia: o que muda enquanto o motorista roda.
+   *
+   * Existe porque o painel não recarregava as rotas sozinho: quem abrisse a
+   * tela de manhã, antes de o motorista começar, ficava com o progresso
+   * congelado em "0/12" e sem rastreio — e nada dizia que era preciso clicar
+   * em Atualizar. Aqui volta só o que muda (status da rota, status de cada
+   * parada e a posição), sem o traçado, que é o campo pesado e não muda nunca.
+   */
+  app.get('/api/acompanhamento', { config: { papeis: ESCRITORIO } }, async () => {
+    const abertas = await repo.rotasAbertas();
+    const emExecucao = abertas.filter((r) => r.status === 'em_execucao').map((r) => r.id);
+    return {
+      rotas: abertas.map((r) => ({
+        id: r.id,
+        status: r.status,
+        concluidaEm: r.concluidaEm ?? null,
+        paradas: r.paradas.map((p) => ({
+          pedidoId: p.pedidoId,
+          status: p.status,
+          avisadoEm: p.avisadoEm ?? null,
+          chegouEm: p.chegouEm ?? null,
+        })),
+      })),
+      posicoes: await repo.posicoesDasRotas(emExecucao),
+    };
+  });
+
   // O que a parada NÃO guarda: por que falhou, a que horas e de onde o motorista
   // confirmou. Isso vive só no registro de entrega, e sem este endpoint o
   // escritório via "insucesso" sem motivo — nada com que ligar para o cliente.

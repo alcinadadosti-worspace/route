@@ -142,6 +142,14 @@ class RepositorioFirestore implements Repositorio {
     return resposta.docs.map((d) => d.id);
   }
 
+  async rotasAbertas(): Promise<Array<{ id: string } & Rota>> {
+    const resposta = await this.db
+      .collection('rotas')
+      .where('status', 'in', ['publicada', 'em_execucao'])
+      .get();
+    return resposta.docs.map((d) => ({ ...(d.data() as Rota), id: d.id }));
+  }
+
   async apagarPosicao(rotaId: string): Promise<void> {
     await this.db.collection('posicoes').doc(rotaId).delete();
   }
