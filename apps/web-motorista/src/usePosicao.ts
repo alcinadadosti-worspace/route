@@ -8,6 +8,9 @@ export interface LeituraGps {
   t: number;
   /** Rumo reportado pelo GPS (graus a partir do norte) — null parado. */
   rumoGps: number | null;
+  /** Velocidade em m/s reportada pelo GPS — null quando o aparelho não informa
+   * (comum parado, e em alguns navegadores sempre). */
+  velocidadeMs: number | null;
 }
 
 /**
@@ -36,6 +39,7 @@ export function usePosicao(ativo: boolean): { leitura: LeituraGps | null; erro: 
           precisaoM: p.coords.accuracy,
           t: p.timestamp,
           rumoGps: Number.isFinite(p.coords.heading ?? NaN) ? p.coords.heading : null,
+          velocidadeMs: Number.isFinite(p.coords.speed ?? NaN) ? p.coords.speed : null,
         });
       },
       (falha) =>

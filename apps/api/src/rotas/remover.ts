@@ -55,6 +55,7 @@ export async function removerPedido(repo: Repositorio, pedidoId: string): Promis
       if (paradas.length === 0) {
         // Rota sem parada nenhuma não é rota: ela vai embora com o último pedido.
         await repo.apagarRota(rota.id);
+        await repo.apagarPosicao(rota.id);
         rotaApagada = rota.id;
       } else {
         await repo.salvarRota(rota.id, { ...(rota as Rota), paradas });
@@ -107,5 +108,9 @@ export async function removerRota(repo: Repositorio, rotaId: string): Promise<Re
   }
 
   await repo.apagarRota(rotaId);
+  // A posição compartilhada morre com a rota: dado de localização não pode
+  // sobreviver ao motivo que o justificava, e sem isto ele viraria lixo
+  // permanente numa coleção que ninguém mais lê.
+  await repo.apagarPosicao(rotaId);
   return { ok: true, rotaApagada: rotaId };
 }

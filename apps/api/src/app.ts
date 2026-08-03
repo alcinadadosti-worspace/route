@@ -300,8 +300,10 @@ export async function criarApp({
    * array inteiro de paradas de cada uma).
    */
   app.get('/api/posicoes', { config: { papeis: ESCRITORIO } }, async () => {
-    const rotas = await repo.listarRotas();
-    const emExecucao = rotas.filter((r) => r.status === 'em_execucao').map((r) => r.id);
+    // Consulta filtrada, e não `listarRotas()` inteiro: o painel bate aqui a
+    // cada 20 s enquanto acompanha o dia — ler a coleção de rotas a cada volta
+    // esgotaria a cota diária sozinha.
+    const emExecucao = await repo.idsDeRotasEmExecucao();
     return { posicoes: await repo.posicoesDasRotas(emExecucao) };
   });
 

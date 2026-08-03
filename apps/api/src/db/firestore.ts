@@ -131,6 +131,21 @@ class RepositorioFirestore implements Repositorio {
     return saida;
   }
 
+  /** `select()` sem campos traz só os IDs: descobrir quais rotas estão na rua
+   * não precisa carregar o array de paradas de cada uma. */
+  async idsDeRotasEmExecucao(): Promise<string[]> {
+    const resposta = await this.db
+      .collection('rotas')
+      .where('status', '==', 'em_execucao')
+      .select()
+      .get();
+    return resposta.docs.map((d) => d.id);
+  }
+
+  async apagarPosicao(rotaId: string): Promise<void> {
+    await this.db.collection('posicoes').doc(rotaId).delete();
+  }
+
   async listarPedidos(): Promise<Array<{ id: string } & Pedido>> {
     const resposta = await this.pedidos.orderBy('emitidoEm', 'desc').get();
     return resposta.docs.map((d) => ({ ...(d.data() as Pedido), id: d.id }));

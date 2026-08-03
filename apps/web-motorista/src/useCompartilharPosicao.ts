@@ -30,20 +30,25 @@ export function useCompartilharPosicao(
   leitura: LeituraGps | null,
   uid: string | null,
 ): { compartilhando: boolean; ultimoEnvio: number | null } {
+  // Os efeitos dependem destes PRIMITIVOS, e não do objeto `rota`: quem chama
+  // monta `{ id, status }` a cada render, e um objeto novo toda vez faria o
+  // efeito rodar em toda repintura da tela.
+  const rotaId = rota?.id ?? null;
+  const statusRota = rota?.status ?? null;
   const ultimaRef = useRef<{ ponto: { lat: number; lng: number }; emMs: number } | null>(null);
   const [ultimoEnvio, setUltimoEnvio] = useState<number | null>(null);
 
-  const ativo = Boolean(rota && uid && rota.status === 'em_execucao');
+  const ativo = Boolean(rotaId && uid && statusRota === 'em_execucao');
 
   // Rota trocou (ou acabou): zera a referência para a próxima começar limpa,
   // senão o primeiro envio da rota nova seria comparado com a posição da velha.
   useEffect(() => {
     ultimaRef.current = null;
     setUltimoEnvio(null);
-  }, [rota?.id, ativo]);
+  }, [rotaId, ativo]);
 
   useEffect(() => {
-    if (!ativo || !leitura || !rota || !uid) return;
+    if (!ativo || !leitura || !rotaId || !uid) return;
     const agoraMs = leitura.t || Date.now();
     const ponto = { lat: leitura.lat, lng: leitura.lng };
     if (!deveEnviarPosicao(ultimaRef.current, ponto, agoraMs)) return;
@@ -53,7 +58,7 @@ export function useCompartilharPosicao(
       lng: leitura.lng,
       precisaoM: Math.round(leitura.precisaoM),
       rumo: leitura.rumoGps,
-      velocidadeMs: null,
+      velocidadeMs: leitura.velocidadeMs,
       em: new Date(agoraMs).toISOString(),
       motoristaId: uid,
     };
@@ -62,10 +67,10 @@ export function useCompartilharPosicao(
     // resolvesse — e sem sinal isso vira uma fila de posições repetidas.
     ultimaRef.current = { ponto, emMs: agoraMs };
     setUltimoEnvio(agoraMs);
-    setDoc(doc(db, 'posicoes', rota.id), posicao).catch((erro) =>
+    setDoc(doc(db, 'posicoes', rotaId), posicao).catch((erro) =>
       console.error('Falha ao compartilhar posição', erro),
     );
-  }, [leitura, ativo, rota, uid]);
+  }, [leitura, ativo, rotaId, uid]);
 
   return { compartilhando: ativo, ultimoEnvio };
 }

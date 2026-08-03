@@ -209,3 +209,41 @@ test('pedido marcado como retirada PODE ser apagado — não é histórico de ca
   assert.ok(r.ok);
   assert.equal(await repo.obterPedido('p1'), null);
 });
+
+test('a posição compartilhada morre junto com a rota', async () => {
+  // Dado de localização não sobrevive ao motivo que o justificava — e sem isto
+  // viraria lixo permanente numa coleção que ninguém mais lê.
+  const repo = await cenario(['em_rota', 'em_rota']);
+  await repo.salvarPosicao(ROTA_ID, {
+    lat: -10.28,
+    lng: -36.56,
+    precisaoM: 12,
+    rumo: null,
+    velocidadeMs: null,
+    em: '2026-08-03T14:00:00-03:00',
+    motoristaId: 'motorista-1',
+  });
+  assert.equal(Object.keys(await repo.posicoesDasRotas([ROTA_ID])).length, 1);
+
+  const r = await removerRota(repo, ROTA_ID);
+  assert.ok(r.ok);
+  assert.deepEqual(await repo.posicoesDasRotas([ROTA_ID]), {});
+});
+
+test('apagar o ÚLTIMO pedido leva a rota e a posição junto', async () => {
+  const repo = await cenario(['em_rota']);
+  await repo.salvarPosicao(ROTA_ID, {
+    lat: -10.28,
+    lng: -36.56,
+    precisaoM: 12,
+    rumo: null,
+    velocidadeMs: null,
+    em: '2026-08-03T14:00:00-03:00',
+    motoristaId: 'motorista-1',
+  });
+
+  const r = await removerPedido(repo, 'p1');
+  assert.ok(r.ok);
+  assert.equal(r.rotaApagada, ROTA_ID);
+  assert.deepEqual(await repo.posicoesDasRotas([ROTA_ID]), {});
+});

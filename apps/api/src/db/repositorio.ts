@@ -41,6 +41,15 @@ export interface Repositorio {
   listarRotas(): Promise<Array<{ id: string } & Rota>>;
   /** Última posição compartilhada pelo motorista de cada rota (seção 11.4). */
   posicoesDasRotas(rotaIds: string[]): Promise<Record<string, PosicaoMotorista>>;
+  /**
+   * IDs das rotas em execução. Consulta FILTRADA de propósito: o painel busca
+   * as posições a cada 20 s enquanto acompanha o dia, e ler a coleção inteira
+   * de rotas a cada volta esgotaria a cota diária do Firestore sozinha.
+   */
+  idsDeRotasEmExecucao(): Promise<string[]>;
+  /** Apaga a posição compartilhada de uma rota. Dado de localização não
+   * sobrevive à rota que o gerou. */
+  apagarPosicao(rotaId: string): Promise<void>;
   atualizarCliente(clienteId: string, campos: Partial<Cliente>): Promise<void>;
   /**
    * Gravação em LOTE para importação de volume. Existe porque doc a doc não
@@ -216,6 +225,16 @@ export class RepositorioMemoria implements Repositorio {
       if (p) saida[id] = p;
     }
     return saida;
+  }
+
+  async idsDeRotasEmExecucao(): Promise<string[]> {
+    const saida: string[] = [];
+    for (const [id, r] of this.rotas) if (r.status === 'em_execucao') saida.push(id);
+    return saida;
+  }
+
+  async apagarPosicao(rotaId: string): Promise<void> {
+    this.posicoes.delete(rotaId);
   }
 
   /** Só para teste: o app do motorista escreve direto no Firestore. */

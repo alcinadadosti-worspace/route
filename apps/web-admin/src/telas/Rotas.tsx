@@ -1016,7 +1016,7 @@ function PosicaoDoMotorista({
       </a>
       {km != null && proxima && (
         <div className="sub">
-          {km} km de {proxima.nome.split(' ')[0]}
+          {km} km de {proxima.nome?.trim().split(/\s+/)[0] || 'parada'}
         </div>
       )}
       {velha && <div className="sub">sem sinal ou app fechado</div>}
