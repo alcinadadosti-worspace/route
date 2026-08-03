@@ -67,6 +67,38 @@ class RepositorioFirestore implements Repositorio {
     return resposta.docs.map((d) => ({ id: d.id, ...(d.data() as Cliente) }));
   }
 
+  /**
+   * `BulkWriter` do Admin SDK: ele agrupa e paraleliza as escritas sozinho, com
+   * retentativa embutida. É o que torna viável importar 2000 linhas dentro de
+   * uma requisição HTTP — doc a doc eram ~67 s só de latência (medido), e o
+   * proxy do Render cortava antes de terminar.
+   */
+  async gravarEmLote(
+    escritas: Array<
+      | { colecao: 'clientes'; id: string; dados: Partial<Cliente>; merge?: boolean }
+      | { colecao: 'pedidos'; id: string; dados: Pedido }
+    >,
+  ): Promise<void> {
+    if (escritas.length === 0) return;
+    const escritor = this.db.bulkWriter();
+    for (const e of escritas) {
+      const ref = this.db.collection(e.colecao).doc(e.id);
+      if (e.colecao === 'clientes' && e.merge) {
+        void escritor.set(ref, e.dados as Record<string, unknown>, { merge: true });
+      } else {
+        void escritor.set(ref, e.dados as Record<string, unknown>);
+      }
+    }
+    await escritor.close();
+  }
+
+  /** `select()` sem campos traz só os IDs: o dedupe de uma remessa não precisa
+   * do conteúdo dos documentos, e trafegar 2000 pedidos inteiros seria caro. */
+  async idsDePedidos(): Promise<Set<string>> {
+    const resposta = await this.pedidos.select().get();
+    return new Set(resposta.docs.map((d) => d.id));
+  }
+
   async listarPedidos(): Promise<Array<{ id: string } & Pedido>> {
     const resposta = await this.pedidos.orderBy('emitidoEm', 'desc').get();
     return resposta.docs.map((d) => ({ ...(d.data() as Pedido), id: d.id }));

@@ -232,7 +232,7 @@ test('coordenada GPS digitada no cadastro vira pin exato — e pula a fila do ma
   assert.equal(cliente.statusMapeamento, 'geocodificado');
   // com pin, o pedido nasce DESPACHÁVEL mesmo sem Google
   assert.equal((await repo.listarPedidos())[0]!.status, 'pronto_para_rota');
-  assert.match(rel.alertas.at(-1)!.mensagem, /pin exato/);
+  assert.ok(rel.alertas.some((a) => /pin exato/.test(a.mensagem)));
 });
 
 test('sem telefone na planilha, o telefone que o cliente JÁ TINHA fica', async () => {

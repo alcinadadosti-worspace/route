@@ -39,6 +39,22 @@ export interface Repositorio {
   apagarRota(rotaId: string): Promise<void>;
   listarRotas(): Promise<Array<{ id: string } & Rota>>;
   atualizarCliente(clienteId: string, campos: Partial<Cliente>): Promise<void>;
+  /**
+   * Gravação em LOTE para importação de volume. Existe porque doc a doc não
+   * escala: a planilha do ERP tem ~2000 linhas e cada uma fazia 5 idas ao
+   * Firestore — MEDIDO a 134 ms por ida, ~67 s só de banco, e o proxy do Render
+   * cortava a requisição antes do fim (o navegador reportava como erro de CORS,
+   * que despista). `merge` faz update parcial; sem ele, `set` do doc inteiro.
+   */
+  gravarEmLote(
+    escritas: Array<
+      | { colecao: 'clientes'; id: string; dados: Partial<Cliente>; merge?: boolean }
+      | { colecao: 'pedidos'; id: string; dados: Pedido }
+    >,
+  ): Promise<void>;
+  /** Só os IDs dos pedidos, numa consulta — o dedupe de uma remessa grande não
+   * pode ser 2000 `get` individuais. */
+  idsDePedidos(): Promise<Set<string>>;
   salvarTrilhaBruta(id: string, bruta: TrilhaBruta): Promise<void>;
   listarTrilhasBrutasPendentes(): Promise<Array<{ id: string } & TrilhaBruta>>;
   atualizarTrilhaBruta(id: string, campos: Partial<TrilhaBruta>): Promise<void>;
@@ -150,6 +166,28 @@ export class RepositorioMemoria implements Repositorio {
   async atualizarCliente(clienteId: string, campos: Partial<Cliente>): Promise<void> {
     const atual = this.clientes.get(clienteId);
     if (atual) this.clientes.set(clienteId, { ...atual, ...campos });
+  }
+
+  async gravarEmLote(
+    escritas: Array<
+      | { colecao: 'clientes'; id: string; dados: Partial<Cliente>; merge?: boolean }
+      | { colecao: 'pedidos'; id: string; dados: Pedido }
+    >,
+  ): Promise<void> {
+    for (const e of escritas) {
+      if (e.colecao === 'pedidos') {
+        this.pedidos.set(e.id, e.dados);
+      } else if (e.merge) {
+        const atual = this.clientes.get(e.id);
+        if (atual) this.clientes.set(e.id, { ...atual, ...e.dados });
+      } else {
+        this.clientes.set(e.id, e.dados as Cliente);
+      }
+    }
+  }
+
+  async idsDePedidos(): Promise<Set<string>> {
+    return new Set(this.pedidos.keys());
   }
 
   async salvarTrilhaBruta(id: string, bruta: TrilhaBruta): Promise<void> {

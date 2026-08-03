@@ -11,6 +11,7 @@ import {
   type ArquivoXml,
 } from './importacao/servico.js';
 import { importarPlanilha } from './importacao/servico-planilha.js';
+import { localizarEnderecos } from './importacao/geocodificacao-lote.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
 import { FORMATO_ROTA_ID } from './rotas/comum.js';
 import { calcularProdutividade } from './produtividade.js';
@@ -137,7 +138,7 @@ export async function criarApp({
     for (const planilha of planilhas) {
       mesclarRelatorios(
         relatorio,
-        await importarPlanilha(planilha.nome, planilha.conteudo, repo, geocodificador),
+        await importarPlanilha(planilha.nome, planilha.conteudo, repo),
       );
     }
     if (relatorio.total === 0) {
@@ -152,6 +153,15 @@ export async function criarApp({
       });
     }
     return relatorio;
+  });
+
+  // Localiza no mapa os endereços que a importação deixou pendentes. É passo
+  // SEPARADO porque a busca é paga e lenta: com ~1300 endereços novos por
+  // ciclo, fazer isso dentro da importação estourava o tempo da requisição (o
+  // navegador reportava como erro de CORS). O painel chama em lotes e mostra
+  // progresso; `restantes` diz quando parar.
+  app.post('/api/geocodificacoes', { config: { papeis: ESCRITORIO } }, async () => {
+    return localizarEnderecos(repo, geocodificador);
   });
 
   app.get('/api/pedidos', { config: { papeis: ESCRITORIO } }, async () => repo.listarPedidos());

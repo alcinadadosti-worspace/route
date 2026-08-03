@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CentroDistribuicao, RelatorioImportacao } from '@rota/shared';
-import { importarXmls, listarCds } from '../api';
+import { importarXmls, listarCds, localizarEnderecos } from '../api';
 
 /** Fluxo 1 — o operador arrasta os XMLs das notas do dia (RF-01, RF-04). */
 export function Importacao() {
@@ -9,6 +9,8 @@ export function Importacao() {
   const [enviando, setEnviando] = useState(false);
   const [relatorio, setRelatorio] = useState<RelatorioImportacao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  /** Progresso da localização de endereços (passo separado, pago e em lotes). */
+  const [localizando, setLocalizando] = useState<{ feitos: number; restantes: number } | null>(null);
   // Só para dar nome ao CD no relatório — a importação devolve o id.
   const [cds, setCds] = useState<Record<string, CentroDistribuicao>>({});
 
@@ -40,6 +42,29 @@ export function Importacao() {
       setErro(e instanceof Error ? e.message : 'Falha na importação');
     } finally {
       setEnviando(false);
+    }
+  }
+
+  /**
+   * Roda lote a lote até acabar. Sequencial de propósito: cada lote é uma
+   * requisição que já leva ~10 s, e emendar duas em paralelo só aproxima o
+   * limite de taxa da Google — cujo estouro derruba o lote inteiro.
+   */
+  async function localizar() {
+    setErro(null);
+    setLocalizando({ feitos: 0, restantes: 0 });
+    let feitos = 0;
+    try {
+      for (;;) {
+        const r = await localizarEnderecos();
+        feitos += r.processados;
+        setLocalizando({ feitos, restantes: r.restantes });
+        if (r.restantes === 0 || r.processados === 0) break;
+      }
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha ao localizar endereços');
+    } finally {
+      setTimeout(() => setLocalizando(null), 4000);
     }
   }
 
@@ -109,6 +134,18 @@ export function Importacao() {
             />
             <Metrica valor={relatorio.rejeitados.length} rotulo="Rejeitados" />
             <Metrica valor={relatorio.semCarga ?? 0} rotulo="Rota sem peso" />
+          </div>
+
+          <div className="acoes-rota">
+            <button
+              className="primaria"
+              disabled={localizando !== null}
+              onClick={() => void localizar()}
+            >
+              {localizando
+                ? `Localizando… ${localizando.feitos} feito(s), ${localizando.restantes} na fila`
+                : '📍 Localizar endereços no mapa'}
+            </button>
           </div>
 
           {(relatorio.semCarga ?? 0) > 0 && (
