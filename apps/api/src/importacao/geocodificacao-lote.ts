@@ -14,7 +14,7 @@ import type { Geocodificador } from '../geocodificacao/google.js';
  * Dois motivos para ser um passo próprio, e o segundo importa tanto quanto:
  * 1. cabe no tempo — o painel chama em lotes e mostra progresso;
  * 2. a busca é PAGA. Um passo explícito, com contagem antes e depois, deixa o
- *    escritório ver quanto vai gastar e parar no meio se quiser.
+ *    Admin Estoque ver quanto vai gastar e parar no meio se quiser.
  */
 
 export interface ResultadoLote {

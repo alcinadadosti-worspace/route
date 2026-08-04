@@ -96,14 +96,14 @@ export interface Pedido {
   /**
    * Entrega em local diverso (bloco `<entrega>` da NF-e, seção 8.4): preenchido
    * só quando a nota traz endereço de entrega diferente do fiscal. O pedido
-   * nasce `pendente_de_decisao` e o escritório escolhe na aba Decisões qual vale.
+   * nasce `pendente_de_decisao` e o Admin Estoque escolhe na aba Decisões qual vale.
    * A escolha nunca toca o cadastro do cliente (endereço fiscal canônico).
    */
   enderecoEntrega?: EnderecoFiscal;
-  /** Geocodificação do endereço de entrega (null = não localizado; o escritório
+  /** Geocodificação do endereço de entrega (null = não localizado; o Admin Estoque
    * posiciona o pin na tela de decisão). */
   coordenadaEntrega?: GeoPonto | null;
-  /** Escolha do escritório: true = a rota usa o endereço de entrega (override do
+  /** Escolha do Admin Estoque: true = a rota usa o endereço de entrega (override do
    * cliente); false/ausente = usa o endereço/coordenada do cliente. */
   usarEnderecoEntrega?: boolean;
   /**
@@ -112,7 +112,7 @@ export interface Pedido {
    * o cliente já tinha um ponto (pin de campo, trilha ou geocodificação). Aquele
    * ponto foi estabelecido para o endereço antigo e pode não valer mais, então o
    * pedido nasce `pendente_de_decisao`: despachar no ponto velho levaria o
-   * motorista ao lugar errado. O escritório confirma na aba Decisões.
+   * motorista ao lugar errado. O Admin Estoque confirma na aba Decisões.
    */
   enderecoAnterior?: EnderecoFiscal;
   /**
@@ -124,7 +124,7 @@ export interface Pedido {
   /**
    * `transp/modFrete` da NF-e, guardado como FATO da nota (não como decisão).
    * `'9'` = sem ocorrência de transporte; `'1'` = frete por conta do
-   * destinatário. Medido nas 3507 notas reais e nas 318 que o escritório
+   * destinatário. Medido nas 3507 notas reais e nas 318 que o Admin Estoque
    * rotulou como retirada: as 318 são `'9'`, sem uma exceção, e nenhuma nota
    * `'1'` sequer se parece com elas (todas têm caixa e lote de remessa).
    *
@@ -133,10 +133,10 @@ export interface Pedido {
    */
   modFrete?: '1' | '9';
   /**
-   * Escolha do escritório: este pedido sai no caminhão ou a revendedora retira?
+   * Escolha do Admin Estoque: este pedido sai no caminhão ou a revendedora retira?
    * Ausente = ainda não perguntado (o pedido fica `pendente_de_decisao` e não
    * entra em rota). A escolha é reversível enquanto o pedido não saiu: se a
-   * revendedora não aparecer, o escritório devolve para a fila.
+   * revendedora não aparecer, o Admin Estoque devolve para a fila.
    *
    * Na importação por PLANILHA o ERP responde sozinho (`Tipo de Entrega` é
    * explícito) e o campo já nasce preenchido, sem passar pela aba Decisões —
@@ -155,7 +155,7 @@ export interface Pedido {
  * Parada publicada. Denormaliza o que o motorista precisa para entregar
  * (nome, endereço, contato, itens, volumes) — o app dele lê só `rotas` e
  * `clientes`; a coleção `pedidos`, com os valores da nota, fica restrita ao
- * escritório pelas security rules (seção 13).
+ * Admin Estoque pelas security rules (seção 13).
  */
 export interface ParadaRota {
   pedidoId: string;
@@ -198,7 +198,7 @@ export interface ParadaRota {
   quantidadeMateriais?: number;
   /**
    * Quando o motorista avisou o cliente pelo WhatsApp (seção 11.8). Serve ao
-   * escritório: diante de um "ausente", saber se o cliente tinha sido avisado
+   * Admin Estoque: diante de um "ausente", saber se o cliente tinha sido avisado
    * é o que separa aprendizado de reclamação.
    */
   avisadoEm?: string | null;
@@ -509,7 +509,7 @@ export interface RelatorioImportacao {
   rejeitados: Array<{ arquivo: string; motivo: string }>;
   prontosParaRota: number;
   pendentesDeMapeamento: number;
-  /** Notas que a importação não roteiriza sozinha — aguardam o escritório na aba
+  /** Notas que a importação não roteiriza sozinha — aguardam o Admin Estoque na aba
    * Decisões. Soma as três perguntas possíveis (endereço de entrega divergente,
    * cadastro que mudou de lugar, e rota × retirada). */
   pendentesDeDecisao: number;

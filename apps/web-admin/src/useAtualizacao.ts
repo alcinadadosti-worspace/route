@@ -42,7 +42,7 @@ export function useAtualizacao() {
         if (!vivo) return;
         timer = setInterval(() => {
           // Sem rede a checagem só falharia — e falha de update não pode virar
-          // erro visível no meio do trabalho do escritório.
+          // erro visível no meio do trabalho do Admin Estoque.
           if (navigator.onLine) void registro.update().catch(() => {});
         }, INTERVALO_CHECAGEM_MS);
       })

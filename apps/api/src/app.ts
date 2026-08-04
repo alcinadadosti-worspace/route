@@ -67,7 +67,7 @@ export async function criarApp({
   await app.register(cors, { origin: true });
   await app.register(multipart, {
     // O teto de 60 nasceu da premissa "uma remessa é dezenas de notas" — e a
-    // realidade a derrubou: o lote diário do ERP é ~125 notas e o escritório
+    // realidade a derrubou: o lote diário do ERP é ~125 notas e o Admin Estoque
     // importa até um CICLO inteiro de uma vez (2046 arquivos, medido). Com
     // streaming o pico de memória é ~1 arquivo independente da contagem, então
     // o teto protege contra abuso, não contra a remessa real: 4000 cobre um
@@ -172,7 +172,7 @@ export async function criarApp({
 
   app.get('/api/pedidos', { config: { papeis: ESCRITORIO } }, async () => repo.listarPedidos());
 
-  // Seção 8.4: escritório resolve a ambiguidade de endereço (entrega em local
+  // Seção 8.4: Admin Estoque resolve a ambiguidade de endereço (entrega em local
   // diverso). Escolhe fiscal ou entrega; a escolha vira override no pedido, sem
   // tocar o cadastro do cliente. `coordenada` (opcional) é o pin ajustado no mapa.
   app.post(
@@ -201,7 +201,7 @@ export async function criarApp({
   );
 
   // Seção 8.3: o cadastro do cliente mudou de endereço e ele já tinha ponto. O
-  // escritório confirma se o ponto atual sobrevive à mudança ou manda refazer —
+  // Admin Estoque confirma se o ponto atual sobrevive à mudança ou manda refazer —
   // 'remapear' descarta pin/trilha e reclassifica pelo endereço novo.
   app.post(
     '/api/pedidos/:chave/mudanca-endereco',
@@ -224,7 +224,7 @@ export async function criarApp({
   );
 
   // Rota × retirada: metade das notas do dia não sai no caminhão porque a
-  // revendedora vem buscar no CD. O `modFrete` da nota sugere, o escritório
+  // revendedora vem buscar no CD. O `modFrete` da nota sugere, o Admin Estoque
   // decide, e a escolha é reversível enquanto o pedido não saiu.
   app.post(
     '/api/pedidos/:chave/modo-entrega',
@@ -337,7 +337,7 @@ export async function criarApp({
 
   // O que a parada NÃO guarda: por que falhou, a que horas e de onde o motorista
   // confirmou. Isso vive só no registro de entrega, e sem este endpoint o
-  // escritório via "insucesso" sem motivo — nada com que ligar para o cliente.
+  // Admin Estoque via "insucesso" sem motivo — nada com que ligar para o cliente.
   app.get('/api/rotas/:rotaId/entregas', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
     const { rotaId } = req.params as { rotaId: string };
     // O rotaId vira consulta e, em outros caminhos, caminho de documento: valida

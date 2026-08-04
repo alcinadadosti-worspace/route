@@ -98,7 +98,7 @@ export function Navegacao({
 
   useWakeLock(true);
   const { leitura, erro: erroGps } = usePosicao(true);
-  // O escritorio acompanha a posicao enquanto a rota corre. Consome a leitura
+  // O Admin Estoque acompanha a posicao enquanto a rota corre. Consome a leitura
   // que esta tela ja tem — nao liga GPS proprio — e para sozinho quando a rota
   // conclui.
   useCompartilharPosicao({ id: rota.id, status: rota.status }, leitura, uid);
@@ -516,7 +516,7 @@ export function Navegacao({
               );
               // E REGISTRA. Sem isto, o aviso mandado daqui — que é a tela onde
               // o motorista está justamente quando se aproxima — não deixava
-              // rastro: a coluna "Avisados" do escritório e o par
+              // rastro: a coluna "Avisados" do Admin Estoque e o par
               // avisados/não-avisados da produtividade perdiam o caminho mais
               // usado, e o laço que justifica o aviso não fechava.
               registrarAviso(rota, parada.pedidoId);

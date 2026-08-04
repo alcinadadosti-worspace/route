@@ -193,7 +193,7 @@ function Cartao({ m: bruto, nome }: { m: ProdutividadeMotorista; nome: string })
         <Metrica valor={`${executadas}/${m.paradasPlanejadas}`} rotulo="Paradas executadas" />
         <Metrica valor={conclusao == null ? '—' : `${conclusao}%`} rotulo="Conclusão" />
         <Metrica valor={m.entregues} rotulo="Entregues" />
-        {/* O que o escritório procura ao abrir a aba: quanta mercadoria passou
+        {/* O que o Admin Estoque procura ao abrir a aba: quanta mercadoria passou
             pela mão do motorista. Fica junto com "Entregues" porque é a mesma
             pergunta em outra unidade — parada não diz se foi 1 item ou 653. */}
         <Metrica valor={num(m.itensEntregues)} rotulo="Itens entregues" />

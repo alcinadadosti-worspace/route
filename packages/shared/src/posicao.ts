@@ -2,7 +2,7 @@ import { distanciaEmMetros } from './geo.js';
 import type { GeoPonto } from './tipos.js';
 
 /**
- * Posição do motorista compartilhada com o escritório (seção 11.4).
+ * Posição do motorista compartilhada com o Admin Estoque (seção 11.4).
  *
  * Mora numa coleção PRÓPRIA, `posicoes/{rotaId}`, e não dentro do doc da rota.
  * A razão é concreta: o app do motorista escuta a própria rota em tempo real —
@@ -22,7 +22,7 @@ export interface PosicaoMotorista {
   /**
    * ISO da leitura NO APARELHO — nunca a hora do servidor. Com a fila offline
    * do Firestore, uma escrita pode chegar minutos depois de medida; o que o
-   * escritório precisa saber é QUANDO o motorista estava ali, não quando o
+   * Admin Estoque precisa saber é QUANDO o motorista estava ali, não quando o
    * dado subiu.
    */
   em: string;
@@ -39,7 +39,7 @@ export const INTERVALO_MINIMO_MS = 30_000;
 /**
  * Mesmo PARADO, manda de tempos em tempos. Sem este batimento o painel não
  * distingue "parado no cliente" de "app fechado" ou "celular sem bateria" — e
- * essas três coisas exigem reações bem diferentes de quem está no escritório.
+ * essas três coisas exigem reações bem diferentes de quem está no Admin Estoque.
  */
 export const BATIMENTO_PARADO_MS = 5 * 60_000;
 
@@ -68,7 +68,7 @@ export function deveEnviarPosicao(
   return distanciaEmMetros(ultima.ponto, atual) >= MOVIMENTO_MINIMO_M;
 }
 
-/** Quanto tempo até a posição virar "velha" na tela do escritório. Passado
+/** Quanto tempo até a posição virar "velha" na tela do Admin Estoque. Passado
  * isso, o painel para de fingir que sabe onde ele está. */
 export const POSICAO_VELHA_MS = 3 * BATIMENTO_PARADO_MS;
 

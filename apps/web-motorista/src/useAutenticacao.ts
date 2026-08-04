@@ -42,7 +42,7 @@ export function mensagemDeErroAuth(codigo: string): string {
     case 'auth/network-request-failed':
       return 'Sem conexão. Tente no Wi-Fi da base.';
     case 'auth/user-disabled':
-      return 'Conta desativada. Fale com o escritório.';
+      return 'Conta desativada. Fale com o Admin Estoque.';
     default:
       return `Falha no login (${codigo}).`;
   }

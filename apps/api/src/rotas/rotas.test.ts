@@ -356,7 +356,7 @@ test('pedido já executado não volta para uma rota nova', async () => {
 });
 
 test('pedido marcado como RETIRADA é bloqueado na coleta, com o motivo certo', async () => {
-  // Não é erro de quem montou a rota: o escritório tirou este pedido da fila de
+  // Não é erro de quem montou a rota: o Admin Estoque tirou este pedido da fila de
   // propósito. A mensagem precisa dizer isso e onde devolver — senão o operador
   // procura defeito no lugar errado.
   const repo = new RepositorioMemoria();

@@ -8,7 +8,7 @@ import type { Autenticador } from './auth/autenticador.js';
 /**
  * `GET /api/rotas/:rotaId/entregas` — o motivo do insucesso, a hora e a posição
  * da confirmação. A parada guarda só 'insucesso'; sem este endpoint o
- * escritório via a falha sem saber por quê, que é o que ele precisa para ligar
+ * Admin Estoque via a falha sem saber por quê, que é o que ele precisa para ligar
  * ao cliente.
  */
 
@@ -73,7 +73,7 @@ test('rotaId fora do formato é recusado antes de virar consulta', async () => {
   await app.close();
 });
 
-test('é do escritório: motorista não lista confirmação de rota', async () => {
+test('é do Admin Estoque: motorista não lista confirmação de rota', async () => {
   const { app } = await comEntregas();
   const r = await app.inject({
     method: 'GET',

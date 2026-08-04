@@ -221,7 +221,7 @@ async function processarArquivo(
   // diferente daquele para o qual o ponto atual foi estabelecido. Roteirizar no
   // ponto velho levaria o motorista ao lugar errado (e, no rural, a trilha
   // aprendida reforçaria o engano), então o pedido espera a confirmação do
-  // escritório. O pin NÃO é descartado aqui: quem decide é quem conhece.
+  // Admin Estoque. O pin NÃO é descartado aqui: quem decide é quem conhece.
   if (enderecoAnterior) {
     status = 'pendente_de_decisao';
     // Um alerta por cliente, não por nota: uma remessa com 5 notas dele faz a
@@ -238,7 +238,7 @@ async function processarArquivo(
 
   // Entrega em local diverso (seção 8.4): a nota traz endereço de entrega
   // diferente do fiscal. Geocodifica o candidato e deixa o pedido AGUARDANDO a
-  // escolha do escritório — nunca roteiriza no palpite. O cadastro do cliente
+  // escolha do Admin Estoque — nunca roteiriza no palpite. O cadastro do cliente
   // segue com o endereço fiscal; o override mora no pedido.
   let enderecoEntrega: EnderecoFiscal | undefined;
   let coordenadaEntrega: GeoPonto | null | undefined;
@@ -255,7 +255,7 @@ async function processarArquivo(
   }
 
   // Retirada no balcão (ver retirada.ts): metade das notas nunca entra no
-  // caminhão. O `modFrete` sugere, mas quem decide é o escritório — importar já
+  // caminhão. O `modFrete` sugere, mas quem decide é o Admin Estoque — importar já
   // classificando esconderia o erro, porque um pedido que devia sair
   // simplesmente não sairia e ninguém saberia por quê. Só pergunta quando a
   // sugestão é RETIRADA: `modFrete='1'` não tem dúvida (nenhuma das 1686 notas
@@ -277,7 +277,7 @@ async function processarArquivo(
   // retirada no balcão: qVol=0 ⟺ modFrete=9 nas 3507 notas reais, e o ERP
   // confirmou (ciclo 11, 2019/2019) — ele não embala o que ninguém carrega.
   // Contar retirada aqui dobraria o mesmo fato em duas métricas e mandaria o
-  // escritório cobrar do emissor um "conserto" que não existe.
+  // Admin Estoque cobrar do emissor um "conserto" que não existe.
   if (sugestao !== 'retirada' && !temCarga(nota.volumes, nota.pesoBrutoKg)) {
     relatorio.semCarga += 1;
   }
@@ -323,7 +323,7 @@ async function processarArquivo(
  * 4. sem resultado, fora do município, ou sem geocodificador → pendente_de_mapeamento.
  *
  * `relatorio` é nulo quando a chamada não vem de uma importação (reclassificação
- * depois de o escritório descartar um ponto vencido) — não há o que contabilizar.
+ * depois de o Admin Estoque descartar um ponto vencido) — não há o que contabilizar.
  */
 export async function classificarDestino(
   clienteId: string,
@@ -368,7 +368,7 @@ export async function classificarDestino(
 /**
  * Geocodifica o endereço de ENTREGA divergente (candidato B da decisão, seção
  * 8.4). Mesma disciplina da seção 9: pula rural e aceita só resultado preciso —
- * o que não resolver, o escritório posiciona no mapa da tela de decisão.
+ * o que não resolver, o Admin Estoque posiciona no mapa da tela de decisão.
  */
 async function geocodificarEntrega(
   endereco: EnderecoFiscal,
@@ -422,7 +422,7 @@ export async function upsertCliente(nota: NotaImportada, repo: Repositorio): Pro
 
   // `enderecosDivergem` compara os campos que mudam o LUGAR (logradouro, número,
   // bairro, município, UF, CEP) já normalizados — diferença só de formatação ou
-  // de complemento não vira decisão para o escritório resolver à toa.
+  // de complemento não vira decisão para o Admin Estoque resolver à toa.
   // Sem coordenada não há ponto velho para questionar: a classificação vai
   // geocodificar o endereço novo normalmente, que é o comportamento certo.
   const mudouDeLugar =
@@ -431,7 +431,7 @@ export async function upsertCliente(nota: NotaImportada, repo: Repositorio): Pro
 
   // Uma revisão já aberta prevalece: o ponto pertence ao endereço da PRIMEIRA
   // divergência, e mudanças encadeadas antes da decisão não podem reescrever
-  // essa referência (senão o "antes" que o escritório vê seria o intermediário).
+  // essa referência (senão o "antes" que o Admin Estoque vê seria o intermediário).
   const revisaoAberta = existente.enderecoEmRevisao ?? null;
   const enderecoEmRevisao = revisaoAberta ?? (mudouDeLugar ? existente.enderecoFiscal : null);
 
@@ -457,7 +457,7 @@ export type ResultadoDecisao =
   | { ok: false; status: number; erro: string };
 
 /**
- * Resolve a ambiguidade de endereço (seção 8.4): o escritório escolhe entre o
+ * Resolve a ambiguidade de endereço (seção 8.4): o Admin Estoque escolhe entre o
  * endereço fiscal (do cliente) e o de entrega (da nota). A escolha vira override
  * no pedido — nunca toca o cadastro do cliente, que segue com o endereço fiscal
  * canônico. Sem coordenada no escolhido, o pedido cai em mapeamento.
@@ -556,7 +556,7 @@ export async function decidirMudancaEndereco(
     };
   }
   // Com a pergunta da entrega ainda aberta, responder esta primeiro pularia
-  // aquela: a rota sairia pelo cadastro sem o escritório ter escolhido.
+  // aquela: a rota sairia pelo cadastro sem o Admin Estoque ter escolhido.
   if (pedido.enderecoEntrega && pedido.usarEnderecoEntrega === undefined) {
     return {
       ok: false,
@@ -606,7 +606,7 @@ export async function decidirMudancaEndereco(
 /**
  * Rota × retirada (ver `retirada.ts`): metade das notas do dia nunca entra no
  * caminhão porque a revendedora vem ao CD buscar. O `modFrete` da NF-e sugere,
- * mas a palavra final é do escritório — e é REVERSÍVEL enquanto o pedido não
+ * mas a palavra final é do Admin Estoque — e é REVERSÍVEL enquanto o pedido não
  * saiu: se a revendedora não aparecer, ele volta para a fila da rota.
  *
  * Escolher `retirada` NÃO apaga o pedido nem o esconde: ele fica na aba
@@ -659,7 +659,7 @@ export async function decidirModoEntrega(
     return { ok: true, status: 'pendente_de_decisao' };
   }
 
-  // statusForaDeRota, e não `cliente.coordenada` direto: se o escritório
+  // statusForaDeRota, e não `cliente.coordenada` direto: se o Admin Estoque
   // respondeu "usar endereço de entrega" ANTES desta pergunta, o ponto do
   // pedido é o override — mandá-lo para mapeamento em campo descartaria um pin
   // que já foi cravado no mapa.
@@ -669,7 +669,7 @@ export async function decidirModoEntrega(
 }
 
 /**
- * Refaz o ponto de um cliente a pedido do escritório (RF-23). Existe porque
+ * Refaz o ponto de um cliente a pedido do Admin Estoque (RF-23). Existe porque
  * havia um beco sem saída: uma vez `mapeado`, o pin não tem correção. O app do
  * motorista só oferece o ajuste para destino `aproximado`/`nao_mapeado`, então
  * um pin marcado no lugar errado — um teste feito dentro do CD, um toque torto

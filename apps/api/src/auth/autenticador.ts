@@ -7,7 +7,7 @@ import { appFirebase } from '../firebase.js';
  * mandam no header `Authorization: Bearer <token>`. É o único modelo seguro
  * para um cliente de navegador: um token estático no bundle do PWA seria
  * extraível por qualquer um. O papel vem do custom claim (mesma fonte das
- * security rules), então dá para exigir escritório onde faz sentido.
+ * security rules), então dá para exigir Admin Estoque onde faz sentido.
  */
 
 export interface UsuarioAutenticado {

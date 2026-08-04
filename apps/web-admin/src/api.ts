@@ -114,7 +114,7 @@ export async function publicarRota(entrada: {
   return post(`${BASE}/api/rotas`, entrada);
 }
 
-/** Seção 8.4: escritório escolhe qual endereço vale quando a nota traz entrega
+/** Seção 8.4: Admin Estoque escolhe qual endereço vale quando a nota traz entrega
  * em local diverso. `coordenada` é o pin ajustado no mapa (só para 'entrega'). */
 export async function decidirEnderecoEntrega(
   pedidoId: string,
@@ -153,7 +153,7 @@ export async function localizarEnderecos(pular = 0): Promise<{
 
 /**
  * Rota × retirada: o `modFrete` da nota sugere que a revendedora vem buscar no
- * CD, e o escritório confirma. Reversível enquanto o pedido não saiu.
+ * CD, e o Admin Estoque confirma. Reversível enquanto o pedido não saiu.
  */
 export async function decidirModoEntrega(
   pedidoId: string,
@@ -227,7 +227,7 @@ async function post<T>(url: string, corpo: unknown): Promise<T> {
 function erroHttp(status: number): string {
   if (status === 401) return 'Sessão expirada — entre novamente.';
   if (status === 403) {
-    return 'Sem permissão: esta conta não é de escritório. Saia e entre com a conta do escritório.';
+    return 'Sem permissão: esta conta não é de Admin Estoque. Saia e entre com a conta do Admin Estoque.';
   }
   if (status >= 500) return `Serviço indisponível (HTTP ${status}) — pode estar reiniciando.`;
   return `Falha na requisição (HTTP ${status}).`;

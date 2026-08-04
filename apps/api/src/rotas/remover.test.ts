@@ -177,7 +177,7 @@ test('rotaId com barra não vira caminho de documento (404)', async () => {
 });
 
 test('desfazer rota devolve PRONTO o pedido com override de entrega, mesmo sem ponto no cliente', async () => {
-  // O ponto desse pedido é o override (8.4) — o pin que o escritório cravou no
+  // O ponto desse pedido é o override (8.4) — o pin que o Admin Estoque cravou no
   // mapa — e não o cadastro do cliente. Sem esta regra ele voltava para
   // "pendente de mapeamento": trabalho de campo por um ponto que já existe, e
   // o pedido sumia da lista de prontos sem ninguém entender por quê.
@@ -196,7 +196,7 @@ test('desfazer rota devolve PRONTO o pedido com override de entrega, mesmo sem p
 
 test('pedido marcado como retirada PODE ser apagado — não é histórico de campo', async () => {
   // A trava do apagar é sobre o que já foi EXECUTADO (entregue/insucesso).
-  // Retirada é decisão de escritório, reversível — apagar a nota desfaz tudo.
+  // Retirada é decisão de Admin Estoque, reversível — apagar a nota desfaz tudo.
   const repo = new RepositorioMemoria();
   await repo.salvarCliente('c1', clienteCom({ lat: -10.28, lng: -36.56 }));
   await repo.salvarPedido('p1', {

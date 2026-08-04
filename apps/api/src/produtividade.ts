@@ -189,7 +189,7 @@ export function calcularProdutividade(
       // PLANILHA do ERP não tem lista nenhuma, só a quantidade — contar linhas
       // aqui fazia o relatório do mês dizer "0 itens entregues" com o caminhão
       // cheio. `produtosDistintos` devolve null nesse caso (não sabemos), e
-      // "não sei" não pode virar "nenhum" numa métrica que o escritório lê.
+      // "não sei" não pode virar "nenhum" numa métrica que o Admin Estoque lê.
       daqui.itensEntregues += quantidadeDeItens(parada);
       daqui.produtosDistintos += produtosDistintos(parada) ?? 0;
       if (temCarga(parada.volumes, parada.pesoBrutoKg)) {
@@ -294,7 +294,7 @@ export function calcularProdutividade(
 /**
  * Uma parada só pode ser entregue uma vez, mas a coleção `entregas` não garante
  * isso: os documentos têm ID AUTOMÁTICO e as regras os fazem imutáveis (nem o
- * escritório apaga). O app do motorista barra o toque duplo pelo status da
+ * Admin Estoque apaga). O app do motorista barra o toque duplo pelo status da
  * parada no cache local, só que dois aparelhos com a mesma rota, ou um cache
  * perdido, criam o segundo registro — e ele fica lá para sempre.
  *

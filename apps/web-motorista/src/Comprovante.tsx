@@ -5,7 +5,7 @@ import { redimensionarFoto } from './servicoFotos';
 /**
  * Comprovante de entrega — o passo entre "cheguei" e "confirmado".
  *
- * O escritório hoje tem só hora e GPS. Diante de um "não recebi" semanas
+ * O Admin Estoque hoje tem só hora e GPS. Diante de um "não recebi" semanas
  * depois, isso não responde nada. O nome de quem recebeu, perguntado na porta,
  * é o que transforma discussão em consulta: é um fato que a revendedora
  * confirma ou desmente na hora.

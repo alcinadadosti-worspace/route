@@ -5,7 +5,7 @@ import { db } from './firebase';
 import type { LeituraGps } from './usePosicao';
 
 /**
- * Compartilha a posição com o escritório enquanto a rota está em execução
+ * Compartilha a posição com o Admin Estoque enquanto a rota está em execução
  * (seção 11.4). Responde três perguntas que hoje ficam sem resposta: "cadê
  * ele?", "o cliente ligou, quando chega?" e "sumiu, está tudo bem?".
  *

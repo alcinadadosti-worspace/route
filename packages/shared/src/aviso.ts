@@ -59,7 +59,7 @@ export const PARAMETROS_AVISO_PADRAO: ParametrosAviso = {
 
 /**
  * Mescla os overrides de `config/geral.aviso`: número só entra se for finito e
- * positivo; texto só entra se não for vazio. Assim o escritório ajusta a
+ * positivo; texto só entra se não for vazio. Assim o Admin Estoque ajusta a
  * redação e o ritmo da operação sem deploy, e uma config torta não vira
  * mensagem em branco no WhatsApp do cliente.
  */

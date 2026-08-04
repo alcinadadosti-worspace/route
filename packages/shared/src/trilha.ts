@@ -37,7 +37,7 @@ export const PARAMETROS_TRILHA_PADRAO: ParametrosTrilha = {
 /**
  * Mescla os overrides de `config/geral` sobre os padrões: só sobrescreve com
  * número finito e positivo (são todos thresholds em metros), ignorando chaves
- * estranhas ou valores inválidos. Assim o escritório afrouxa, p.ex., o
+ * estranhas ou valores inválidos. Assim o Admin Estoque afrouxa, p.ex., o
  * `precisaoMaximaM` para o GPS ruim do interior sem um novo deploy.
  */
 export function mesclarParametrosTrilha(override?: Partial<ParametrosTrilha>): ParametrosTrilha {

@@ -2,7 +2,7 @@ import { distanciaEmMetros, type GeoPonto } from '@rota/shared';
 
 /**
  * Ordem das paradas por proximidade do motorista — uma VISÃO no aparelho, que
- * não altera a rota publicada. A ordem oficial continua sendo a do escritório
+ * não altera a rota publicada. A ordem oficial continua sendo a do Admin Estoque
  * (o número da parada segue impresso no cartão); isto responde outra pergunta:
  * "de onde eu estou, qual é a próxima?".
  *

@@ -1,6 +1,6 @@
 # Rota Grupo Alcina Maria
 
-PWA de roteirização e navegação de entregas — offline-first no campo, painel no escritório.
+PWA de roteirização e navegação de entregas — offline-first no campo, painel no Admin Estoque.
 A especificação completa está em [`especificacao-rota-grupo-alcina-maria.md`](./especificacao-rota-grupo-alcina-maria.md).
 
 ## Estrutura (monorepo npm workspaces)
@@ -9,7 +9,7 @@ A especificação completa está em [`especificacao-rota-grupo-alcina-maria.md`]
 |---|---|---|
 | `@rota/shared` | `packages/shared` | Modelo de dados (seção 7), utilitários (hash/máscara de documento, telefone E.164, heurística rural, extração de `infCpl`) e tokens do design system (seção 14) |
 | `@rota/api` | `apps/api` | API Fastify: parse/validação de NF-e, importação com dedupe e relatório (seções 8–9) |
-| `@rota/web-admin` | `apps/web-admin` | Painel do escritório (PWA): importação de XML, pedidos, clientes |
+| `@rota/web-admin` | `apps/web-admin` | Painel do Admin Estoque (PWA): importação de XML, pedidos, clientes |
 | `@rota/web-motorista` | `apps/web-motorista` | App do motorista (PWA): rota do dia, temas Galpão/Pátio |
 
 ## Rodando

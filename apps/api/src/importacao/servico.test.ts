@@ -270,7 +270,7 @@ test('mudança de endereço segura o pedido em decisão e NÃO descarta o pin', 
   assert.equal(relatorio.alertas.length, 1);
   assert.match(relatorio.alertas[0]!.mensagem, /cadastro mudou/i);
 
-  // O pedido carrega o endereço ANTERIOR, para o escritório comparar.
+  // O pedido carrega o endereço ANTERIOR, para o Admin Estoque comparar.
   const pedido = (await repo.listarPedidos())[0]!;
   assert.equal(pedido.status, 'pendente_de_decisao');
   assert.equal(pedido.enderecoAnterior?.logradouro, 'RUA ANTIGA');
@@ -850,7 +850,7 @@ async function comClienteMapeado(repo: RepositorioMemoria, conteudo: string): Pr
 
 const comRetirada = (base: string) => base.replace('<modFrete>0</modFrete>', '<modFrete>9</modFrete>');
 
-test('nota com cara de retirada NÃO vira rota sozinha: pergunta ao escritório', async () => {
+test('nota com cara de retirada NÃO vira rota sozinha: pergunta ao Admin Estoque', async () => {
   const repo = new RepositorioMemoria();
   await comClienteMapeado(repo, xml);
   const relatorio = await importarXmls([{ nome: 'a.xml', conteudo: comRetirada(xml) }], repo);
@@ -910,7 +910,7 @@ test('nota de rota segue direto — modFrete=1 não levanta pergunta', async () 
   assert.equal((await repo.listarPedidos())[0]!.status, 'pronto_para_rota');
 });
 
-test('escritório confirma retirada: status próprio, sem sumir da lista', async () => {
+test('Admin Estoque confirma retirada: status próprio, sem sumir da lista', async () => {
   const repo = new RepositorioMemoria();
   await comClienteMapeado(repo, xml);
   await importarXmls([{ nome: 'a.xml', conteudo: comRetirada(xml) }], repo);
@@ -924,7 +924,7 @@ test('escritório confirma retirada: status próprio, sem sumir da lista', async
   assert.equal(pedido?.modoEntrega, 'retirada');
 });
 
-test('escritório manda para a rota: volta ao fluxo normal', async () => {
+test('Admin Estoque manda para a rota: volta ao fluxo normal', async () => {
   const repo = new RepositorioMemoria();
   await comClienteMapeado(repo, xml);
   await importarXmls([{ nome: 'a.xml', conteudo: comRetirada(xml) }], repo);
@@ -1020,7 +1020,7 @@ test('override de entrega vale como ponto: endereço respondido antes de rota×r
   // O bug: decidirModoEntrega consultava só cliente.coordenada. Respondida a
   // pergunta do endereço PRIMEIRO ("usar endereço de entrega", pin no mapa),
   // responder "vai para rota" derrubava o pedido em pendente_de_mapeamento —
-  // pedindo trabalho de campo por um ponto que o escritório já tinha cravado.
+  // pedindo trabalho de campo por um ponto que o Admin Estoque já tinha cravado.
   const repo = new RepositorioMemoria();
   // Cliente nasce da importação, rural, NUNCA mapeado.
   const conteudo = comRetirada(xml).replace('</dest>', XML_ENTREGA_DIVERGENTE);

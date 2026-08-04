@@ -7,11 +7,11 @@ import type { Pedido, StatusPedido } from './tipos.js';
  *
  * A regra tem duas fontes de ponto, e esquecer a segunda rendeu o mesmo bug em
  * QUATRO lugares diferentes: o cadastro do CLIENTE (pin de campo ou
- * geocodificação) e o OVERRIDE do próprio PEDIDO (seção 8.4 — o escritório
+ * geocodificação) e o OVERRIDE do próprio PEDIDO (seção 8.4 — o Admin Estoque
  * escolheu o endereço de entrega da nota e cravou a coordenada no mapa).
  * Pedido com override é despachável mesmo com o cliente nunca mapeado;
  * mandá-lo para "pendente de mapeamento" pede trabalho de campo por um ponto
- * que o escritório já deu — e o pedido some da lista de prontos sem ninguém
+ * que o Admin Estoque já deu — e o pedido some da lista de prontos sem ninguém
  * entender por quê.
  *
  * `clienteTemPonto` vem de quem chama porque nem sempre é `cliente.coordenada`

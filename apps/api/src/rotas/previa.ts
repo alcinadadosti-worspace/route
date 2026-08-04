@@ -112,7 +112,7 @@ export async function coletarParadas(
       };
     }
 
-    // Retirada no balcão: o escritório já respondeu que esta nota não sai no
+    // Retirada no balcão: o Admin Estoque já respondeu que esta nota não sai no
     // caminhão. Não é erro de quem montou a rota — é um pedido que foi
     // deliberadamente tirado da fila e pode voltar pela aba Decisões.
     if (pedido.status === 'retirada') {
@@ -123,7 +123,7 @@ export async function coletarParadas(
       };
     }
 
-    // Override: quando o escritório escolheu o endereço de entrega, a rota usa a
+    // Override: quando o Admin Estoque escolheu o endereço de entrega, a rota usa a
     // coordenada/endereço do pedido; senão, os do cliente.
     const usaEntrega = pedido.usarEnderecoEntrega === true;
     const coordenada = usaEntrega ? pedido.coordenadaEntrega ?? null : cliente.coordenada;
@@ -149,7 +149,7 @@ export async function coletarParadas(
         ? { quantidadeMateriais: pedido.quantidadeMateriais }
         : {}),
       coordenada,
-      // Entrega em local diverso já é um ponto escolhido pelo escritório; senão,
+      // Entrega em local diverso já é um ponto escolhido pelo Admin Estoque; senão,
       // reflete a situação de mapeamento do cliente (aproximado → mapear em campo).
       precisaMapear: usaEntrega ? false : precisaMapearEmCampo(cliente.statusMapeamento),
       cdId: pedido.cdId ?? null,

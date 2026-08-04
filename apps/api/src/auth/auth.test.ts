@@ -26,7 +26,7 @@ test('/health fica público (health check do Render)', async () => {
   await app.close();
 });
 
-test('rota de escritório sem token → 401', async () => {
+test('rota de Admin Estoque sem token → 401', async () => {
   const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
   const r = await app.inject({ method: 'GET', url: '/api/rotas' });
   assert.equal(r.statusCode, 401);
@@ -40,14 +40,14 @@ test('token inválido → 401', async () => {
   await app.close();
 });
 
-test('papel sem permissão (motorista em rota de escritório) → 403', async () => {
+test('papel sem permissão (motorista em rota de Admin Estoque) → 403', async () => {
   const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
   const r = await app.inject({ method: 'GET', url: '/api/rotas', headers: bearer('tk-motorista') });
   assert.equal(r.statusCode, 403);
   await app.close();
 });
 
-test('admin acessa rota de escritório', async () => {
+test('admin acessa rota de Admin Estoque', async () => {
   const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
   const r = await app.inject({ method: 'GET', url: '/api/rotas', headers: bearer('tk-admin') });
   assert.equal(r.statusCode, 200);

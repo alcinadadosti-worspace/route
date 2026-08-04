@@ -30,7 +30,7 @@ export function quantidadeDeItens(
 /**
  * Quantos produtos DISTINTOS — `null` quando a fonte não permite saber (a
  * planilha do ERP não manda a lista). Null e zero dizem coisas diferentes:
- * "não sei" não pode virar "nenhum" numa métrica que o escritório lê.
+ * "não sei" não pode virar "nenhum" numa métrica que o Admin Estoque lê.
  */
 export function produtosDistintos(
   origem: { itens?: ItemPedido[] | null; quantidadeMateriais?: number | null },

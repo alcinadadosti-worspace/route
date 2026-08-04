@@ -41,7 +41,7 @@ export function App() {
   }
 
   /**
-   * Conta sem papel de escritório: o painel ABRIA e cada ação morria em 403,
+   * Conta sem papel de Admin Estoque: o painel ABRIA e cada ação morria em 403,
    * com mensagem que não dizia que o problema era a conta. Diz agora, uma vez,
    * antes de deixar tentar — é a diferença entre "o sistema não funciona" e
    * "entrei com a conta errada".
@@ -54,12 +54,12 @@ export function App() {
         <div className="erro" style={{ maxWidth: 460, textAlign: 'left' }}>
           A conta <span className="mono">{usuario.email}</span> está cadastrada como{' '}
           <strong>{papel ? ROTULO_PAPEL[papel] ?? papel : 'sem papel definido'}</strong>. O painel do
-          escritório exige <strong>admin</strong> ou <strong>operador</strong>.
+          Admin Estoque exige <strong>admin</strong> ou <strong>operador</strong>.
           {papel === 'motorista' && (
             <>
               {' '}
               Esta é a conta do app de entrega — para importar notas e montar rotas, entre com a
-              conta do escritório.
+              conta do Admin Estoque.
             </>
           )}
         </div>
@@ -82,7 +82,7 @@ export function App() {
           <img src="/logo.png" className="logo-marca" alt="Grupo Alcina Maria" />
           <div>
             <h1>Rota · Grupo Alcina Maria</h1>
-            <div className="sub">Painel do escritório — importação e rotas</div>
+            <div className="sub">Painel Admin Estoque — importação e rotas</div>
           </div>
         </div>
         <div className="topo-direita">

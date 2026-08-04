@@ -25,7 +25,7 @@ export function ehEnderecoRural(endereco: EnderecoFiscal): boolean {
  * Compara logradouro+número+bairro+município+UF+CEP normalizados (o CEP só pelos
  * dígitos, então `57200-000` == `57200000`). Usado para decidir se o bloco
  * `<entrega>` da NF-e diverge do endereço fiscal — quando diverge, o pedido vai
- * para a decisão do escritório em vez de roteirizar no palpite (seção 8.4).
+ * para a decisão do Admin Estoque em vez de roteirizar no palpite (seção 8.4).
  */
 export function enderecosDivergem(a: EnderecoFiscal, b: EnderecoFiscal): boolean {
   const campos = ['logradouro', 'numero', 'bairro', 'municipio', 'uf'] as const;

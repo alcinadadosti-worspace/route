@@ -6,12 +6,12 @@ import type { Pedido } from './tipos.js';
  * Metade das notas do dia nunca entra no caminhão: a revendedora vem ao CD,
  * paga e leva. Nada na NF-e diz isso com todas as letras — o campo que mais se
  * aproxima é `transp/modFrete`, que é fiscal ("quem paga o frete"), não
- * logístico. Mas a evidência é forte: das 318 notas que o escritório separou
+ * logístico. Mas a evidência é forte: das 318 notas que o Admin Estoque separou
  * como retirada, **as 318 são `modFrete='9'`**, e nenhuma das 1686 notas
  * `'1'` da base sequer se parece com elas (todas têm caixa embalada e lote de
  * remessa, sem uma exceção).
  *
- * Por isso o `modFrete` SUGERE e o escritório DECIDE. Importar já classificando
+ * Por isso o `modFrete` SUGERE e o Admin Estoque DECIDE. Importar já classificando
  * seria decidir no lugar de quem sabe, e o erro é invisível: o pedido
  * simplesmente não sairia, e ninguém saberia por quê.
  */
@@ -34,7 +34,7 @@ export function sugerirModoEntrega(
  * na base real (685 notas, 160 delas para outra cidade). Se o palpite
  * "retirada" estiver errado, está aqui dentro.
  *
- * A tela destaca essas para o escritório olhar uma a uma em vez de confirmar
+ * A tela destaca essas para o Admin Estoque olhar uma a uma em vez de confirmar
  * junto com o resto. Se o aviso nunca acender em campo, o assunto morre; se
  * acender sempre, o sinal certo era o LOTE e não o `modFrete`.
  */

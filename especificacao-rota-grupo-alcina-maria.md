@@ -18,9 +18,9 @@ Um PWA de roteirização e navegação de entregas que:
 
 ### 1.3 Princípios de arquitetura
 1. **Offline-first no campo.** O app do motorista opera o dia inteiro sem rede: dados da rota pré-carregados, mapa embarcado no aparelho, GPS (que independe de internet) e sincronização em fila automática.
-2. **O campo não depende do backend.** Em rota, o app conversa apenas com o cache local do Firestore. A API no Render é ferramenta do escritório e de processamento (parse, geocodificação, otimização); se ela cair durante o dia, as entregas continuam.
+2. **O campo não depende do backend.** Em rota, o app conversa apenas com o cache local do Firestore. A API no Render é ferramenta do Admin Estoque e de processamento (parse, geocodificação, otimização); se ela cair durante o dia, as entregas continuam.
 3. **Destino entregue uma vez fica mapeado para sempre.** Coordenada confirmada e trilha aprendida são vinculadas ao **cliente**, não ao pedido — na próxima nota daquela revendedora, a navegação já nasce pronta.
-4. **Mapa em primeiro plano no motorista; identidade visual rica no admin.** No campo, performance e bateria mandam; o 3D e as animações elaboradas vivem no painel do escritório.
+4. **Mapa em primeiro plano no motorista; identidade visual rica no admin.** No campo, performance e bateria mandam; o 3D e as animações elaboradas vivem no painel do Admin Estoque.
 
 ---
 
@@ -29,7 +29,7 @@ Um PWA de roteirização e navegação de entregas que:
 | Papel | Quem é | O que faz | O que não vê |
 |---|---|---|---|
 | **Admin** | TI / gestão | Tudo: importa XML, monta e publica rotas, edita clientes/trilhas, gerencia usuários, vê métricas | — |
-| **Operador** | Equipe do escritório | Importa XML, monta e publica rotas, resolve pendências de geocodificação | Gestão de usuários e configurações |
+| **Operador** | Equipe do Admin Estoque | Importa XML, monta e publica rotas, resolve pendências de geocodificação | Gestão de usuários e configurações |
 | **Motorista** | Condutor em campo | Vê a rota do dia, navega, confirma entregas, crava pins e grava trilhas | CPF do destinatário, valores financeiros da nota, rotas de outros dias/motoristas |
 
 Papéis implementados via **custom claims** do Firebase Auth e espelhados nas security rules do Firestore (seção 13). Login por e-mail/senha; contas criadas apenas pelo Admin (sem autocadastro).
@@ -38,15 +38,15 @@ Papéis implementados via **custom claims** do Firebase Auth e espelhados nas se
 
 ## 3. Fluxos operacionais
 
-**Fluxo 1 — Importação do dia (escritório, online).** O operador arrasta os XMLs das notas do dia para o painel. A API valida cada arquivo (NF-e modelo 55 autorizada, `cStat=100` no protocolo), deduplica pela chave de acesso, extrai os campos (seção 8), cria/atualiza o cliente e registra o pedido com status `importado`. Pedidos cujo destino já tem coordenada confirmada entram como `pronto_para_rota`; os demais entram como `pendente_de_mapeamento` ou passam pela geocodificação (seção 9).
+**Fluxo 1 — Importação do dia (Admin Estoque, online).** O operador arrasta os XMLs das notas do dia para o painel. A API valida cada arquivo (NF-e modelo 55 autorizada, `cStat=100` no protocolo), deduplica pela chave de acesso, extrai os campos (seção 8), cria/atualiza o cliente e registra o pedido com status `importado`. Pedidos cujo destino já tem coordenada confirmada entram como `pronto_para_rota`; os demais entram como `pendente_de_mapeamento` ou passam pela geocodificação (seção 9).
 
-**Fluxo 2 — Montagem e publicação da rota (escritório, online).** O operador seleciona os pedidos do dia (ou aceita a sugestão de agrupamento por município/região), escolhe o CD de partida entre os dois cadastrados e aciona a otimização. A API consulta o OSRM (`/trip`) para ordenar as paradas, calcula o traçado e as estimativas, e o operador publica a rota para o motorista. Publicar dispara a **pré-carga**: o app do motorista, ainda no Wi-Fi da base, baixa para o cache local tudo que a rota exige (pedidos, clientes, coordenadas, trilhas, e o mapa se houver atualização).
+**Fluxo 2 — Montagem e publicação da rota (Admin Estoque, online).** O operador seleciona os pedidos do dia (ou aceita a sugestão de agrupamento por município/região), escolhe o CD de partida entre os dois cadastrados e aciona a otimização. A API consulta o OSRM (`/trip`) para ordenar as paradas, calcula o traçado e as estimativas, e o operador publica a rota para o motorista. Publicar dispara a **pré-carga**: o app do motorista, ainda no Wi-Fi da base, baixa para o cache local tudo que a rota exige (pedidos, clientes, coordenadas, trilhas, e o mapa se houver atualização).
 
 **Fluxo 3 — Execução da entrega (campo, offline-capaz).** O motorista vê a lista ordenada de paradas e o traçado no mapa. Para cada parada: navega, contata o cliente se preciso (ligação ou WhatsApp em um toque), entrega, e confirma com um toque — o app registra data/hora e posição GPS da confirmação. Insucessos são registrados com motivo (ausente, endereço não localizado, recusa) para reentrega.
 
 **Fluxo 4 — Mapeamento de destino novo em zona rural (campo, offline-capaz).** Para paradas `pendente_de_mapeamento`, ao tocar "a caminho desta parada" o app inicia automaticamente a gravação da trilha GPS. Ao chegar, o motorista posiciona o pin no ponto exato, fotografa a fachada como referência do local e registra observações se quiser ("portão azul", "ligar ao chegar") antes de confirmar. A trilha bruta e o pin ficam na fila de sincronização; quando a rede volta, o backend faz o pós-processamento (map-matching, seção 11) e o destino passa a `mapeado`.
 
-**Fluxo 5 — Sincronização (automática).** Toda escrita feita em campo (confirmações, pins, trilhas, motivos de insucesso) entra na fila offline do Firestore e é despachada automaticamente ao reencontrar rede — seja um bolsão de 4G no caminho, seja o Wi-Fi da base no retorno. O painel do escritório reflete o progresso em tempo real sempre que o aparelho estiver online.
+**Fluxo 5 — Sincronização (automática).** Toda escrita feita em campo (confirmações, pins, trilhas, motivos de insucesso) entra na fila offline do Firestore e é despachada automaticamente ao reencontrar rede — seja um bolsão de 4G no caminho, seja o Wi-Fi da base no retorno. O painel do Admin Estoque reflete o progresso em tempo real sempre que o aparelho estiver online.
 
 ---
 
@@ -100,14 +100,14 @@ Prioridades: **[E]** essencial (sem isso o sistema não cumpre o objetivo) · **
 ## 5. Requisitos não funcionais
 
 - **RNF-01 — Offline total em campo.** Com a pré-carga feita, 100% do fluxo do motorista (navegar, mapear, confirmar) funciona em modo avião. Critério de teste: executar uma rota completa com o aparelho sem chip.
-- **RNF-02 — Aparelho-alvo.** Celular Android corporativo dedicado à rota: Android 11+ com Chrome atualizado, 3 GB de RAM, GPS. O mesmo PWA atende o painel no PC do escritório — uma base de código para os dois contextos, como decidido. iOS fora do alvo. Instalação via "Adicionar à tela inicial".
+- **RNF-02 — Aparelho-alvo.** Celular Android corporativo dedicado à rota: Android 11+ com Chrome atualizado, 3 GB de RAM, GPS. O mesmo PWA atende o painel no PC do Admin Estoque — uma base de código para os dois contextos, como decidido. iOS fora do alvo. Instalação via "Adicionar à tela inicial".
 - **RNF-03 — Bateria.** Uma jornada de 8 h de navegação com tela ativa deve ser viável com carregador veicular; o app não usa 3D nem efeitos custosos no modo motorista.
 - **RNF-04 — Legibilidade ao sol.** Tema claro de alto contraste disponível no app do motorista (seção 14); alvos de toque ≥ 48 px.
 - **RNF-05 — Sincronização resiliente.** Nenhum dado de campo se perde por queda de rede; fila com retry e resolução last-write-wins (adequada ao domínio: escritores raramente concorrem no mesmo documento).
 - **RNF-06 — Segurança.** Acesso 100% autenticado; security rules por papel testadas em CI; HTTPS em tudo (padrão Render/Firebase).
 - **RNF-07 — LGPD.** Minimização, retenção e controles da seção 13.
 - **RNF-08 — Custo previsível.** Componentes de custo: plano pago do Render (API + OSRM), Firebase no plano pay-as-you-go (Firestore, Storage, Auth) e geocodificação sob demanda com cache agressivo. Download do mapa embarcado apenas em Wi-Fi para conter egress.
-- **RNF-09 — Operabilidade.** Pelo menos duas pessoas do escritório treinadas no fluxo de importação e publicação (o sistema elimina o ponto único de falha do motorista; não vamos criar outro no painel).
+- **RNF-09 — Operabilidade.** Pelo menos duas pessoas do Admin Estoque treinadas no fluxo de importação e publicação (o sistema elimina o ponto único de falha do motorista; não vamos criar outro no painel).
 
 ---
 
@@ -248,11 +248,11 @@ Regex de referência (tolerante a variações de espaçamento e asteriscos): `Pe
 ### 8.3 Regras de atualização de cliente
 Se o `clienteId` já existe: atualizar telefone/e-mail/endereço fiscal se vierem diferentes (a nota é mais recente que o cadastro), **preservando** `coordenada`, `statusMapeamento` e trilhas — o ponto nunca é descartado pela importação.
 
-Mas preservar o ponto **não** pode significar despachar nele. Quando o endereço novo diverge do anterior a ponto de mudar o lugar (comparação normalizada de logradouro, número, bairro, município, UF e CEP — formatação e complemento não contam) **e** o cliente já tinha `coordenada`, aquele ponto foi estabelecido para o endereço antigo e pode não valer mais: o pedido nasce `pendente_de_decisao` e o escritório resolve na aba Decisões. Vale para qualquer `statusMapeamento` — um destino rural `aproximado` que muda para outra zona rural é justamente o caso em que roteirizar no ponto velho leva o motorista ao lugar errado, com a trilha aprendida reforçando o engano.
+Mas preservar o ponto **não** pode significar despachar nele. Quando o endereço novo diverge do anterior a ponto de mudar o lugar (comparação normalizada de logradouro, número, bairro, município, UF e CEP — formatação e complemento não contam) **e** o cliente já tinha `coordenada`, aquele ponto foi estabelecido para o endereço antigo e pode não valer mais: o pedido nasce `pendente_de_decisao` e o Admin Estoque resolve na aba Decisões. Vale para qualquer `statusMapeamento` — um destino rural `aproximado` que muda para outra zona rural é justamente o caso em que roteirizar no ponto velho leva o motorista ao lugar errado, com a trilha aprendida reforçando o engano.
 
 A marca da revisão fica no **cliente** (`enderecoEmRevisao`, o endereço a que o ponto pertence), não só no pedido: a segunda nota da mesma remessa já encontra o cadastro atualizado e escaparia da checagem. Enquanto a revisão estiver aberta, todo pedido novo do cliente é segurado, e mudanças encadeadas antes da decisão preservam o endereço original do ponto.
 
-Duas saídas, ambas do escritório:
+Duas saídas, ambas do Admin Estoque:
 - **manter** — mudou o cadastro, não o lugar da entrega: o ponto continua e os pedidos voltam ao fluxo normal;
 - **remapear** — o cliente mudou de lugar: descarta `coordenada`, autoria, trilha ativa **e o dossiê do local** (foto de referência e observações — descrevem o lugar antigo e no endereço novo enganariam o motorista tanto quanto o pin vencido) e reclassifica pelo endereço NOVO (seção 9). Se ele geocodificar, o pedido já sai despachável; se não (o caso rural), vai para mapeamento em campo, que é como todo destino novo entra.
 
@@ -283,7 +283,7 @@ Pipeline executado na importação, nesta ordem:
    - bairro contendo `ZONA RURAL`;
    - logradouro iniciando com `POVOADO`, `SÍTIO`, `SITIO`, `FAZENDA`, `ASSENTAMENTO`, `ROD`, `KM`.
 3. **Geocodificação automática** (endereços urbanos plausíveis): consulta ao provedor com o endereço completo. Resultado com precisão de nível "endereço/rua" e dentro do município esperado → `geocodificado` (confiança média; o pin será confirmado na primeira entrega). Resultado impreciso (nível "cidade") ou fora do município → `pendente_de_mapeamento`.
-4. **Resolução manual (painel).** A fila de pendências (RF-23) permite ao operador posicionar o pin quando alguém do escritório conhece o local; senão, resolve-se em campo no primeiro atendimento (Fluxo 4).
+4. **Resolução manual (painel).** A fila de pendências (RF-23) permite ao operador posicionar o pin quando alguém do Admin Estoque conhece o local; senão, resolve-se em campo no primeiro atendimento (Fluxo 4).
 
 **Provedor — decidido: Google Geocoding API.** Três razões objetivas: (1) o projeto já exige billing no Google de qualquer forma — o Firebase no plano Blaze é um projeto Google Cloud com cobrança habilitada, então "evitar a chave de billing" não economizaria nada; (2) a cobertura do Nominatim depende de endereços pontuais existirem no OpenStreetMap, e no interior de Alagoas eles são escassos — exatamente onde o sistema precisa acertar; (3) com o **cache permanente por cliente** (cada endereço geocodificado no máximo uma vez na vida) e a heurística rural cortando o que não deve ser consultado, o volume novo é de dezenas de chamadas por mês — dentro da franquia gratuita mensal do serviço e, mesmo que não fosse, custo de centavos.
 
@@ -328,12 +328,12 @@ A trilha bruta (pontos + timestamps + accuracy) vai para a fila de sincronizaç�
 - **Chegada:** raio de ~30 m do pin aciona o cartão de confirmação (RF-18).
 
 ### 11.6 "Mais perto de mim" — reordenação em campo
-A ordem publicada é calculada **uma vez, no escritório, partindo do CD**. Quando o dia sai do plano — o motorista não saiu do CD, começou por outra parada, um cliente pediu para adiantar — o resto da rota fica desotimizado e nada recalcula sozinho. O app oferece então uma **visão** por proximidade, com duas fontes de ordem:
+A ordem publicada é calculada **uma vez, no Admin Estoque, partindo do CD**. Quando o dia sai do plano — o motorista não saiu do CD, começou por outra parada, um cliente pediu para adiantar — o resto da rota fica desotimizado e nada recalcula sozinho. O app oferece então uma **visão** por proximidade, com duas fontes de ordem:
 
 - **linha reta (padrão, offline):** haversine da posição atual até cada parada, com a lista reordenada e a distância no cartão. Não é medida de quilometragem, é comparação — para escolher *qual* é a próxima, o erro da linha reta raramente inverte a resposta. Funciona sem sinal nenhum, que é o caso normal em campo;
 - **estrada (botão, online):** `POST /api/rotas/:rotaId/ordem-sugerida` manda a posição atual, a API roda o `/trip` do OSRM a partir dali sobre as paradas que faltam (`roundtrip=false` — o motorista quer terminar, não voltar) e devolve a ordem. Exige rede e acorda o OSRM; falha com mensagem e a lista continua na linha reta.
 
-**As duas apenas sugerem: nada é gravado na rota.** O documento da rota é reescrito pelo app a cada confirmação de entrega (o array `paradas` inteiro) — se o servidor reescrevesse esse mesmo array, uma confirmação feita no mesmo instante seria apagada, e a ordem que o escritório publicou e acompanha mudaria sozinha. O número oficial da parada continua impresso no cartão, e a parada já resolvida nunca disputa "a próxima".
+**As duas apenas sugerem: nada é gravado na rota.** O documento da rota é reescrito pelo app a cada confirmação de entrega (o array `paradas` inteiro) — se o servidor reescrevesse esse mesmo array, uma confirmação feita no mesmo instante seria apagada, e a ordem que o Admin Estoque publicou e acompanha mudaria sozinha. O número oficial da parada continua impresso no cartão, e a parada já resolvida nunca disputa "a próxima".
 
 ### 11.6.2 Legibilidade das linhas no mapa
 Rota desenhada em cor única e chapada some sobre estrada clara, se confunde com rio ou divisa, e perde contraste ao sol — o mapa fica "tudo de uma cor só". As linhas seguem então a receita de qualquer app de navegação: **contorno escuro mais largo por baixo, cor viva por cima**, pontas e junções arredondadas, e espessura interpolada por zoom (fina na visão de rota inteira, grossa no zoom de rua). O estilo mora num módulo único (`estiloRota.ts`) para os dois mapas não divergirem.
@@ -365,7 +365,7 @@ Dois momentos, que resolvem problemas diferentes:
 
 Redação e ritmo ficam em `config/geral.aviso`, ajustáveis sem deploy. Config torta é ignorada: texto vazio ou número não-positivo cai no padrão, para não sair mensagem em branco no WhatsApp do cliente.
 
-O aviso fica registrado na parada (`avisadoEm`). O WhatsApp não devolve nada ao app, então esse é o único rastro — e é o que permite ao escritório, diante de um "ausente", saber se o cliente tinha sido avisado. Como não muda o status da rota, a regra do Firestore precisou permitir escrita em `paradas` com status inalterado.
+O aviso fica registrado na parada (`avisadoEm`). O WhatsApp não devolve nada ao app, então esse é o único rastro — e é o que permite ao Admin Estoque, diante de um "ausente", saber se o cliente tinha sido avisado. Como não muda o status da rota, a regra do Firestore precisou permitir escrita em `paradas` com status inalterado.
 
 ### 11.7 Desvio do traçado e recálculo (online)
 A polyline desenhada é calculada na publicação, saindo do CD. Quando o motorista sai dela — atalho que ele conhece, estrada interditada, ou simplesmente se perdeu — o app **detecta sozinho e sem rede**: distância do veículo até a polilinha (geometria pura, `distanciaAoTracadoEmMetros`), acima de `desvioMinimoM` (padrão 150 m, ajustável em `config/geral.trilha`).
@@ -392,7 +392,7 @@ PWA no Android **não executa geolocalização confiável em segundo plano** (te
 
 **Camada 1 — Aplicação.** Service worker (Workbox) com precache do app shell e assets; o PWA abre instantaneamente sem rede. Fontes, estilo do mapa, sprites e glyphs embarcados no bundle (nenhuma dependência de CDN em campo).
 
-**Camada 2 — Dados.** Firestore com `persistentLocalCache`. A publicação da rota dispara a pré-carga: o app executa, ainda no Wi-Fi, as queries de tudo que a rota referencia (pedidos, clientes, trilhas, config) — a partir daí o cache local responde tudo. Escritas em campo entram na fila do próprio SDK e sincronizam sozinhas ao reencontrar rede. As fotos de referência são a exceção: upload ao Storage não tem fila offline nativa, então a imagem fica em cache local (OPFS) numa fila própria com retry, e o documento do cliente só recebe `fotoReferenciaPath` quando o upload conclui. Conflitos: last-write-wins é suficiente (um motorista por rota; escritório e campo raramente tocam o mesmo documento no mesmo dia — exceção tratada no alerta da seção 8.3).
+**Camada 2 — Dados.** Firestore com `persistentLocalCache`. A publicação da rota dispara a pré-carga: o app executa, ainda no Wi-Fi, as queries de tudo que a rota referencia (pedidos, clientes, trilhas, config) — a partir daí o cache local responde tudo. Escritas em campo entram na fila do próprio SDK e sincronizam sozinhas ao reencontrar rede. As fotos de referência são a exceção: upload ao Storage não tem fila offline nativa, então a imagem fica em cache local (OPFS) numa fila própria com retry, e o documento do cliente só recebe `fotoReferenciaPath` quando o upload conclui. Conflitos: last-write-wins é suficiente (um motorista por rota; Admin Estoque e campo raramente tocam o mesmo documento no mesmo dia — exceção tratada no alerta da seção 8.3).
 
 **Camada 3 — Mapa.** Basemap vetorial de Alagoas em um único arquivo **PMTiles**, gerado mensalmente com Planetiler a partir do mesmo extrato OSM do OSRM (uma fonte, dois artefatos — mapa e roteirizador nunca divergem). Distribuição: Firebase Storage → download completo pelo app **apenas em Wi-Fi** → gravação no **OPFS** (Origin Private File System) → leitura local via source customizado da lib `pmtiles` (interface `getBytes` sobre o arquivo local, com acesso aleatório por `slice`). Tamanho estimado na casa de dezenas de MB a ~150 MB para o estado — estimativa a medir na Fase 5; se necessário, recorta-se por macrorregião de atuação. Controle de versão do arquivo em `config/geral`; o app compara e propõe atualização quando estiver na base.
 

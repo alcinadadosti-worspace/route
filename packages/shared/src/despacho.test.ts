@@ -11,7 +11,7 @@ test('cliente com ponto → pronto; sem ponto → mapeamento (o caso comum)', ()
 
 test('override do pedido (8.4) é ponto: despachável mesmo com cliente nunca mapeado', () => {
   // O bug que motivou este módulo: quatro lugares consultavam só o cliente e
-  // mandavam para mapeamento em campo um pedido cujo pin o escritório já deu.
+  // mandavam para mapeamento em campo um pedido cujo pin o Admin Estoque já deu.
   assert.equal(
     statusForaDeRota({ usarEnderecoEntrega: true, coordenadaEntrega: PIN }, false),
     'pronto_para_rota',

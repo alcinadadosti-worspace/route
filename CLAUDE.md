@@ -13,7 +13,7 @@ que são longas de propósito: cada uma explica **por que**, não o que mudou.
 |---|---|
 | `packages/shared` | Modelo, geometria, polyline, mensagens ao cliente, regras puras. Sem I/O. |
 | `apps/api` | Fastify. Lê NF-e, geocodifica, orquestra o OSRM, publica rota, calcula produtividade. |
-| `apps/web-admin` | PWA do escritório: importação, decisões de endereço, montagem de rota, produtividade. |
+| `apps/web-admin` | PWA do Admin Estoque: importação, decisões de endereço, montagem de rota, produtividade. |
 | `apps/web-motorista` | PWA de campo: rota do dia, navegação, mapeamento, comprovante. **Funciona offline.** |
 
 Persistência é Firestore (Admin SDK no servidor, SDK web com fila offline no motorista).

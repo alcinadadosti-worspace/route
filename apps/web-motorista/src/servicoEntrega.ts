@@ -115,7 +115,7 @@ export function registrarRecibo(rota: { id: string } & Rota, pedidoId: string): 
 /**
  * Marca na parada que o cliente foi avisado (seção 11.8). O WhatsApp não
  * devolve nada ao app, então este registro é o único rastro: diante de um
- * "ausente", o escritório vê se o cliente tinha sido avisado.
+ * "ausente", o Admin Estoque vê se o cliente tinha sido avisado.
  *
  * Escreve o array de paradas inteiro, como a confirmação de entrega — e pelo
  * mesmo motivo é síncrono a partir do snapshot atual.
@@ -133,7 +133,7 @@ export function registrarAviso(rota: { id: string } & Rota, pedidoId: string): v
  * Fecha a rota por decisão do motorista — não só quando a última parada é
  * confirmada. Quem sabe que o dia acabou é ele: deu a hora, o tempo fechou, a
  * estrada do povoado alagou. Paradas não resolvidas ficam como estão, e o
- * escritório vê no acompanhamento.
+ * Admin Estoque vê no acompanhamento.
  *
  * Vai pela fila offline como o resto: fechar a rota sem sinal, no fim da linha,
  * é o caso NORMAL aqui, não a exceção.

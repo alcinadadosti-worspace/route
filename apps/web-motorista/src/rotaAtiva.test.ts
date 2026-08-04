@@ -32,7 +32,7 @@ test('sem rota nenhuma, nada é escolhido', () => {
 });
 
 test('rota JÁ INICIADA ganha da publicada depois no mesmo dia', () => {
-  // O caso que mais importa: o escritório publica a segunda rota do dia com o
+  // O caso que mais importa: o Admin Estoque publica a segunda rota do dia com o
   // motorista no meio da primeira. Ele não pode perder o que está executando.
   const emExecucao = rota('r1', '2026-07-30', 'em_execucao', '2026-07-30T07:00:00-03:00');
   const nova = rota('r2', '2026-07-30', 'publicada', '2026-07-30T11:00:00-03:00');

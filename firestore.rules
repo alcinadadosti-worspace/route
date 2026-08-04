@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // Security rules por papel (seções 2 e 13). Papel vem do custom claim
-// aplicado pelo script criar-usuario. Toda escrita de dados de escritório é
+// aplicado pelo script criar-usuario. Toda escrita de dados de Admin Estoque é
 // da API (Admin SDK, que não passa por estas regras); os apps escrevem só o
 // que nasce em campo, cada escrita limitada aos seus campos: confirmações
 // (rotas/pedidos/entregas), pin + dossiê do local (clientes) e o rastro
@@ -27,7 +27,7 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/rotas/$(rotaId)).data.motoristaId == request.auth.uid;
     }
 
-    // Motorista lê apenas as próprias rotas; escritório lê todas.
+    // Motorista lê apenas as próprias rotas; Admin Estoque lê todas.
     // Em campo (RF-18), o dono da rota atualiza o status das paradas e a
     // conclusão — nada além desses campos.
     match /rotas/{rotaId} {
@@ -51,7 +51,7 @@ service cloud.firestore {
     // o pin confirmado (RF-07, com autoria dele) e o dossiê do local (RF-21).
     match /clientes/{clienteId} {
       // `get` (por id) liberado ao motorista — ele só lê os clientes das
-      // paradas da rota dele; `list` (enumerar a coleção) é só escritório,
+      // paradas da rota dele; `list` (enumerar a coleção) é só Admin Estoque,
       // senão qualquer motorista baixa a base inteira de clientes (PII) e,
       // com o id = SHA-256 do CPF, recupera CPFs por força bruta.
       allow get: if logado();
@@ -108,7 +108,7 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Pedidos guardam os valores da nota: leitura restrita ao escritório
+    // Pedidos guardam os valores da nota: leitura restrita ao Admin Estoque
     // (seção 13). A confirmação em campo pode escrever SÓ o status — sem
     // permissão de leitura, o motorista nunca vê o documento.
     match /pedidos/{pedidoId} {
@@ -136,7 +136,7 @@ service cloud.firestore {
 
     match /trilhas/{trilhaId} {
       // Como clientes: `get` por id ao motorista (segue a trilha ativa da
-      // parada), `list` só escritório — senão vaza a coordenada do caminho de
+      // parada), `list` só Admin Estoque — senão vaza a coordenada do caminho de
       // acesso de todo cliente.
       allow get: if logado();
       allow list: if escritorio();
@@ -150,7 +150,7 @@ service cloud.firestore {
      * atualização.
      *
      * Escreve só o DONO da rota, e só a própria posição — sem `donoDaRota` um
-     * logado qualquer publicaria a localização de outro. Ler é do escritório:
+     * logado qualquer publicaria a localização de outro. Ler é do Admin Estoque:
      * o motorista não acompanha o colega.
      */
     match /posicoes/{rotaId} {

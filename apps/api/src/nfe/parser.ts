@@ -120,7 +120,7 @@ export async function parseNfe(
 
   // Entrega em local diverso (seção 8.4): a NF-e pode trazer um bloco <entrega>
   // com endereço diferente do fiscal. Só interessa quando de fato diverge — daí
-  // o pedido vai para a decisão do escritório (senão é cópia inócua do fiscal).
+  // o pedido vai para a decisão do Admin Estoque (senão é cópia inócua do fiscal).
   let enderecoEntrega: EnderecoFiscal | undefined;
   if (infNFe.entrega) {
     // <entrega> é 0..1 no schema; se um XML malformado trouxer vários, usa o

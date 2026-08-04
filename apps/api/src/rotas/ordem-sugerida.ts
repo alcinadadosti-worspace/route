@@ -6,7 +6,7 @@ import type { ClienteOsrm } from './osrm.js';
 
 /**
  * Ordem sugerida das paradas que faltam, a partir de ONDE O MOTORISTA ESTÁ
- * (RF-12 em campo). A ordem publicada é calculada uma vez, no escritório,
+ * (RF-12 em campo). A ordem publicada é calculada uma vez, no Admin Estoque,
  * partindo do CD; quando o dia sai do plano — saiu de casa, começou por outra
  * parada, um cliente pediu para adiantar — o resto da rota fica desotimizado e
  * ninguém recalcula.
@@ -15,7 +15,7 @@ import type { ClienteOsrm } from './osrm.js';
  * documento da rota é escrito pelo app do motorista a cada confirmação de
  * entrega (o array `paradas` inteiro); se o servidor reescrevesse esse mesmo
  * array aqui, uma confirmação feita no mesmo instante seria apagada — e a
- * ordem oficial, que o escritório publicou e acompanha, mudaria sozinha.
+ * ordem oficial, que o Admin Estoque publicou e acompanha, mudaria sozinha.
  */
 
 export type ResultadoOrdemSugerida =

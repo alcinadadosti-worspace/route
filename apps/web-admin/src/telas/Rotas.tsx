@@ -637,7 +637,7 @@ export function Rotas() {
                                       </td>
                                     </tr>
                                     {/* O detalhe da confirmação: o "por quê" que
-                                        o escritório precisa para ligar ao
+                                        o Admin Estoque precisa para ligar ao
                                         cliente, e que a parada não guarda. */}
                                     {e && (
                                       <tr className="confirmacao">
@@ -1050,7 +1050,7 @@ export function Rotas() {
  * Onde o motorista está, e há quanto tempo se sabe disso.
  *
  * O "há quanto tempo" não é enfeite: em rota rural o sinal cai, e mostrar um
- * ponto de 40 minutos atrás como se fosse atual faria o escritório dizer ao
+ * ponto de 40 minutos atrás como se fosse atual faria o Admin Estoque dizer ao
  * cliente uma coisa que já não é verdade. Passado o limite, a tela para de
  * fingir que sabe.
  *

@@ -18,10 +18,10 @@ import { LimiteDeErro } from '../LimiteDeErro';
  *   metade da importação do dia. Vem primeiro e em bloco com confirmação em
  *   lote, porque é volume;
  * - seção 8.4: a NF-e traz endereço de ENTREGA diferente do fiscal — o
- *   escritório vê os dois no mapa (A fiscal, B entrega) e escolhe qual vale; a
+ *   Admin Estoque vê os dois no mapa (A fiscal, B entrega) e escolhe qual vale; a
  *   escolha vira override no pedido, sem tocar o cadastro do cliente;
  * - seção 8.3: o endereço do CADASTRO mudou e o cliente já tinha ponto — o
- *   escritório confirma se aquele ponto sobrevive à mudança.
+ *   Admin Estoque confirma se aquele ponto sobrevive à mudança.
  * Uma nota pode levantar mais de uma: primeiro rota × retirada; respondida
  * "vai para rota", ela reaparece como cartão de endereço.
  */
@@ -117,7 +117,7 @@ export function Decisoes() {
 /**
  * Rota × retirada. Metade das notas do dia não sai no caminhão: a revendedora
  * vem ao CD, paga e leva. O `modFrete` da NF-e sugere isso (nas 318 notas que o
- * escritório separou como retirada, as 318 eram `modFrete='9'`), mas quem
+ * Admin Estoque separou como retirada, as 318 eram `modFrete='9'`), mas quem
  * decide é quem conhece a operação.
  *
  * O desenho da tela vem do VOLUME: são ~60 notas/dia. As óbvias vão em lote;
@@ -270,7 +270,7 @@ function LinhaRetirada({
   );
 }
 
-/** pt-BR, como todo número que o escritório lê (seção 14). */
+/** pt-BR, como todo número que o Admin Estoque lê (seção 14). */
 function formatarValor(valor: number): string {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }

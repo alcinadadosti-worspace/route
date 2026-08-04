@@ -35,7 +35,7 @@ import type { Repositorio } from '../db/repositorio.js';
  * 2. tudo é decidido em memória;
  * 3. as escritas vão num `BulkWriter` só;
  * 4. a GEOCODIFICAÇÃO SAI DAQUI — vira passo próprio, em lotes, com progresso
- *    na tela (`/api/geocodificacoes`). Além de caber no tempo, dá ao escritório
+ *    na tela (`/api/geocodificacoes`). Além de caber no tempo, dá ao Admin Estoque
  *    controle sobre uma chamada que é PAGA.
  */
 
@@ -132,7 +132,7 @@ export async function importarPlanilha(
     const jaExiste = idsExistentes.has(linha.codigoPedido) || vistos.has(linha.codigoPedido);
 
     // Cancelado no ERP: não entra. Se JÁ tinha entrado numa importação
-    // anterior, ninguém apaga sozinho — o escritório é avisado e apaga pelo
+    // anterior, ninguém apaga sozinho — o Admin Estoque é avisado e apaga pelo
     // painel (o caminho existente já tira a parada da rota junto, se houver).
     if (linha.cancelada) {
       relatorio.canceladas = (relatorio.canceladas ?? 0) + 1;
@@ -180,7 +180,7 @@ export async function importarPlanilha(
       cliente = {
         nome: linha.nome,
         // Sem CPF na planilha (de propósito — LGPD agradece): o código do ERP
-        // identifica a revendedora em qualquer conversa com o escritório.
+        // identifica a revendedora em qualquer conversa com o Admin Estoque.
         documentoMascarado: `cód. ${linha.pessoa}`,
         telefone,
         email: null,
@@ -199,7 +199,7 @@ export async function importarPlanilha(
       escritasDeCliente.set(linha.pessoa, { dados: cliente, merge: false });
     } else {
       // Mudança de endereço com ponto estabelecido (seção 8.3): o ponto foi
-      // fixado para o endereço ANTIGO e pode não valer mais — o escritório
+      // fixado para o endereço ANTIGO e pode não valer mais — o Admin Estoque
       // confirma. Revisão já aberta prevalece (o "antes" é o da primeira).
       const mudouDeLugar =
         existente.coordenada !== null && enderecosDivergem(existente.enderecoFiscal, endereco);

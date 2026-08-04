@@ -73,7 +73,7 @@ export async function removerPedido(repo: Repositorio, pedidoId: string): Promis
  *
  * Recusa se alguma parada já foi executada. Não é preciosismo: apagar a rota
  * deixaria os registros de entrega apontando para uma rota que não existe, e o
- * escritório perderia a memória do dia. Quando há entrega, o que se quer é
+ * Admin Estoque perderia a memória do dia. Quando há entrega, o que se quer é
  * remover UMA parada (removerPedido), não a rota.
  */
 export async function removerRota(repo: Repositorio, rotaId: string): Promise<ResultadoRemocao> {

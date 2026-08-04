@@ -167,7 +167,7 @@ export function App() {
     [tema, mapaOffline.urlFonte],
   );
   // Parâmetros de trilha: padrões mesclados com os overrides de config/geral —
-  // o escritório ajusta filtros de GPS/handoff sem novo deploy (seção 11).
+  // o Admin Estoque ajusta filtros de GPS/handoff sem novo deploy (seção 11).
   const parametrosTrilha = useMemo(() => mesclarParametrosTrilha(config?.trilha), [config?.trilha]);
   // Redação e ritmo do aviso ao cliente — também ajustáveis sem deploy.
   const parametrosAviso = useMemo(() => mesclarParametrosAviso(config?.aviso), [config?.aviso]);
@@ -283,7 +283,7 @@ export function App() {
     const texto =
       faltam > 0
         ? `Fechar a rota com ${faltam} parada(s) POR ENTREGAR?\n\n` +
-          'Elas ficam sem registro de entrega e o escritório vai ter de resolver. ' +
+          'Elas ficam sem registro de entrega e o Admin Estoque vai ter de resolver. ' +
           'A rota vai para o histórico — você pode reabrir depois, se foi engano.'
         : 'Fechar a rota? Tudo foi resolvido. Ela vai para o histórico, na aba Fechadas.';
     if (!window.confirm(texto)) return;
@@ -413,7 +413,7 @@ export function App() {
 
   /**
    * O GPS da LISTA liga em dois casos: quando o motorista pede "mais perto de
-   * mim", e quando a rota esta em execucao e o escritorio acompanha a posicao.
+   * mim", e quando a rota esta em execucao e o Admin Estoque acompanha a posicao.
    * Nunca durante a navegacao — ela tem o watch dela, e dois `watchPosition` no
    * mesmo aparelho e o dobro de acordar o GPS pelo mesmo dado.
    */
@@ -421,7 +421,7 @@ export function App() {
   const { leitura: posicaoLista } = usePosicao(
     (porProximidade || rotaEmExecucao) && !navegandoPara,
   );
-  // Compartilhamento com o escritorio enquanto ele NAO esta navegando; dentro
+  // Compartilhamento com o Admin Estoque enquanto ele NAO esta navegando; dentro
   // da navegacao quem compartilha e a propria tela, com a leitura que ela ja
   // tem. Para sozinho quando a rota conclui.
   const { compartilhando } = useCompartilharPosicao(
@@ -596,8 +596,8 @@ export function App() {
             faz, e um indicador discreto e permanente resolve isso sem virar
             alarme. */}
         {compartilhando && (
-          <span className="compartilhando" title="A posição está sendo compartilhada com o escritório enquanto a rota está em execução">
-            📡 escritório acompanha
+          <span className="compartilhando" title="A posição está sendo compartilhada com o Admin Estoque enquanto a rota está em execução">
+            📡 Admin Estoque acompanha
           </span>
         )}
         <div className="topo-acoes">
@@ -691,7 +691,7 @@ export function App() {
         <section className="sem-rota">
           <div className="sem-rota-titulo">Nenhuma rota publicada para você</div>
           <p>
-            Quando o escritório publicar a rota do dia, ela aparece aqui sozinha — e fica no
+            Quando o Admin Estoque publicar a rota do dia, ela aparece aqui sozinha — e fica no
             aparelho, para você seguir mesmo sem sinal.
           </p>
           <p className="sem-rota-dica">
@@ -845,7 +845,7 @@ export function App() {
               ordens respondem perguntas diferentes — e a oficial nem parte de
               onde o motorista está. */}
           <div className="ordenacao-explica">
-            Os números (PARADA 01, 02…) são a ordem do escritório, calculada
+            Os números (PARADA 01, 02…) são a ordem do Admin Estoque, calculada
             saindo do CD e voltando pra ele — por isso a mais perto de você pode
             ter número alto.
           </div>
