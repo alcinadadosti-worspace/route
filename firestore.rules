@@ -18,6 +18,16 @@ service cloud.firestore {
     function escritorio() {
       return papel() == 'admin' || papel() == 'operador';
     }
+    // Conta com papel ATRIBUÍDO pelo criar-usuario — não basta existir no Auth.
+    // Fecha o buraco do autocadastro: se o signup do Firebase estiver aberto
+    // (ou for aberto por engano um dia), uma conta auto-criada nasce com papel
+    // vazio e NÃO passa daqui. Isso importa porque o id de cliente vindo da
+    // planilha é o código Pessoa do ERP — numérico e ENUMERÁVEL, ao contrário
+    // do hash da era XML: `get` liberado a qualquer logado viraria despejo da
+    // base inteira de PII por tentativa e erro.
+    function papelConhecido() {
+      return papel() in ['admin', 'operador', 'motorista'];
+    }
     // A escrita de campo (entrega, status do pedido) tem que pertencer a uma
     // rota do próprio motorista — senão qualquer logado adultera pedido/rota
     // alheia só sabendo o id. Um get() prova posse.
@@ -36,6 +46,13 @@ service cloud.firestore {
         && resource.data.motoristaId == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['paradas', 'status', 'concluidaEm'])
+        // O campo atualiza CAMPOS das paradas (status, chegouEm, avisadoEm…),
+        // nunca a composição da rota: mesma contagem antes e depois. Sem isto,
+        // o dono poderia acrescentar parada forjada ou sumir com uma — e toda
+        // escrita legítima do app preserva o tamanho (é sempre um map sobre o
+        // mesmo array).
+        && request.resource.data.paradas is list
+        && request.resource.data.paradas.size() == resource.data.paradas.size()
         // Só pode MUDAR o status para em_execucao/concluida — ou deixá-lo como
         // está. O "deixar como está" existe porque há escrita em `paradas` que
         // não inicia a rota: marcar que o cliente foi avisado (seção 11.8)
@@ -54,7 +71,7 @@ service cloud.firestore {
       // paradas da rota dele; `list` (enumerar a coleção) é só Admin Estoque,
       // senão qualquer motorista baixa a base inteira de clientes (PII) e,
       // com o id = SHA-256 do CPF, recupera CPFs por força bruta.
-      allow get: if logado();
+      allow get: if papelConhecido();
       allow list: if escritorio();
       allow update: if logado() && (
         // Pin (RF-07): coordenada tem que ser lat/lng numéricos plausíveis —
@@ -90,7 +107,7 @@ service cloud.firestore {
     // autor, imutável no aparelho — quem o consome e atualiza é a API.
     match /trilhasBrutas/{trilhaBrutaId} {
       allow read: if escritorio();
-      allow create: if logado()
+      allow create: if papelConhecido()
         && request.resource.data.gravadaPor == request.auth.uid
         && request.resource.data.status == 'pendente'
         // hasOnly (não hasAll): sem campos extras injetados no doc.
@@ -130,7 +147,7 @@ service cloud.firestore {
     }
 
     match /config/{docId} {
-      allow read: if logado();
+      allow read: if papelConhecido();
       allow write: if false;
     }
 
@@ -138,7 +155,7 @@ service cloud.firestore {
       // Como clientes: `get` por id ao motorista (segue a trilha ativa da
       // parada), `list` só Admin Estoque — senão vaza a coordenada do caminho de
       // acesso de todo cliente.
-      allow get: if logado();
+      allow get: if papelConhecido();
       allow list: if escritorio();
       allow write: if false;
     }
@@ -164,7 +181,15 @@ service cloud.firestore {
         && request.resource.data.lat >= -90 && request.resource.data.lat <= 90
         && request.resource.data.lng is number
         && request.resource.data.lng >= -180 && request.resource.data.lng <= 180
-        && request.resource.data.em is string;
+        // hasOnly limita os NOMES; os valores precisam de tipo — sem isto,
+        // `rumo` aceitaria um texto de megabytes no lugar de um número.
+        && request.resource.data.precisaoM is number
+        && (request.resource.data.rumo == null
+            || request.resource.data.rumo is number)
+        && (request.resource.data.velocidadeMs == null
+            || request.resource.data.velocidadeMs is number)
+        && request.resource.data.em is string
+        && request.resource.data.em.size() < 40;
       allow delete: if false;
     }
 
@@ -180,9 +205,17 @@ service cloud.firestore {
         && request.resource.data.gravadaPor == request.auth.uid
         && request.resource.data.resultado in ['entregue', 'ausente', 'nao_localizado', 'recusa']
         && request.resource.data.confirmadaEm is string
+        // Forma fixa no campo aninhado, como no pin do cliente: hasOnly nas
+        // chaves de topo não alcança mapa interno, e sem isto a posição
+        // aceitaria campos injetados junto de lat/lng.
         && (request.resource.data.posicaoConfirmacao == null
-            || (request.resource.data.posicaoConfirmacao.lat is number
-                && request.resource.data.posicaoConfirmacao.lng is number))
+            || (request.resource.data.posicaoConfirmacao.keys().hasOnly(['lat', 'lng'])
+                && request.resource.data.posicaoConfirmacao.lat is number
+                && request.resource.data.posicaoConfirmacao.lat >= -90
+                && request.resource.data.posicaoConfirmacao.lat <= 90
+                && request.resource.data.posicaoConfirmacao.lng is number
+                && request.resource.data.posicaoConfirmacao.lng >= -180
+                && request.resource.data.posicaoConfirmacao.lng <= 180))
         // Comprovante (quem recebeu + foto do ato). Nome curto para caber num
         // campo digitado na porta; caminho da PRÓPRIA entrega, não um arbitrário
         // nem o de outra — senão o comprovante de uma serviria de álibi noutra.

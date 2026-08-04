@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { zipSync, strToU8 } from 'fflate';
 import { mensagemDeRecibo, PARAMETROS_AVISO_PADRAO, quantidadeDeItens } from '@rota/shared';
 import { importarPlanilha } from './servico-planilha.js';
+import { lerPlanilha } from './planilha.js';
 import { localizarEnderecos } from './geocodificacao-lote.js';
 import { publicarRota } from '../rotas/publicar.js';
 import { criarClienteOsrm } from '../rotas/osrm.js';
@@ -176,4 +177,16 @@ test('pedido de RETIRADA da planilha nunca entra na rota', async () => {
   );
   assert.equal(publicacao.ok, false);
   if (!publicacao.ok) assert.match(publicacao.erro, /retirada/i);
+});
+
+test('bomba de descompressão é recusada ANTES de inflar', async () => {
+  // 5 MB de upload podem declarar 500 MB de XML: numa instância de 512 MB é
+  // negação de serviço por um arquivo. O filtro confere o `originalSize` da
+  // entrada do zip e recusa sem pagar a inflação. (`size`, o comprimido, é
+  // justamente o número pequeno e inocente de uma bomba — não serve de guarda.)
+  const gigante = new Uint8Array(41 * 1024 * 1024); // zeros: comprime a quase nada
+  const bomba = zipSync({ 'xl/worksheets/sheet1.xml': gigante });
+  const resultado = lerPlanilha(bomba);
+  assert.equal(resultado.ok, false);
+  if (!resultado.ok) assert.match(resultado.motivo, /grande demais/);
 });

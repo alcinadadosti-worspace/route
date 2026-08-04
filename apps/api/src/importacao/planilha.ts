@@ -75,12 +75,42 @@ const OBRIGATORIAS = [
   'ufentregaretirada',
 ];
 
+/**
+ * Teto do XML DESCOMPRIMIDO. O upload limita o .xlsx a 5 MB, mas zip é
+ * compressão: um arquivo forjado de 5 MB infla para centenas de MB e derruba a
+ * instância de 512 MB — negação de serviço por um upload. O ciclo real inteiro
+ * (3507 notas) dá ~9 MB de XML; 40 MB é 4x de folga e ainda é um limite.
+ */
+const XML_MAXIMO_BYTES = 40 * 1024 * 1024;
+
 export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
   let arquivos: Record<string, Uint8Array>;
+  let estourou = false;
   try {
-    arquivos = unzipSync(conteudo);
+    // Só a aba de dados é inflada — estilos, temas e o resto do pacote nem
+    // passam pelo descompressor. O tamanho é conferido ANTES de inflar, e o
+    // campo certo é `originalSize` (descomprimido) — `size` é o COMPRIMIDO,
+    // que numa bomba é justamente o número pequeno e inocente. Zip que mente o
+    // originalSize para baixo também não estoura: a fflate aloca o buffer pelo
+    // declarado e não cresce além dele.
+    arquivos = unzipSync(conteudo, {
+      filter: (arquivo) => {
+        if (arquivo.name !== 'xl/worksheets/sheet1.xml') return false;
+        if (arquivo.originalSize > XML_MAXIMO_BYTES) {
+          estourou = true;
+          return false;
+        }
+        return true;
+      },
+    });
   } catch {
     return { ok: false, motivo: 'Arquivo não é um .xlsx válido (zip corrompido)' };
+  }
+  if (estourou) {
+    return {
+      ok: false,
+      motivo: `Planilha grande demais (aba de dados acima de ${XML_MAXIMO_BYTES / 1024 / 1024} MB descomprimida) — se for um export legítimo, divida o período`,
+    };
   }
   const caminho = Object.keys(arquivos).find((n) => n === 'xl/worksheets/sheet1.xml');
   if (!caminho) {

@@ -64,7 +64,16 @@ export async function criarApp({
 }: OpcoesApp): Promise<FastifyInstance> {
   const app = Fastify({ logger: true });
 
-  await app.register(cors, { origin: true });
+  // CORS: com `ORIGENS_PERMITIDAS` (lista separada por vírgula) só os PWAs
+  // conhecidos passam — mesmo endurecimento já aplicado ao bucket do Storage.
+  // Sem a env var, reflete qualquer origem, como antes: a autenticação é por
+  // Bearer token (nada de cookie/sessão ambiente), então CORS aberto não
+  // concede credencial — restringir é defesa em profundidade, não a tranca.
+  const origens = (process.env.ORIGENS_PERMITIDAS ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  await app.register(cors, { origin: origens.length > 0 ? origens : true });
   await app.register(multipart, {
     // O teto de 60 nasceu da premissa "uma remessa é dezenas de notas" — e a
     // realidade a derrubou: o lote diário do ERP é ~125 notas e o Admin Estoque
@@ -276,9 +285,13 @@ export async function criarApp({
     { config: { papeis: ESCRITORIO } },
     async (req, reply) => {
       const { clienteId } = req.params as { clienteId: string };
-      // O clienteId é hash hex de 64 e vira caminho de documento: validar aqui
-      // fecha a injeção de caminho, como no rotaId e na chave do pedido.
-      if (!/^[0-9a-f]{64}$/.test(clienteId)) {
+      // O clienteId vira caminho de documento: validar fecha a injeção de
+      // caminho, como no rotaId e na chave do pedido. DOIS formatos legítimos:
+      // hash hex de 64 (cliente vindo de XML) e código Pessoa do ERP, numérico
+      // (cliente vindo da planilha). A guarda original só conhecia o hash — e
+      // rejeitava com 404 o refazer-ponto de TODO cliente importado da
+      // planilha, que hoje é a base inteira.
+      if (!/^([0-9a-f]{64}|\d{1,20})$/.test(clienteId)) {
         return reply.code(404).send({ erro: 'Cliente não encontrado' });
       }
       const resultado = await refazerPontoDoCliente(repo, clienteId, geocodificador);
