@@ -65,8 +65,8 @@ export function agruparPorRegiao(
   pontos: PontoAgrupavel[],
   opcoes: OpcoesAgrupamento = {},
 ): GrupoSugerido[] {
-  const maximo = positivo(opcoes.maximoPorRota) ?? PADRAO.maximoPorRota;
-  const minimo = positivo(opcoes.minimoPorRota) ?? PADRAO.minimoPorRota;
+  const maximo = contagem(opcoes.maximoPorRota) ?? PADRAO.maximoPorRota;
+  const minimo = contagem(opcoes.minimoPorRota) ?? PADRAO.minimoPorRota;
   const raioFusaoM = (positivo(opcoes.raioDeFusaoKm) ?? PADRAO.raioDeFusaoKm) * 1000;
   if (pontos.length === 0) return [];
 
@@ -203,4 +203,19 @@ function dividirNaMediana(grupo: PontoAgrupavel[]): [PontoAgrupavel[], PontoAgru
 
 function positivo(n: number | undefined): number | null {
   return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Teto e piso são CONTAGENS de paradas: inteiro, no mínimo 1.
+ *
+ * Meia parada trava o processo. A divisão repete enquanto `grupo.length >
+ * maximo`; com `maximo = 0,5` um grupo de uma parada nunca cabe, a divisão pela
+ * mediana devolve um lado vazio, o ramo degenerado corta em 1 + 0 — e o grupo
+ * de uma parada volta para a fila igualzinho, para sempre. O laço é síncrono:
+ * a API não fica lenta, ela PARA, e numa instância só isso derruba o serviço
+ * inteiro, motorista incluído. Chegava assim de `?maximoPorRota=0.5` na URL.
+ */
+function contagem(n: number | undefined): number | null {
+  const p = positivo(n);
+  return p === null ? null : Math.max(1, Math.floor(p));
 }

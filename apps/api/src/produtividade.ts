@@ -33,6 +33,22 @@ export type ResultadoProdutividade =
   | { ok: true; relatorio: RelatorioProdutividade }
   | { ok: false; status: number; erro: string };
 
+/**
+ * Confere a janela ANTES de ir ao banco.
+ *
+ * A validação morava só dentro do cálculo, que recebe os dados já lidos — então
+ * uma data errada custava a leitura de rotas + entregas + clientes + trilhas
+ * INTEIRAS para depois devolver 400. Errar a data no painel não pode consumir
+ * cota; e é a coleção de entregas que mais cresce, uma linha por porta batida.
+ */
+export function validarJanela(desde: string, ate: string): { erro: string } | null {
+  if (!FORMATO_DATA.test(desde) || !FORMATO_DATA.test(ate)) {
+    return { erro: 'Datas inválidas (esperado AAAA-MM-DD)' };
+  }
+  if (desde > ate) return { erro: 'A data inicial é depois da final' };
+  return null;
+}
+
 export function calcularProdutividade(
   entrada: { desde: string; ate: string },
   dados: {
@@ -42,12 +58,10 @@ export function calcularProdutividade(
     trilhas: Trilha[];
   },
 ): ResultadoProdutividade {
-  if (!FORMATO_DATA.test(entrada.desde) || !FORMATO_DATA.test(entrada.ate)) {
-    return { ok: false, status: 400, erro: 'Datas inválidas (esperado AAAA-MM-DD)' };
-  }
-  if (entrada.desde > entrada.ate) {
-    return { ok: false, status: 400, erro: 'A data inicial é depois da final' };
-  }
+  // Continua validando aqui também: a função é pura e testada por fora, e quem
+  // a chamar direto não pode depender de o endpoint ter conferido antes.
+  const invalida = validarJanela(entrada.desde, entrada.ate);
+  if (invalida) return { ok: false, status: 400, erro: invalida.erro };
 
   // A janela é pela DATA DA ROTA, que é o dia operacional — e não pela hora da
   // confirmação, que atravessaria a meia-noite numa rota que terminou tarde.

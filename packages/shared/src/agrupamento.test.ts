@@ -106,3 +106,34 @@ test('sem CD informado ainda agrupa (só não ordena por distância)', () => {
   assert.equal(grupos.length, 2);
   for (const g of grupos) assert.equal(g.distanciaDoCdKm, null);
 });
+
+test('teto fracionário não pendura o processo — vira inteiro', () => {
+  // `?maximoPorRota=0.5` na URL derrubava a API: a divisão repete enquanto o
+  // grupo não cabe no teto, e um grupo de UMA parada nunca cabe em meia. O
+  // ramo degenerado cortava em 1 + 0 e devolvia o mesmo grupo à fila, para
+  // sempre. Laço síncrono: a API não ficava lenta, PARAVA — e numa instância
+  // só, isso derruba o serviço para todo mundo, motorista incluído.
+  //
+  // CUIDADO ao mexer: se a guarda voltar a deixar passar fracionário, este
+  // teste não falha — ele PENDURA a suíte. É o preço de exercitar a função de
+  // verdade em vez de testar a guarda por dentro.
+  const pontos: PontoAgrupavel[] = [
+    { id: 'a', municipio: 'PENEDO', coordenada: PENEDO },
+    { id: 'b', municipio: 'PENEDO', coordenada: CORURIPE },
+  ];
+  for (const teto of [0.5, 0.9, 1.4]) {
+    const grupos = agruparPorRegiao(pontos, { maximoPorRota: teto });
+    assert.equal(grupos.flatMap((g) => g.ids).length, 2, `teto ${teto}`);
+    // Nenhum grupo vazio: centro de grupo vazio é NaN, que vaza como null no
+    // JSON e desenharia um marcador em lugar nenhum.
+    for (const g of grupos) assert.ok(g.ids.length >= 1, `grupo vazio com teto ${teto}`);
+  }
+});
+
+test('piso fracionário também não trava a fusão', () => {
+  const grupos = agruparPorRegiao(
+    [...perto('CORURIPE', CORURIPE, 3), ...perto('PENEDO', PENEDO, 2)],
+    { minimoPorRota: 0.3 },
+  );
+  assert.equal(grupos.flatMap((g) => g.ids).length, 5);
+});

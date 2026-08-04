@@ -15,7 +15,7 @@ import { localizarEnderecos } from './importacao/geocodificacao-lote.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
 import { agruparPorRegiao } from '@rota/shared';
 import { FORMATO_ROTA_ID } from './rotas/comum.js';
-import { calcularProdutividade } from './produtividade.js';
+import { calcularProdutividade, validarJanela } from './produtividade.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
 import { sugerirOrdemDeParadas } from './rotas/ordem-sugerida.js';
@@ -402,6 +402,10 @@ export async function criarApp({
   // navegador exigiria despejar tudo isso no browser sem necessidade.
   app.get('/api/produtividade', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
     const { desde, ate } = req.query as { desde?: string; ate?: string };
+    // Confere a janela ANTES de ler quatro coleções inteiras: data errada
+    // devolvia 400 depois de queimar a cota do dia à toa.
+    const invalida = validarJanela(desde ?? '', ate ?? '');
+    if (invalida) return reply.code(400).send({ erro: invalida.erro });
     const [rotas, entregas, clientes, trilhas] = await Promise.all([
       repo.listarRotas(),
       repo.listarEntregas(),

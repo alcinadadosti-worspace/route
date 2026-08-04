@@ -73,7 +73,11 @@ export function Mapa({
    * pontos serve de traçado — e o recorte por parada funciona igual.
    */
   const desenho = useMemo(() => {
-    const doOsrm = polyline ? decodificarPolyline(polyline) : null;
+    // Polyline que não decodifica para nada vale o mesmo que polyline nenhuma:
+    // sem esta guarda, `linha` ficava vazia, o enquadramento saía de
+    // `coordenadas[0]` = undefined e o mapa do dia não abria.
+    const decodificada = polyline ? decodificarPolyline(polyline) : null;
+    const doOsrm = decodificada?.length ? decodificada : null;
     const linha: GeoPonto[] = doOsrm ?? [
       { lat: cd.lat, lng: cd.lng },
       ...paradas.map((p) => p.coordenada),
