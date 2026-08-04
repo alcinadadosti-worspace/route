@@ -12,6 +12,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* O selo "Admin Estoque acompanha" tem `nowrap`, e item flex com nowrap não
+     encolhe abaixo do próprio texto: num celular estreito ele espremia o bloco
+     da marca (o único com `min-width: 0`), comendo "Rota do dia" e a data. Com
+     wrap, o que não couber desce uma linha — perder uma linha é melhor que
+     perder a informação. Em tela larga nada muda. */
+  flex-wrap: wrap;
   gap: 8px;
   border: 1px solid var(--borda);
   border-left: 6px solid var(--ambar);
