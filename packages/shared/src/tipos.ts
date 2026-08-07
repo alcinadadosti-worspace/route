@@ -387,9 +387,14 @@ export interface ProdutividadeMotorista {
    *
    * Somar quantidades entre linhas só é legítimo porque `uCom` é `UN` nas 28.088
    * linhas da base — não há caixa nem fardo se misturando à unidade.
+   *
+   * `produtosDistintos` é NULL quando alguma entrega do período veio de pedido
+   * sem lista de itens (importação pela planilha do ERP, que manda só a
+   * quantidade): a soma seria um subtotal com cara de total. Mesma régua do
+   * `produtosDistintos` de itens.ts — "não sei" não pode virar "nenhum".
    */
   itensEntregues: number;
-  produtosDistintos: number;
+  produtosDistintos: number | null;
   volumesEntregues: number;
   pesoEntregueKg: number;
   /**
@@ -411,7 +416,9 @@ export interface ProdutividadeRota {
   insucessos: number;
   /** Soma das quantidades; ver `ProdutividadeMotorista.itensEntregues`. */
   itensEntregues: number;
-  produtosDistintos: number;
+  /** Null quando algum pedido da rota não traz a lista (ver o campo homônimo
+   * em `ProdutividadeMotorista`). */
+  produtosDistintos: number | null;
   volumesEntregues: number;
   pesoEntregueKg: number;
   entregasSemCarga: number;

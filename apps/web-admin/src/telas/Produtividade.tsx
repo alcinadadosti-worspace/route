@@ -171,7 +171,9 @@ function Cartao({ m: bruto, nome }: { m: ProdutividadeMotorista; nome: string })
   const m: ProdutividadeMotorista = {
     ...bruto,
     itensEntregues: bruto.itensEntregues ?? 0,
-    produtosDistintos: bruto.produtosDistintos ?? 0,
+    // Null é DADO aqui ("não sei" — pedido da planilha não traz a lista), não
+    // campo ausente: vira traço na tela, nunca zero.
+    produtosDistintos: bruto.produtosDistintos ?? null,
     volumesEntregues: bruto.volumesEntregues ?? 0,
     pesoEntregueKg: bruto.pesoEntregueKg ?? 0,
     entregasSemCarga: bruto.entregasSemCarga ?? 0,
@@ -232,17 +234,23 @@ function Cartao({ m: bruto, nome }: { m: ProdutividadeMotorista; nome: string })
           porque "20 paradas" e "480 itens" medem coisas diferentes: uma parada
           pode ser um frasco ou 653 deles (a maior linha da base real). */}
       <div className="produtividade-linha carga">
-        <strong>Mercadoria entregue:</strong> {num(m.itensEntregues)} item(ns) em{' '}
-        {num(m.produtosDistintos)} produto(s) distinto(s)
+        <strong>Mercadoria entregue:</strong> {num(m.itensEntregues)} item(ns)
+        {/* Null = pedido da planilha, que não manda a lista: o bloco some em vez
+            de dizer "em 0 produto(s)" com o caminhão cheio. */}
+        {m.produtosDistintos != null && ` em ${num(m.produtosDistintos)} produto(s) distinto(s)`}
         {m.volumesEntregues > 0 && ` · ${num(m.volumesEntregues)} volume(s)`}
         {m.pesoEntregueKg > 0 && ` · ${kg(m.pesoEntregueKg)}`}
         <div className="produtividade-nota">
-          <strong>Item</strong> é a soma das quantidades da nota (
-          <span className="mono">qCom</span>): três frascos do mesmo desodorante contam três.{' '}
-          <strong>Produtos distintos</strong> é quantas linhas a nota tem. Nesta base a média é 24
-          itens em 8 linhas por nota — os dois aparecem para não se confundirem. Toda a base é
-          vendida em <span className="mono">UN</span>, sem caixa nem fardo, então a soma dá um número
-          comparável entre motoristas.
+          <strong>Item</strong> é a soma das quantidades do pedido: três frascos do mesmo
+          desodorante contam três. Toda a base é vendida em <span className="mono">UN</span>, sem
+          caixa nem fardo, então a soma dá um número comparável entre motoristas.
+          {m.produtosDistintos != null && (
+            <>
+              {' '}
+              <strong>Produtos distintos</strong> é quantas linhas a nota tem. Nesta base a média é
+              24 itens em 8 linhas por nota — os dois aparecem para não se confundirem.
+            </>
+          )}
           {m.entregasSemCarga > 0 && (
             <>
               {' '}
@@ -331,7 +339,10 @@ function TabelaRotas({ rotas }: { rotas: ProdutividadeRota[] }) {
                 <td className="mono">
                   {r.entregues > 0 ? Math.round(r.itensEntregues / r.entregues) : '—'}
                 </td>
-                <td className="mono">{num(r.produtosDistintos)}</td>
+                {/* Null = pedido sem lista (planilha): traço, não zero. */}
+                <td className="mono">
+                  {r.produtosDistintos == null ? '—' : num(r.produtosDistintos)}
+                </td>
                 <td className="mono">{r.volumesEntregues || '—'}</td>
                 <td className="mono">{r.pesoEntregueKg > 0 ? kg(r.pesoEntregueKg) : '—'}</td>
                 <td className="mono">{km(r.kmPlanejados)}</td>

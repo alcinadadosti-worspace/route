@@ -347,7 +347,9 @@ test('detalhe por rota: uma linha por rota, mais recente primeiro, somando o tot
   // O detalhe tem de fechar com o total: se divergir, um dos dois está errado.
   const soma = (f: (d: (typeof m.rotas_detalhe)[number]) => number) =>
     m.rotas_detalhe.reduce((s, d) => s + f(d), 0);
-  assert.equal(soma((d) => d.produtosDistintos), m.produtosDistintos);
+  // NaN de sentinela: estas rotas TÊM lista de itens — se um null aparecer
+  // aqui, a soma vira NaN e o assert acusa, em vez de um `?? 0` esconder.
+  assert.equal(soma((d) => d.produtosDistintos ?? Number.NaN), m.produtosDistintos);
   assert.equal(soma((d) => d.itensEntregues), m.itensEntregues);
   assert.equal(soma((d) => d.pesoEntregueKg), m.pesoEntregueKg);
   assert.equal(soma((d) => d.entregues), m.entregues);
@@ -438,6 +440,38 @@ test('rota sem o campo itens não derruba a aba inteira', () => {
   assert.equal(m.entregues, 1);
   assert.equal(m.itensEntregues, 0);
   assert.equal(m.produtosDistintos, 0);
+});
+
+test('pedido da planilha (sem lista de itens): produtos distintos vira NULL, nunca zero', () => {
+  // A planilha do ERP manda só a quantidade. `produtosDistintos` da parada
+  // devolve null de propósito ("não sei") — e um `?? 0` na agregação fazia o
+  // relatório do mês dizer "0 produto(s) distinto(s)" com o caminhão cheio,
+  // exatamente o que a régua de itens.ts proíbe.
+  const daPlanilha = { ...parada('p1'), itens: [], quantidadeMateriais: 7 };
+  const r = calcularProdutividade(
+    { desde: '2026-07-29', ate: '2026-07-29' },
+    {
+      ...SEM_NADA,
+      rotas: [
+        rota('r1', '2026-07-29', [daPlanilha]),
+        // Rota da era XML, COM lista: o total do período continua incontável —
+        // somar só as rotas que sabem seria um subtotal disfarçado de total.
+        rota('r2', '2026-07-29', [parada('p2', null, { quantidades: [3, 2] })]),
+      ],
+      entregas: [
+        entrega('r1', 'p1', 'entregue', '2026-07-29T08:00:00-03:00'),
+        entrega('r2', 'p2', 'entregue', '2026-07-29T09:00:00-03:00'),
+      ],
+    },
+  );
+
+  assert.ok(r.ok);
+  const m = r.relatorio.motoristas[0]!;
+  assert.equal(m.itensEntregues, 12, 'itens continuam contando: 7 da planilha + 5 da lista');
+  assert.equal(m.produtosDistintos, null, 'não sei não pode virar nenhum');
+  const detalhes = new Map(m.rotas_detalhe.map((d) => [d.rotaId, d.produtosDistintos]));
+  assert.equal(detalhes.get('r1'), null, 'a rota da planilha não sabe');
+  assert.equal(detalhes.get('r2'), 2, 'a rota com lista continua sabendo');
 });
 
 test('sincronização offline fora de ordem não vira intervalo negativo', () => {

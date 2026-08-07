@@ -171,6 +171,145 @@ test('RETIRADA nasce classificada, SEM aba Decisões — e o cliente NÃO herda 
   assert.equal(cliente.enderecoFiscal.logradouro, 'RUA DA REVENDEDORA');
 });
 
+test('cliente que ALTERNA rota/retirada não troca de endereço nem abre revisão falsa', async () => {
+  // O bloco de CADASTRO diverge do de ENTREGA numa parte legítima da base (42
+  // casos no ciclo 11). A linha de retirada usa o cadastro — se ela pudesse
+  // escrever o endereço, cada alternância trocava o endereço do cliente e, com
+  // pin, abria uma revisão "endereço mudou" que TRAVAVA o pedido seguinte na
+  // aba Decisões por uma mudança que nunca existiu.
+  const repo = new RepositorioMemoria();
+  // 1º ciclo: entrega no POVOADO SERRA (com pin do cadastro — cliente fica com ponto).
+  await importarPlanilha(
+    'c1.xlsx',
+    xlsxDe([
+      linhaRota({
+        LogradouroEntrega: 'POVOADO SERRA',
+        Complemento: '67 -10.404108,-36.431132',
+        CodigoPedido: '600000010',
+      }),
+    ]),
+    repo,
+  );
+  // 2º ciclo: a MESMA revendedora retira no CD. O cadastro dela (RUA DA
+  // PROVIDENCIA) diverge do endereço de entrega gravado (POVOADO SERRA).
+  await importarPlanilha(
+    'c2.xlsx',
+    xlsxDe([linhaRota({
+      'Tipo de Entrega': 'Retirar na central de serviços',
+      LogradouroEntrega: 'AV WANDERLEY',
+      ComplementoEntregaRetirada: '874',
+      CidadeEntregaRetirada: 'PENEDO',
+      CodigoPedido: '600000011',
+    })]),
+    repo,
+  );
+
+  const cliente = (await repo.listarClientes())[0]!;
+  assert.equal(cliente.enderecoFiscal.logradouro, 'POVOADO SERRA', 'retirada não mexe no endereço');
+  assert.equal(cliente.enderecoEmRevisao ?? null, null, 'nenhuma revisão falsa aberta');
+
+  // 3º ciclo: volta a ser entrega, no MESMO lugar de sempre — tem de nascer
+  // despachável, não preso numa pergunta.
+  const rel = await importarPlanilha(
+    'c3.xlsx',
+    xlsxDe([linhaRota({ LogradouroEntrega: 'POVOADO SERRA', CodigoPedido: '600000012' })]),
+    repo,
+  );
+  assert.equal(rel.pendentesDeDecisao, 0);
+  const pedido = (await repo.listarPedidos()).find((p) => p.id === '600000012')!;
+  assert.equal(pedido.status, 'pronto_para_rota');
+});
+
+test('quem só RETIRAVA e passa a receber em casa não nasce preso em Decisões', async () => {
+  // Bug achado reordenando duas linhas do MESMO arquivo: com a retirada antes
+  // da rota, o pedido de entrega saía `pendente_de_decisao`; com a rota antes,
+  // `pronto_para_rota`. A linha de retirada já não mexia no endereço, mas ainda
+  // gravava o PIN do cadastro — e pin + endereço divergente é exatamente o que
+  // dispara a revisão de "mudou de lugar". A revendedora que sempre retirou não
+  // tem lugar de ENTREGA estabelecido: a primeira rota dela não é mudança.
+  const cadastroComGps = { Complemento: '149 -10.404108,-36.431132' };
+  const doCiclo = (extra: Record<string, string>) => linhaRota({ ...cadastroComGps, ...extra });
+  const retirada = {
+    'Tipo de Entrega': 'Retirar na central de serviços',
+    LogradouroEntrega: 'AV WANDERLEY',
+    ComplementoEntregaRetirada: '874',
+    CidadeEntregaRetirada: 'PENEDO',
+  };
+
+  // Ciclo 1: só retirou. Ciclo 2: primeira entrega em casa, endereço de entrega
+  // legitimamente diferente do cadastro (42 casos reais no ciclo 11).
+  const repo = new RepositorioMemoria();
+  await importarPlanilha(
+    'c1.xlsx',
+    xlsxDe([doCiclo({ ...retirada, CodigoPedido: '900000011' })]),
+    repo,
+  );
+  const rel = await importarPlanilha(
+    'c2.xlsx',
+    xlsxDe([doCiclo({ CodigoPedido: '900000012', LogradouroEntrega: 'POVOADO SERRA' })]),
+    repo,
+  );
+  assert.equal(rel.pendentesDeDecisao, 0, 'primeira entrega não é "mudança de endereço"');
+  const pedido = (await repo.listarPedidos()).find((p) => p.id === '900000012')!;
+  assert.equal(pedido.status, 'pronto_para_rota');
+  // O GPS do cadastro não se perdeu: a linha de rota lê a MESMA coluna.
+  const cliente = (await repo.listarClientes())[0]!;
+  assert.deepEqual(cliente.coordenada, { lat: -10.404108, lng: -36.431132 });
+
+  // E o resultado não pode depender da ORDEM das linhas dentro do arquivo.
+  for (const ordem of [
+    ['retirada', 'rota'],
+    ['rota', 'retirada'],
+  ] as const) {
+    const r = new RepositorioMemoria();
+    const linhas = {
+      retirada: doCiclo({ ...retirada, CodigoPedido: '900000021' }),
+      rota: doCiclo({ CodigoPedido: '900000022', LogradouroEntrega: 'POVOADO SERRA' }),
+    };
+    await importarPlanilha('c.xlsx', xlsxDe(ordem.map((o) => linhas[o])), r);
+    const daRota = (await r.listarPedidos()).find((p) => p.id === '900000022')!;
+    assert.equal(daRota.status, 'pronto_para_rota', `ordem ${ordem.join(' → ')}`);
+  }
+});
+
+test('GPS digitado no bloco do CD (linha de retirada) NUNCA vira pin do cliente', async () => {
+  // Pin no galpão é o "ponto errado com cara de certo" — toda entrega futura
+  // iria para o CD.
+  const repo = new RepositorioMemoria();
+  await importarPlanilha(
+    'c.xlsx',
+    xlsxDe([linhaRetirada({ ComplementoEntregaRetirada: '874 -10.280800,-36.559500' })]),
+    repo,
+  );
+  const cliente = (await repo.listarClientes())[0]!;
+  assert.equal(cliente.coordenada, null);
+  assert.equal(cliente.statusMapeamento, 'nao_mapeado');
+});
+
+test('revisão de endereço gera UM alerta por cliente, não um por nota', async () => {
+  // A mesma revendedora tem várias notas no ciclo (2019 pedidos para 1366
+  // clientes): um alerta por linha afogaria os raros — a mesma inundação já
+  // consertada no aviso de retirada.
+  const repo = new RepositorioMemoria();
+  await importarPlanilha(
+    'c1.xlsx',
+    xlsxDe([linhaRota({ Complemento: '67 -10.404108,-36.431132', CodigoPedido: '600000020' })]),
+    repo,
+  );
+  const rel = await importarPlanilha(
+    'c2.xlsx',
+    xlsxDe([
+      linhaRota({ LogradouroEntrega: 'RUA NOVA', CodigoPedido: '600000021' }),
+      linhaRota({ LogradouroEntrega: 'RUA NOVA', CodigoPedido: '600000022' }),
+      linhaRota({ LogradouroEntrega: 'RUA NOVA', CodigoPedido: '600000023' }),
+    ]),
+    repo,
+  );
+  assert.equal(rel.pendentesDeDecisao, 3, 'os TRÊS pedidos aguardam a decisão');
+  const doEndereco = rel.alertas.filter((a) => /Endereço do cadastro mudou/.test(a.mensagem));
+  assert.equal(doEndereco.length, 1, 'mas o aviso é um só');
+});
+
 test('cancelada NOVA é ignorada; cancelada JÁ IMPORTADA vira alerta com ação manual', async () => {
   const repo = new RepositorioMemoria();
   // 1º dia: pedido entra normal.
@@ -298,6 +437,37 @@ test('lerPlanilha recusa zip corrompido e planilha sem as colunas esperadas', ()
   const r = lerPlanilha(semColunas);
   assert.equal(r.ok, false);
   if (!r.ok) assert.match(r.motivo, /sem as colunas/);
+});
+
+test('entidade hexadecimal no XML é desescapada — e código inválido não vira 500', () => {
+  // O export atual usa entidades decimais, mas o XML permite `&#x...;` e nada
+  // obriga o ERP a continuar como está. E um código fora da faixa Unicode
+  // (forjável numa planilha) não pode derrubar a importação inteira: some.
+  const cel = (ref: string, v: string) => `<x:c t="str" r="${ref}"><x:v>${v}</x:v></x:c>`;
+  const cabecalho = [
+    'CodigoPedido', 'NotaFiscal', 'Pessoa', 'NomePessoa', 'Tipo de Entrega',
+    'SituacaoComercial', 'LogradouroEntrega', 'CidadeEntregaRetirada', 'UFEntregaRetirada',
+  ];
+  const linha1 = cabecalho.map((c, i) => cel(`${String.fromCharCode(65 + i)}1`, c)).join('');
+  const linha2 = [
+    cel('A2', '523636997'), cel('B2', '1'), cel('C2', '77'),
+    cel('D2', 'JOS&#xC9;&#x110000; MARIA'),
+    cel('E2', 'No endere&#xE7;o de entrega'),
+    cel('F2', 'Entregue'), cel('G2', 'RUA A'), cel('H2', 'PENEDO'), cel('I2', 'AL'),
+  ].join('');
+  const zip = zipSync({
+    'xl/worksheets/sheet1.xml': strToU8(
+      `<x:worksheet xmlns:x="a"><x:sheetData><x:row r="1">${linha1}</x:row>` +
+        `<x:row r="2">${linha2}</x:row></x:sheetData></x:worksheet>`,
+    ),
+  });
+  const r = lerPlanilha(zip);
+  assert.ok(r.ok);
+  if (r.ok) {
+    assert.equal(r.linhas[0]!.nome, 'JOSÉ MARIA');
+    // O ç veio por entidade hex e a classificação ainda reconhece o rótulo.
+    assert.equal(r.linhas[0]!.tipoEntrega, 'rota');
+  }
 });
 
 test('extrairCoordenada: os formatos reais do cadastro, e lixo fora de AL não passa', () => {

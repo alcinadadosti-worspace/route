@@ -124,6 +124,9 @@ export function calcularProdutividade(
 
     const m = de(rota.motoristaId);
     const paradaPorPedido = new Map(rota.paradas.map((p) => [p.pedidoId, p]));
+    /** Alguma entrega sem lista de itens (pedido da planilha): a contagem de
+     * produtos distintos da rota vira null, não um subtotal com cara de total. */
+    let produtosDesconhecidos = false;
     const daqui: ProdutividadeRota = {
       rotaId: rota.id,
       data: rota.data,
@@ -189,9 +192,13 @@ export function calcularProdutividade(
       // PLANILHA do ERP não tem lista nenhuma, só a quantidade — contar linhas
       // aqui fazia o relatório do mês dizer "0 itens entregues" com o caminhão
       // cheio. `produtosDistintos` devolve null nesse caso (não sabemos), e
-      // "não sei" não pode virar "nenhum" numa métrica que o Admin Estoque lê.
+      // "não sei" não pode virar "nenhum" numa métrica que o Admin Estoque lê —
+      // um `?? 0` aqui fazia exatamente isso: com a base importada da planilha,
+      // o relatório inteiro dizia "0 produto(s) distinto(s)" com o caminhão cheio.
       daqui.itensEntregues += quantidadeDeItens(parada);
-      daqui.produtosDistintos += produtosDistintos(parada) ?? 0;
+      const distintos = produtosDistintos(parada);
+      if (distintos === null) produtosDesconhecidos = true;
+      else daqui.produtosDistintos = (daqui.produtosDistintos ?? 0) + distintos;
       if (temCarga(parada.volumes, parada.pesoBrutoKg)) {
         if (parada.volumes > 0) daqui.volumesEntregues += parada.volumes;
         if (parada.pesoBrutoKg > 0) daqui.pesoEntregueKg += parada.pesoBrutoKg;
@@ -206,8 +213,14 @@ export function calcularProdutividade(
     // arredondamento aqui só protege contra soma de ponto flutuante.
     daqui.itensEntregues = Math.round(daqui.itensEntregues);
     daqui.pesoEntregueKg = Math.round(daqui.pesoEntregueKg * 1000) / 1000;
+    if (produtosDesconhecidos) daqui.produtosDistintos = null;
     m.itensEntregues += daqui.itensEntregues;
-    m.produtosDistintos += daqui.produtosDistintos;
+    // Null é pegajoso: uma rota sem contagem torna o total do período incontável
+    // — somar só as rotas que sabem seria um subtotal disfarçado de total.
+    m.produtosDistintos =
+      m.produtosDistintos === null || daqui.produtosDistintos === null
+        ? null
+        : m.produtosDistintos + daqui.produtosDistintos;
     m.volumesEntregues += daqui.volumesEntregues;
     m.pesoEntregueKg = Math.round((m.pesoEntregueKg + daqui.pesoEntregueKg) * 1000) / 1000;
     m.entregasSemCarga += daqui.entregasSemCarga;

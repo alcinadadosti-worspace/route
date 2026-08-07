@@ -101,6 +101,10 @@ export async function importarPlanilha(
     { dados: Partial<Cliente>; merge: boolean }
   >();
   const vistos = new Set<string>();
+  /** Um alerta de revisão POR CLIENTE, não por linha: a mesma revendedora tem
+   * várias notas no ciclo, e repetir o aviso a cada uma afogaria os alertas
+   * raros — a mesma inundação já consertada no aviso de retirada. */
+  const revisaoAlertada = new Set<string>();
   let pinsDoCadastro = 0;
   let aGeocodificar = 0;
 
@@ -158,19 +162,37 @@ export async function importarPlanilha(
     // Retirada usa o endereço do CADASTRO: o bloco de entrega dessas linhas
     // traz o endereço do PRÓPRIO CD (é para lá que a revendedora vai), e
     // gravá-lo no cliente apontaria toda entrega futura para o galpão.
+    const linhaDeRota = linha.tipoEntrega === 'rota';
     const endereco = enderecoDeBloco(
-      linha.tipoEntrega === 'rota' ? linha.enderecoEntrega : linha.enderecoCadastro,
+      linhaDeRota ? linha.enderecoEntrega : linha.enderecoCadastro,
     );
     const telefone = normalizarTelefone(linha.telefone);
+    // Numa linha de retirada o bloco de entrega descreve o CD: referência e
+    // coordenada de lá não podem virar dado do CLIENTE — um pin no galpão é o
+    // "ponto errado com cara de certo" que esta base mais teme.
     const referencia = (
-      linha.enderecoEntrega.referencia || linha.enderecoCadastro.referencia
+      linhaDeRota
+        ? linha.enderecoEntrega.referencia || linha.enderecoCadastro.referencia
+        : linha.enderecoCadastro.referencia
     ).trim();
-    const pinDoCadastro = extrairCoordenada([
-      linha.enderecoCadastro.complemento,
-      linha.enderecoCadastro.referencia,
-      linha.enderecoEntrega.complemento,
-      linha.enderecoEntrega.referencia,
-    ]);
+    // A linha de retirada não estabelece o LUGAR do cliente: nem o endereço,
+    // nem o pin. O bloco de entrega dela descreve o CD (pin no galpão mandaria
+    // toda entrega futura para lá), mas o GPS do CADASTRO também não pode
+    // entrar por aqui: quem só retirou ainda não tem lugar de ENTREGA
+    // estabelecido, e um pin gravado agora faz a PRIMEIRA linha de rota da
+    // revendedora parecer mudança de endereço — cliente com pin + endereço
+    // divergente abre revisão — prendendo na aba Decisões um pedido que nunca
+    // mudou de lugar. Dava para reproduzir só reordenando duas linhas do mesmo
+    // arquivo. O GPS não se perde: a primeira linha de rota lê a MESMA coluna
+    // do cadastro.
+    const pinDoCadastro = linhaDeRota
+      ? extrairCoordenada([
+          linha.enderecoCadastro.complemento,
+          linha.enderecoCadastro.referencia,
+          linha.enderecoEntrega.complemento,
+          linha.enderecoEntrega.referencia,
+        ])
+      : null;
 
     const existente = clientes.get(linha.pessoa);
     let cliente: Cliente;
@@ -201,8 +223,17 @@ export async function importarPlanilha(
       // Mudança de endereço com ponto estabelecido (seção 8.3): o ponto foi
       // fixado para o endereço ANTIGO e pode não valer mais — o Admin Estoque
       // confirma. Revisão já aberta prevalece (o "antes" é o da primeira).
+      //
+      // SÓ linha de ROTA mexe no endereço. A de retirada carrega o endereço do
+      // CADASTRO, que legitimamente diverge do de entrega em parte da base (42
+      // casos no ciclo 11): deixá-la escrever fazia o cliente que alterna
+      // rota/retirada trocar de endereço a cada remessa — e, tendo pin, cada
+      // troca abria uma revisão falsa que TRAVAVA o pedido seguinte na aba
+      // Decisões por uma mudança que nunca existiu.
       const mudouDeLugar =
-        existente.coordenada !== null && enderecosDivergem(existente.enderecoFiscal, endereco);
+        linhaDeRota &&
+        existente.coordenada !== null &&
+        enderecosDivergem(existente.enderecoFiscal, endereco);
       const revisao = existente.enderecoEmRevisao ?? (mudouDeLugar ? existente.enderecoFiscal : null);
       enderecoAnterior = revisao;
 
@@ -212,9 +243,11 @@ export async function importarPlanilha(
         // 413 de 2019 linhas do ciclo real vêm sem telefone e o ERP tem o
         // número (ele vai na NF-e) — a coluna é que fica em branco.
         telefone: telefone ?? existente.telefone,
-        enderecoFiscal: endereco,
-        enderecoEmRevisao: revisao,
       };
+      if (linhaDeRota) {
+        campos.enderecoFiscal = endereco;
+        campos.enderecoEmRevisao = revisao;
+      }
       if (linha.papel && linha.papel !== existente.papel) campos.papel = linha.papel;
       // Pin do cadastro só entra em quem AINDA não tem ponto: nunca por cima do
       // pin que o motorista confirmou em campo.
@@ -241,7 +274,8 @@ export async function importarPlanilha(
 
     const status = statusDaLinha(linha, cliente, enderecoAnterior);
     if (status === 'pendente_de_mapeamento' && !cliente.coordenada) aGeocodificar += 1;
-    if (status === 'pendente_de_decisao' && enderecoAnterior) {
+    if (status === 'pendente_de_decisao' && enderecoAnterior && !revisaoAlertada.has(linha.pessoa)) {
+      revisaoAlertada.add(linha.pessoa);
       relatorio.alertas.push({
         clienteId: linha.pessoa,
         nome: linha.nome,

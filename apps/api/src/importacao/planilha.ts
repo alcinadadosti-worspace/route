@@ -231,8 +231,21 @@ function desescapar(t: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)))
+    // As duas formas numéricas do XML — decimal E hexadecimal (o export atual
+    // usa a decimal, mas nada obriga o ERP a continuar). `fromCodePoint`, não
+    // `fromCharCode`: este último trunca em 16 bits e trocava um emoji por
+    // lixo em silêncio. E com guarda, porque `fromCodePoint` LANÇA em código
+    // fora da faixa — uma entidade forjada numa planilha viraria 500 na
+    // importação inteira; ponto inválido some, que é o que ele vale.
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n: string) => doCodigo(parseInt(n, 16)))
+    .replace(/&#(\d+);/g, (_, n: string) => doCodigo(Number(n)))
     .replace(/&amp;/g, '&');
+}
+
+function doCodigo(codigo: number): string {
+  const naFaixa = Number.isInteger(codigo) && codigo >= 0 && codigo <= 0x10ffff;
+  const substituto = codigo >= 0xd800 && codigo <= 0xdfff;
+  return naFaixa && !substituto ? String.fromCodePoint(codigo) : '';
 }
 
 /**

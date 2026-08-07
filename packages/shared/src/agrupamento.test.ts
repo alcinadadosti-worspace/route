@@ -66,6 +66,26 @@ test('ilha distante NÃO é fundida — juntar atravessaria o estado no meio da 
   assert.equal(coruripe.ids.length, 3);
 });
 
+test('uma ilha distante não IMPEDE a fusão dos outros grupos pequenos', () => {
+  // Coruripe (3 paradas, fora do raio de todo mundo) é a MENOR — e a primeira
+  // versão dava `break` ao não achar par para ela, deixando Igreja Nova (4) e
+  // Penedo (14), a ~20 km um do outro, separados sem motivo.
+  const grupos = agruparPorRegiao(
+    [
+      ...perto('CORURIPE', CORURIPE, 3),
+      ...perto('IGREJA NOVA', IGREJA_NOVA, 4),
+      ...perto('PENEDO', PENEDO, 14),
+    ],
+    { minimoPorRota: 8, raioDeFusaoKm: 25 },
+  );
+  assert.equal(grupos.length, 2);
+  const coruripe = grupos.find((g) => g.municipios.includes('CORURIPE'))!;
+  assert.equal(coruripe.ids.length, 3, 'a ilha continua ilha');
+  const fundido = grupos.find((g) => g.municipios.includes('PENEDO'))!;
+  assert.deepEqual(fundido.municipios, ['PENEDO', 'IGREJA NOVA']);
+  assert.equal(fundido.ids.length, 18);
+});
+
 test('fusão não estoura o teto de paradas do dia', () => {
   const grupos = agruparPorRegiao(
     [...perto('PENEDO', PENEDO, 29), ...perto('IGREJA NOVA', IGREJA_NOVA, 5)],

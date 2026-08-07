@@ -106,6 +106,10 @@ export function agruparPorRegiao(
   // 3. Funde os pequenos com o vizinho mais próximo, enquanto valer a pena.
   //    Sempre parte do MENOR grupo: assim o que mais precisa de companhia
   //    escolhe primeiro, e o resultado não depende da ordem de entrada.
+  //    O grupo que NÃO consegue par sai da disputa sozinho — a primeira versão
+  //    dava `break` ali, e uma única ilha distante (bastava ser a menor)
+  //    impedia a fusão de todos os OUTROS grupos pequenos da seleção.
+  const ilhas: PontoAgrupavel[][] = [];
   for (;;) {
     grupos.sort((x, y) => x.length - y.length);
     const menor = grupos[0];
@@ -125,13 +129,17 @@ export function agruparPorRegiao(
     // Nenhum vizinho perto o bastante (ou todos estourariam o teto): o grupo
     // fica pequeno mesmo. Ilha distante é ilha distante — juntar com quem está
     // a 80 km só faria o caminhão atravessar o estado no meio da rota.
-    if (alvo === -1 || melhor > raioFusaoM) break;
+    if (alvo === -1 || melhor > raioFusaoM) {
+      ilhas.push(menor);
+      grupos.splice(0, 1);
+      continue;
+    }
     grupos[alvo] = [...grupos[alvo]!, ...menor];
     grupos.splice(0, 1);
   }
 
   const origem = opcoes.origem ?? null;
-  const sugeridos = grupos.map((grupo) => montar(grupo, origem));
+  const sugeridos = [...grupos, ...ilhas].map((grupo) => montar(grupo, origem));
   // Mais longe primeiro: é a região que precisa do dia inteiro, e é a decisão
   // que o operador toma primeiro ao planejar a semana.
   return sugeridos.sort(
