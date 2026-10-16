@@ -149,6 +149,13 @@ export interface Pedido {
    * do motorista mostraria "0 itens" na porta do cliente com a caixa cheia.
    */
   quantidadeMateriais?: number;
+  /**
+   * Última rota de onde o pedido VOLTOU sem ser entregue (baixa "não entregue"
+   * no painel). Existe para a montagem mostrar que ele já saiu uma vez: sem a
+   * marca, o pedido de ontem reaparece na fila igual a um recém-importado, e
+   * entrar na rota de hoje passa a ser acidente em vez de escolha.
+   */
+  voltouDeRota?: { rotaId: string; data: string } | null;
 }
 
 /**
@@ -232,6 +239,42 @@ export interface ParadaRota {
    * mostrar só o tempo somado, como antes.
    */
   chegouEm?: string | null;
+  /**
+   * Baixa dada pelo Admin Estoque no painel, e não pelo motorista em campo —
+   * a rota saiu em PDF, sem o app. Marca o resultado como palavra do escritório:
+   * não tem GPS, hora real nem comprovante, e a produtividade não pode lê-lo
+   * como medição de campo.
+   */
+  baixaNoPainel?: BaixaNoPainel;
+}
+
+export interface BaixaNoPainel {
+  em: string;
+  /** uid de quem deu a baixa. */
+  por: string;
+}
+
+/**
+ * Pedido SEM ponto no mapa que sai na rota assim mesmo — o motorista conhece o
+ * caminho (zona rural que nunca foi mapeada). Fica FORA de `paradas` de
+ * propósito: sem coordenada não há como entrar na ordem otimizada, no traçado
+ * nem no ETA, e o app do motorista, o mapa do acompanhamento e a produtividade
+ * assumem coordenada em toda parada.
+ */
+export interface ExcecaoRota {
+  pedidoId: string;
+  clienteId: string;
+  nome: string;
+  endereco: string;
+  telefone: string | null;
+  numeroNota?: number;
+  serie?: number;
+  numeroPedido?: string | null;
+  volumes: number;
+  pesoBrutoKg: number;
+  quantidadeMateriais?: number;
+  status: StatusPedido;
+  baixaNoPainel?: BaixaNoPainel;
 }
 
 /** `rotas/{rotaId}` — seção 7.3. */
@@ -243,6 +286,8 @@ export interface Rota {
   origemCoordenada: GeoPonto;
   retornaAoCd: boolean;
   paradas: ParadaRota[];
+  /** Pedidos sem ponto que vão no caminhão; ausente em rotas antigas. */
+  excecoes?: ExcecaoRota[];
   polylinePlanejada: string;
   distanciaTotalKm: number;
   duracaoTotalMin: number;

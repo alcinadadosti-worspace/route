@@ -1,6 +1,7 @@
 import {
   aguardandoEscolhaDeModo,
   precisaMapearEmCampo,
+  type EnderecoFiscal,
   type ItemPedido,
   type GeoPonto,
   type ParadaPrevia,
@@ -9,6 +10,18 @@ import {
 import { ordemRotaAberta } from './rota-aberta.js';
 import type { Repositorio } from '../db/repositorio.js';
 import type { ClienteOsrm } from './osrm.js';
+
+/**
+ * Endereço em uma linha para a parada e para o roteiro em PDF. Sem número, não
+ * escreve a vírgula: no endereço rural o número quase nunca existe, e
+ * "SÍTIO BOA VISTA,  — ZONA RURAL" no papel do motorista parece campo quebrado.
+ */
+export function enderecoEmLinha(e: EnderecoFiscal): string {
+  const rua = e.numero ? `${e.logradouro}, ${e.numero}` : e.logradouro;
+  // Mesma razão para o bairro, que a planilha também traz vazio.
+  const lugar = e.bairro ? `${e.bairro}, ${e.municipio}/${e.uf}` : `${e.municipio}/${e.uf}`;
+  return `${rua} — ${lugar}`;
+}
 
 /**
  * Prévia de rota (RF-11/RF-12): seleção de pedidos + CD de partida → ordem das
@@ -137,7 +150,7 @@ export async function coletarParadas(
       pedidoId,
       clienteId: pedido.clienteId,
       nome: cliente.nome,
-      endereco: `${e.logradouro}, ${e.numero} — ${e.bairro}, ${e.municipio}/${e.uf}`,
+      endereco: enderecoEmLinha(e),
       telefone: cliente.telefone,
       numeroNota: pedido.numeroNota,
       serie: pedido.serie,

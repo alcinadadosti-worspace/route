@@ -6,6 +6,7 @@ import type {
   Pedido,
   PosicaoMotorista,
   Rota,
+  StatusPedido,
   Trilha,
   TrilhaBruta,
   Usuario,
@@ -31,11 +32,31 @@ export interface Repositorio {
   listarUsuarios(): Promise<Array<{ id: string } & Usuario>>;
   salvarRota(rotaId: string, rota: Rota): Promise<void>;
   /**
-   * Publica a rota e move os pedidos para `em_rota` numa escrita ATÔMICA (batch
-   * no Firestore): um crash no meio não pode deixar a rota gravada com pedidos
-   * ainda `pronto_para_rota` (que entrariam numa segunda rota).
+   * Publica a rota e move os pedidos para `em_rota` numa TRANSAÇÃO que confere,
+   * no instante da escrita, que cada pedido ainda está no status em que foi
+   * lido (`statusLido`). Se algum mudou, nada é gravado e volta o primeiro.
+   *
+   * A conferência tem de estar AQUI, e não só antes: entre ler os pedidos e
+   * gravar há a chamada ao OSRM (segundos; dezenas no cold-start). Duas
+   * publicações com o mesmo pedido nesse intervalo passavam ambas pela
+   * checagem e gravavam ambas — reproduzido: duas rotas com a mesma parada,
+   * dois motoristas com a mesma entrega, e o pedido apontando só para a última.
    */
-  publicarRotaAtomica(rotaId: string, rota: Rota, pedidoIds: string[]): Promise<void>;
+  publicarRotaAtomica(
+    rotaId: string,
+    rota: Rota,
+    statusLido: Record<string, StatusPedido>,
+  ): Promise<ConflitoPublicacao | null>;
+  /**
+   * Lê a rota e o que `fn` pedir (pedidos, clientes) e grava o que ela devolver
+   * — tudo numa transação. `fn` pode rodar mais de uma vez (o Firestore repete
+   * a transação na contenção), então não pode ter efeito fora do retorno.
+   * Devolve null se a rota não existe.
+   */
+  transacaoNaRota<T>(
+    rotaId: string,
+    fn: (rota: Rota, ler: LeituraTransacao) => Promise<EscritaTransacao<T>>,
+  ): Promise<{ resultado: T } | null>;
   obterRota(rotaId: string): Promise<({ id: string } & Rota) | null>;
   apagarRota(rotaId: string): Promise<void>;
   listarRotas(): Promise<Array<{ id: string } & Rota>>;
@@ -115,9 +136,37 @@ export interface Repositorio {
   }): Promise<void>;
 }
 
+/** O pedido que mudou de status entre a leitura e a publicação. */
+export interface ConflitoPublicacao {
+  pedidoId: string;
+  status: StatusPedido | null;
+  rotaId: string | null;
+}
+
+export interface LeituraTransacao {
+  pedido(id: string): Promise<Pedido | null>;
+  cliente(id: string): Promise<Cliente | null>;
+}
+
+export type EscritaTransacao<T> =
+  | { gravar: false; resultado: T }
+  | { gravar: true; rota: Rota; pedidos: Record<string, Partial<Pedido>>; resultado: T };
+
 export class RepositorioMemoria implements Repositorio {
   private clientes = new Map<string, Cliente>();
   private pedidos = new Map<string, Pedido>();
+  /**
+   * Fila das transações: em memória, duas `fn` assíncronas se intercalariam
+   * nos `await` e o teste de corrida passaria por sorte. Uma de cada vez é o
+   * que o Firestore garante de verdade.
+   */
+  private fila: Promise<unknown> = Promise.resolve();
+
+  private exclusivo<T>(fn: () => Promise<T>): Promise<T> {
+    const vez = this.fila.then(fn, fn);
+    this.fila = vez.catch(() => undefined);
+    return vez;
+  }
 
   async obterCliente(clienteId: string): Promise<Cliente | null> {
     return this.clientes.get(clienteId) ?? null;
@@ -168,12 +217,46 @@ export class RepositorioMemoria implements Repositorio {
     this.rotas.set(rotaId, rota);
   }
 
-  async publicarRotaAtomica(rotaId: string, rota: Rota, pedidoIds: string[]): Promise<void> {
-    this.rotas.set(rotaId, rota);
-    for (const id of pedidoIds) {
-      const pedido = this.pedidos.get(id);
-      if (pedido) this.pedidos.set(id, { ...pedido, status: 'em_rota', rotaId });
-    }
+  async publicarRotaAtomica(
+    rotaId: string,
+    rota: Rota,
+    statusLido: Record<string, StatusPedido>,
+  ): Promise<ConflitoPublicacao | null> {
+    return this.exclusivo(async () => {
+      for (const [id, status] of Object.entries(statusLido)) {
+        const atual = this.pedidos.get(id);
+        if (!atual || atual.status !== status) {
+          return { pedidoId: id, status: atual?.status ?? null, rotaId: atual?.rotaId ?? null };
+        }
+      }
+      this.rotas.set(rotaId, rota);
+      for (const id of Object.keys(statusLido)) {
+        this.pedidos.set(id, { ...this.pedidos.get(id)!, status: 'em_rota', rotaId });
+      }
+      return null;
+    });
+  }
+
+  async transacaoNaRota<T>(
+    rotaId: string,
+    fn: (rota: Rota, ler: LeituraTransacao) => Promise<EscritaTransacao<T>>,
+  ): Promise<{ resultado: T } | null> {
+    return this.exclusivo(async () => {
+      const rota = this.rotas.get(rotaId);
+      if (!rota) return null;
+      const escrita = await fn(structuredClone(rota), {
+        pedido: async (id) => this.pedidos.get(id) ?? null,
+        cliente: async (id) => this.clientes.get(id) ?? null,
+      });
+      if (escrita.gravar) {
+        this.rotas.set(rotaId, escrita.rota);
+        for (const [id, campos] of Object.entries(escrita.pedidos)) {
+          const pedido = this.pedidos.get(id);
+          if (pedido) this.pedidos.set(id, { ...pedido, ...campos });
+        }
+      }
+      return { resultado: escrita.resultado };
+    });
   }
 
   async obterRota(rotaId: string): Promise<({ id: string } & Rota) | null> {

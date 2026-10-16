@@ -44,3 +44,18 @@ test('"agora" para o que acabou de chegar; traço para o que não se sabe', () =
   assert.equal(haQuantoTempo(QUINZE_HORAS, Date.parse('2026-08-03T15:30:00-03:00')), 'há 23 min');
   assert.equal(haQuantoTempo('', agora), SEM_DADO);
 });
+
+test('diaEmAlagoas usa o fuso de Alagoas, não o UTC', async () => {
+  const { diaEmAlagoas } = await import('./datahora.js');
+  // 01h UTC do dia 17 ainda é 22h do dia 16 em Maceió (UTC-3).
+  assert.equal(diaEmAlagoas(new Date('2026-10-17T01:00:00Z')), '2026-10-16');
+  assert.equal(diaEmAlagoas(new Date('2026-10-17T03:00:00Z')), '2026-10-17');
+});
+
+test('formatarDia: curto, com ano, e traço para lixo', async () => {
+  const { formatarDia } = await import('./datahora.js');
+  assert.equal(formatarDia('2026-10-16'), '16/10');
+  assert.equal(formatarDia('2026-10-16', true), '16/10/2026');
+  assert.equal(formatarDia(''), '—');
+  assert.equal(formatarDia(undefined), '—');
+});

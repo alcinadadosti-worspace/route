@@ -1,4 +1,5 @@
 import type {
+  BaixaPedida,
   CentroDistribuicao,
   Cliente,
   Entrega,
@@ -107,11 +108,21 @@ export async function listarEntregasDaRota(rotaId: string): Promise<Entrega[]> {
 
 export async function publicarRota(entrada: {
   pedidoIds: string[];
+  /** Pedidos sem ponto que vão como exceção (fora da ordem e do traçado). */
+  excecaoIds?: string[];
   cdId: string;
   retornaAoCd: boolean;
   motoristaId: string;
 }): Promise<{ rotaId: string; rota: Rota }> {
   return post(`${BASE}/api/rotas`, entrada);
+}
+
+/** Baixa da rota em PDF: o que o motorista entregou, registrado na volta. */
+export async function darBaixa(
+  rotaId: string,
+  baixas: BaixaPedida[],
+): Promise<{ rota: Rota; entregues: string[]; devolvidos: string[] }> {
+  return post(`${BASE}/api/rotas/${encodeURIComponent(rotaId)}/baixas`, { baixas });
 }
 
 /** Seção 8.4: Admin Estoque escolhe qual endereço vale quando a nota traz entrega
@@ -263,6 +274,7 @@ export interface Acompanhamento {
       avisadoEm: string | null;
       chegouEm: string | null;
     }>;
+    excecoes?: Array<{ pedidoId: string; status: ParadaRota['status'] }>;
   }>;
   posicoes: Record<string, PosicaoMotorista>;
 }

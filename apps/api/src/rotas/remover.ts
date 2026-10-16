@@ -1,4 +1,4 @@
-import { statusForaDeRota, type Pedido, type Rota } from '@rota/shared';
+import { statusForaDeRota, type Pedido } from '@rota/shared';
 import { FORMATO_ROTA_ID } from './comum.js';
 import type { Repositorio } from '../db/repositorio.js';
 
@@ -24,6 +24,23 @@ async function statusDeVolta(repo: Repositorio, pedido: Pedido): Promise<Pedido[
   const cliente = await repo.obterCliente(pedido.clienteId);
   return statusForaDeRota(pedido, Boolean(cliente?.coordenada));
 }
+
+/** Pedidos de uma rota que deixou de existir voltam ao estado de antes da
+ * publicação: pronto, ou pendente de mapeamento se ainda não têm ponto.
+ *
+ * Só os que AINDA são desta rota. O que teve baixa "não entregue" já voltou à
+ * fila e pode estar noutra rota agora; devolvê-lo de novo o soltaria de lá —
+ * reproduzido: o pedido ficava livre com a rota nova ainda o levando, e uma
+ * terceira publicação o punha em duas rotas vivas. */
+async function devolverAFila(repo: Repositorio, rotaId: string, pedidoIds: string[]): Promise<void> {
+  for (const id of pedidoIds) {
+    const pedido = await repo.obterPedido(id);
+    if (!pedido || pedido.status !== 'em_rota' || pedido.rotaId !== rotaId) continue;
+    await repo.salvarPedido(id, { ...pedido, status: await statusDeVolta(repo, pedido), rotaId: null });
+  }
+}
+
+const executada = (p: { status: Pedido['status'] }) => p.status === 'entregue' || p.status === 'insucesso';
 
 /**
  * Apaga o pedido. Estando numa rota publicada, a parada dele sai da rota junto
@@ -52,13 +69,35 @@ export async function removerPedido(repo: Repositorio, pedidoId: string): Promis
     const rota = await repo.obterRota(pedido.rotaId);
     if (rota) {
       const paradas = rota.paradas.filter((p) => p.pedidoId !== pedidoId);
+      const excecoes = (rota.excecoes ?? []).filter((e) => e.pedidoId !== pedidoId);
       if (paradas.length === 0) {
-        // Rota sem parada nenhuma não é rota: ela vai embora com o último pedido.
+        // Exceção com baixa é histórico, a mesma regra de removerRota: apagar a
+        // rota levaria junto o registro de uma entrega que aconteceu.
+        const comBaixa = excecoes.filter(executada).length;
+        if (comBaixa > 0) {
+          return {
+            ok: false,
+            status: 409,
+            erro:
+              `Nota ${pedido.numeroNota} é a última parada da rota ${rota.id}, que já tem ` +
+              `${comBaixa} exceção(ões) com baixa — apagá-la apagaria a rota e esse histórico. ` +
+              'Dê a baixa desta parada no Acompanhamento.',
+          };
+        }
+        // Rota sem parada nenhuma não é rota: ela vai embora com o último
+        // pedido. As exceções que sobrarem voltam para a fila — sem a rota,
+        // ficariam `em_rota` apontando para o nada, presas para sempre.
+        await devolverAFila(repo, rota.id, excecoes.map((e) => e.pedidoId));
         await repo.apagarRota(rota.id);
         await repo.apagarPosicao(rota.id);
         rotaApagada = rota.id;
       } else {
-        await repo.salvarRota(rota.id, { ...(rota as Rota), paradas });
+        const { id: _id, ...dados } = rota;
+        await repo.salvarRota(rota.id, {
+          ...dados,
+          paradas,
+          ...(rota.excecoes ? { excecoes } : {}),
+        });
       }
     }
   }
@@ -83,9 +122,7 @@ export async function removerRota(repo: Repositorio, rotaId: string): Promise<Re
   const rota = await repo.obterRota(rotaId);
   if (!rota) return { ok: false, status: 404, erro: 'Rota não encontrada' };
 
-  const executadas = rota.paradas.filter(
-    (p) => p.status === 'entregue' || p.status === 'insucesso',
-  ).length;
+  const executadas = [...rota.paradas, ...(rota.excecoes ?? [])].filter(executada).length;
   if (executadas > 0) {
     return {
       ok: false,
@@ -97,15 +134,10 @@ export async function removerRota(repo: Repositorio, rotaId: string): Promise<Re
   // Os pedidos voltam ao estado de antes da publicação. Sem isso ficariam
   // `em_rota` para sempre, apontando para uma rota inexistente, e nunca mais
   // entrariam numa rota nova.
-  for (const parada of rota.paradas) {
-    const pedido = await repo.obterPedido(parada.pedidoId);
-    if (!pedido) continue;
-    await repo.salvarPedido(parada.pedidoId, {
-      ...pedido,
-      status: await statusDeVolta(repo, pedido),
-      rotaId: null,
-    });
-  }
+  await devolverAFila(repo, rotaId, [
+    ...rota.paradas.map((p) => p.pedidoId),
+    ...(rota.excecoes ?? []).map((e) => e.pedidoId),
+  ]);
 
   await repo.apagarRota(rotaId);
   // A posição compartilhada morre com a rota: dado de localização não pode

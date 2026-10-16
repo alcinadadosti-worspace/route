@@ -13,7 +13,8 @@ import {
 import { importarPlanilha } from './importacao/servico-planilha.js';
 import { localizarEnderecos } from './importacao/geocodificacao-lote.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
-import { agruparPorRegiao } from '@rota/shared';
+import { darBaixa } from './rotas/baixa.js';
+import { agruparPorRegiao, type BaixaPedida } from '@rota/shared';
 import { FORMATO_ROTA_ID } from './rotas/comum.js';
 import { calcularProdutividade, validarJanela } from './produtividade.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
@@ -343,6 +344,7 @@ export async function criarApp({
           avisadoEm: p.avisadoEm ?? null,
           chegouEm: p.chegouEm ?? null,
         })),
+        excecoes: (r.excecoes ?? []).map((e) => ({ pedidoId: e.pedidoId, status: e.status })),
       })),
       posicoes: await repo.posicoesDasRotas(emExecucao),
     };
@@ -371,6 +373,21 @@ export async function criarApp({
         .send({ erro: resultado.erro, pendentes: resultado.pendentes });
     }
     return { rotaId: resultado.rotaId, rota: resultado.rota };
+  });
+
+  // Baixa pelo painel: a rota saiu em PDF e o Admin Estoque registra, na volta
+  // do motorista, o que foi entregue. "Não entregue" devolve o pedido à fila.
+  app.post('/api/rotas/:rotaId/baixas', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
+    const { rotaId } = req.params as { rotaId: string };
+    const corpo = req.body as { baixas?: BaixaPedida[] } | undefined;
+    if (!Array.isArray(corpo?.baixas)) {
+      return reply.code(400).send({ erro: 'Informe as baixas: [{ pedidoId, resultado }]' });
+    }
+    // Sem autenticador (dev/CI) não há uid: a baixa ainda precisa de autor.
+    const quem = req.usuario?.uid ?? 'sem-autenticacao';
+    const resultado = await darBaixa(repo, rotaId, corpo.baixas, quem);
+    if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+    return resultado;
   });
 
   // Ordem sugerida das paradas que faltam, a partir de onde o motorista ESTÁ

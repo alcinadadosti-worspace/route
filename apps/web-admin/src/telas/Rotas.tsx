@@ -1,8 +1,15 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  diaEmAlagoas,
   distanciaEmMetros,
+  excecoesDaSelecao,
   formatarCarga,
+  formatarDia,
   formatarHora,
+  municipioDoPedido,
+  paradasEmAberto,
+  rotasSemBaixa,
+  type ResultadoBaixa,
   haQuantoTempo,
   posicaoEstaVelha,
   type CentroDistribuicao,
@@ -19,6 +26,7 @@ import {
   agruparPorRegiao,
   apagarPedido,
   apagarRota,
+  darBaixa,
   listarCds,
   listarClientes,
   listarEntregasDaRota,
@@ -33,6 +41,8 @@ import { MapaRota } from '../MapaRota';
 import { MapaAcompanhamento } from '../MapaAcompanhamento';
 import { LimiteDeErro } from '../LimiteDeErro';
 import { FotoReferencia } from '../FotoReferencia';
+import { montarRoteiro } from '../roteiro';
+import { baixarPdfRoteiro } from '../roteiroPdf';
 
 /** Status da parada em português — o enum cru não é para o operador ler. */
 const ROTULO_PARADA: Record<string, string> = {
@@ -100,8 +110,27 @@ export function Rotas() {
    */
   const [entregasDaRota, setEntregasDaRota] = useState<Record<string, Entrega>>({});
   const [carregandoEntregas, setCarregandoEntregas] = useState(false);
+  /** Exceções sugeridas que o operador DESMARCOU. Guarda-se o "não", e não o
+   * "sim": a exceção que surge ao marcar outra cidade já chega marcada. */
+  const [excecoesDesmarcadas, setExcecoesDesmarcadas] = useState<Set<string>>(new Set());
+  /** Baixa em preparo na rota aberta: pedidoId → resultado marcado. Só vai ao
+   * servidor no "Registrar baixa", tudo de uma vez — e numa transação. */
+  const [marcasBaixa, setMarcasBaixa] = useState<Record<string, ResultadoBaixa>>({});
+  const [baixando, setBaixando] = useState(false);
+  const [erroBaixa, setErroBaixa] = useState<string | null>(null);
+  const [gerandoPdf, setGerandoPdf] = useState<string | null>(null);
+  /**
+   * Quando a última baixa foi gravada. Uma busca do acompanhamento que SAIU
+   * antes dela traz o estado de antes e, chegando depois, desfazia na tela a
+   * baixa recém-registrada: os botões voltavam, e registrar de novo dava erro.
+   */
+  const baixaGravadaEm = useRef(0);
 
   useEffect(() => {
+    // Marcas de baixa são de UMA rota: abrir outra com marcas da anterior
+    // registraria pedidos que não são dela (a API recusaria, mas confunde).
+    setMarcasBaixa({});
+    setErroBaixa(null);
     if (!rotaAberta) {
       setEntregasDaRota({});
       return;
@@ -160,6 +189,30 @@ export function Rotas() {
   );
 
   /**
+   * Pedidos sem ponto das MESMAS cidades da seleção: vão como exceção, fora da
+   * ordem otimizada (o motorista conhece o caminho). É sugestão — vem marcada
+   * e o operador desmarca o que não sai hoje.
+   */
+  const excecoesSugeridas = useMemo(() => {
+    const marcados = prontos.filter((p) => selecionados.has(p.id));
+    const ids = new Set(
+      excecoesDaSelecao(
+        marcados.map((p) => ({ municipio: municipioDoPedido(p, clientes[p.clienteId]), cdId: p.cdId })),
+        pendentes.map((p) => ({
+          id: p.id,
+          municipio: municipioDoPedido(p, clientes[p.clienteId]),
+          cdId: p.cdId,
+        })),
+      ),
+    );
+    return pendentes.filter((p) => ids.has(p.id));
+  }, [prontos, pendentes, selecionados, clientes]);
+  const excecoesEscolhidas = excecoesSugeridas.filter((p) => !excecoesDesmarcadas.has(p.id));
+
+  /** Rotas de dias anteriores ainda com parada sem baixa — prendem pedidos. */
+  const rotasAtrasadas = rotasSemBaixa(rotas, diaEmAlagoas());
+
+  /**
    * Onde os motoristas estão agora. Busca de tempos em tempos enquanto houver
    * rota em execução — e SÓ enquanto houver: sem rota na rua não há o que
    * perguntar, e bater na API à toa é acordar instância no Render por nada.
@@ -191,11 +244,13 @@ export function Rotas() {
     if (!temRotaAberta) return;
     let vivo = true;
     const buscar = () => {
+      const saiuEm = Date.now();
       obterAcompanhamento()
         .then((a) => {
           if (!vivo) return;
           setContatoEm(Date.now());
           setPosicoes(a.posicoes);
+          if (saiuEm < baixaGravadaEm.current) return;
           const porId = new Map(a.rotas.map((r) => [r.id, r]));
           setRotas((atuais) =>
             atuais.map((rota) => {
@@ -216,6 +271,10 @@ export function Rotas() {
                         chegouEm: atualizada.chegouEm,
                       }
                     : p;
+                }),
+                excecoes: rota.excecoes?.map((e) => {
+                  const atualizada = novo.excecoes?.find((x) => x.pedidoId === e.pedidoId);
+                  return atualizada ? { ...e, status: atualizada.status } : e;
                 }),
               };
             }),
@@ -317,6 +376,22 @@ export function Rotas() {
     });
   }, [prontos, previa]);
 
+  /**
+   * A prévia é DESTA seleção, ou não é prévia. As paradas publicadas saem da
+   * prévia e as exceções saem da seleção: otimizar uma cidade, clicar no grupo
+   * de outra e publicar levava as paradas da primeira com as exceções da
+   * segunda — dezenas de pedidos rurais de outro lugar, reservados. Cada
+   * caminho que muda a seleção já descarta a prévia; isto é a rede para o
+   * próximo que esquecer.
+   */
+  useEffect(() => {
+    if (!previa) return;
+    const ids = previa.paradas.map((p) => p.pedidoId);
+    if (ids.length !== selecionados.size || ids.some((id) => !selecionados.has(id))) {
+      setPrevia(null);
+    }
+  }, [selecionados, previa]);
+
   function alternar(id: string) {
     const proximo = new Set(selecionados);
     if (proximo.has(id)) proximo.delete(id);
@@ -363,10 +438,13 @@ export function Rotas() {
   }
 
   async function desfazerRota(r: { id: string } & Rota) {
+    // As exceções também voltam: contar só as paradas escondia a maior parte
+    // dos pedidos de uma rota rural.
+    const total = r.paradas.length + (r.excecoes?.length ?? 0);
     if (
       !window.confirm(
         `Desfazer a rota ${r.id}?\n\n` +
-          `As ${r.paradas.length} paradas somem do app do motorista e os pedidos voltam a ficar ` +
+          `Os ${total} pedidos dela somem do app do motorista e voltam a ficar ` +
           'disponíveis para montar outra rota. Nada do que já foi entregue é afetado.',
       )
     ) {
@@ -382,7 +460,7 @@ export function Rotas() {
       setAviso({
         onde: 'acompanhamento',
         texto:
-          `Rota ${r.id} desfeita. Os ${r.paradas.length} pedido(s) dela voltaram para a lista de ` +
+          `Rota ${r.id} desfeita. Os ${total} pedido(s) dela voltaram para a lista de ` +
           'Montagem de rota, disponíveis para montar outra.',
       });
       carregar();
@@ -454,7 +532,97 @@ export function Rotas() {
     carregar();
   }
 
-  async function publicar() {
+  function alternarExcecao(id: string) {
+    setExcecoesDesmarcadas((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(id)) proximo.delete(id);
+      else proximo.add(id);
+      return proximo;
+    });
+  }
+
+  /** O PDF sai sempre de uma rota PUBLICADA: é a publicação que reserva os
+   * pedidos. Baixar de novo depois da baixa parcial mostra o que já foi feito. */
+  async function baixarPdf(r: { id: string } & Rota) {
+    setGerandoPdf(r.id);
+    setErroBaixa(null);
+    try {
+      await baixarPdfRoteiro(
+        montarRoteiro(r.id, r, {
+          motorista: nomeDoUsuario(r.motoristaId),
+          clientes,
+          geradoEm: new Date(),
+        }),
+      );
+    } catch (e) {
+      setErroBaixa(e instanceof Error ? `Falha ao gerar o PDF: ${e.message}` : 'Falha ao gerar o PDF');
+    } finally {
+      setGerandoPdf(null);
+    }
+  }
+
+  function marcarBaixa(pedidoId: string, resultado: ResultadoBaixa) {
+    setMarcasBaixa((atual) => {
+      const proximo = { ...atual };
+      // Tocar de novo na mesma opção desmarca: errar o toque não pode obrigar
+      // a registrar o erro.
+      if (proximo[pedidoId] === resultado) delete proximo[pedidoId];
+      else proximo[pedidoId] = resultado;
+      return proximo;
+    });
+  }
+
+  /** O caso comum na volta do motorista: quase tudo entregue. Marca o resto
+   * como entregue — o operador ainda revisa antes de registrar. */
+  function marcarRestantesComoEntregues(r: Rota) {
+    setMarcasBaixa((atual) => {
+      const proximo = { ...atual };
+      for (const p of [...r.paradas, ...(r.excecoes ?? [])]) {
+        if (p.status === 'em_rota' && !proximo[p.pedidoId]) proximo[p.pedidoId] = 'entregue';
+      }
+      return proximo;
+    });
+  }
+
+  async function registrarBaixa(r: { id: string } & Rota) {
+    const baixas = Object.entries(marcasBaixa).map(([pedidoId, resultado]) => ({ pedidoId, resultado }));
+    if (baixas.length === 0) return;
+    const naoEntregues = baixas.filter((b) => b.resultado === 'nao_entregue').length;
+    if (
+      !window.confirm(
+        `Registrar a baixa de ${baixas.length} parada(s) da rota ${r.id}?\n\n` +
+          `${baixas.length - naoEntregues} entregue(s) · ${naoEntregues} não entregue(s).\n\n` +
+          'O que não foi entregue volta para a Montagem de rota, marcado como "voltou da rota". ' +
+          'A baixa registrada não se desfaz.',
+      )
+    ) {
+      return;
+    }
+    setBaixando(true);
+    setErroBaixa(null);
+    try {
+      const resultado = await darBaixa(r.id, baixas);
+      baixaGravadaEm.current = Date.now();
+      setRotas((atuais) => atuais.map((x) => (x.id === r.id ? { ...resultado.rota, id: r.id } : x)));
+      setMarcasBaixa({});
+      setAviso({
+        onde: 'acompanhamento',
+        texto:
+          `Baixa registrada na rota ${r.id}: ${resultado.entregues.length} entregue(s)` +
+          (resultado.devolvidos.length > 0
+            ? `, ${resultado.devolvidos.length} não entregue(s) — voltaram para a Montagem de rota.`
+            : '.'),
+      });
+      // Os devolvidos reaparecem na montagem: recarregar a lista de pedidos.
+      carregar();
+    } catch (e) {
+      setErroBaixa(e instanceof Error ? e.message : 'Falha ao registrar a baixa');
+    } finally {
+      setBaixando(false);
+    }
+  }
+
+  async function publicar(comPdf: boolean) {
     if (!previa || !motoristaId) return;
 
     /**
@@ -481,11 +649,32 @@ export function Rotas() {
       if (!window.confirm(texto)) return;
     }
 
+    /**
+     * Exceção não aparece no mapa nem na ordem, e a sugestão vem marcada: numa
+     * cidade sem localização feita, um clique no grupo traz dezenas delas
+     * (medido no ciclo 11: Teotônio Vilela com 2 pedidos com ponto e 151 sem).
+     * Publicar reserva todas. O número tem de ser dito antes, não descoberto
+     * no dia seguinte, quando a montagem estiver vazia.
+     */
+    if (excecoesEscolhidas.length > 0) {
+      const total = previa.paradas.length + excecoesEscolhidas.length;
+      if (
+        !window.confirm(
+          `Esta rota leva ${previa.paradas.length} parada(s) na ordem e ${excecoesEscolhidas.length} ` +
+            `exceção(ões) sem ponto no mapa.\n\nOs ${total} pedidos ficam reservados nesta rota até a ` +
+            'baixa. Publicar?',
+        )
+      ) {
+        return;
+      }
+    }
+
     setPublicando(true);
     setErro(null);
     try {
       const resultado = await publicarRota({
         pedidoIds: previa.paradas.map((p) => p.pedidoId),
+        excecaoIds: excecoesEscolhidas.map((p) => p.id),
         cdId,
         retornaAoCd,
         motoristaId,
@@ -493,7 +682,25 @@ export function Rotas() {
       setPublicada(resultado.rotaId);
       setPrevia(null);
       setSelecionados(new Set());
+      setExcecoesDesmarcadas(new Set());
       carregar();
+      if (comPdf) {
+        try {
+          await baixarPdfRoteiro(
+            montarRoteiro(resultado.rotaId, resultado.rota, {
+              motorista: nomeDoUsuario(motoristaId),
+              clientes,
+              geradoEm: new Date(),
+            }),
+          );
+        } catch {
+          // A rota já existe e os pedidos já estão reservados — o que falhou foi
+          // só o arquivo. Dizer isso evita que o operador publique de novo.
+          setErro(
+            'A rota foi publicada e os pedidos estão reservados, mas o PDF falhou — baixe-o pelo Acompanhamento do dia (abra a rota).',
+          );
+        }
+      }
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha na publicação');
     } finally {
@@ -509,6 +716,19 @@ export function Rotas() {
           <button onClick={carregar}>Atualizar</button>
         </div>
         {aviso?.onde === 'acompanhamento' && <div className="alerta">{aviso.texto}</div>}
+        {/* Rota em papel não fecha sozinha: sem a baixa, os pedidos dela ficam
+            reservados para sempre e nunca voltam para a montagem. */}
+        {rotasAtrasadas.length > 0 && (
+          <div className="alerta">
+            ⚠{' '}
+            {rotasAtrasadas.length === 1
+              ? 'Uma rota de dia anterior está'
+              : `${rotasAtrasadas.length} rotas de dias anteriores estão`}{' '}
+            sem baixa:{' '}
+            {rotasAtrasadas.map((r) => `${formatarDia(r.data)} (${paradasEmAberto(r)} em aberto)`).join(', ')}.
+            Os pedidos delas seguem reservados até você abrir a rota e registrar o que foi entregue.
+          </div>
+        )}
         {/* API fora do ar e motorista sem sinal davam o MESMO sintoma: tudo
             parado. Dizer qual é evita ligar para a pessoa errada. */}
         {temRotaAberta && contatoEm !== null && agoraMs - contatoEm > 90_000 && (
@@ -536,8 +756,10 @@ export function Rotas() {
             </thead>
             <tbody>
               {rotas.map((r) => {
-                const entregues = r.paradas.filter((p) => p.status === 'entregue').length;
-                const insucessos = r.paradas.filter((p) => p.status === 'insucesso').length;
+                // Exceções contam no progresso: também são entregas desta rota.
+                const todas = [...r.paradas, ...(r.excecoes ?? [])];
+                const entregues = todas.filter((p) => p.status === 'entregue').length;
+                const insucessos = todas.filter((p) => p.status === 'insucesso').length;
                 const avisados = r.paradas.filter((p) => p.avisadoEm).length;
                 const s = ROTULO_ROTA[r.status] ?? { texto: r.status, classe: '' };
                 const aberta = rotaAberta === r.id;
@@ -551,7 +773,7 @@ export function Rotas() {
                       <td>{nomeDoUsuario(r.motoristaId)}</td>
                       <td>{r.origemNome}</td>
                       <td className="mono">
-                        {entregues + insucessos}/{r.paradas.length} {aberta ? '▲' : '▾'}
+                        {entregues + insucessos}/{todas.length} {aberta ? '▲' : '▾'}
                       </td>
                       <td>
                         <PosicaoDoMotorista
@@ -589,7 +811,7 @@ export function Rotas() {
                     </tr>
                     {aberta && (
                       <tr>
-                        <td colSpan={9}>
+                        <td colSpan={10}>
                           {/* O mapa vem ANTES da lista: quando o cliente liga
                               perguntando, a pergunta é espacial — "o caminhão já
                               passou pela minha rua?" —, e texto obriga quem lê a
@@ -605,6 +827,18 @@ export function Rotas() {
                               agoraMs={agoraMs}
                             />
                           </LimiteDeErro>
+                          <div className="barra-rota">
+                            <button disabled={gerandoPdf === r.id} onClick={() => void baixarPdf(r)}>
+                              {gerandoPdf === r.id ? 'GERANDO…' : '📄 Baixar PDF'}
+                            </button>
+                            {/* Pelo que falta, não pelo status: rota fechada no
+                                app com parada por entregar também precisa. */}
+                            {paradasEmAberto(r) > 0 && (
+                              <button disabled={baixando} onClick={() => marcarRestantesComoEntregues(r)}>
+                                Marcar as que faltam como entregues
+                              </button>
+                            )}
+                          </div>
                           {/* Parada a parada com o aviso ao cliente: diante de um
                               "ausente", saber se ele tinha sido avisado é o que
                               separa aprendizado de reclamação (seção 11.8). */}
@@ -626,14 +860,19 @@ export function Rotas() {
                                       <td className="mono">{String(i + 1).padStart(2, '0')}</td>
                                       <td>{p.nome}</td>
                                       <td>
-                                        <span
-                                          className={`chip ${p.status === 'entregue' ? 'pronto' : p.status === 'insucesso' ? '' : 'pendente'}`}
-                                        >
-                                          {ROTULO_PARADA[p.status] ?? p.status}
-                                        </span>
+                                        <ChipParada status={p.status} painel={Boolean(p.baixaNoPainel)} />
                                       </td>
                                       <td className="mono">
                                         {p.avisadoEm ? `avisado ${horaDe(p.avisadoEm)}` : 'não avisado'}
+                                      </td>
+                                      <td>
+                                        {p.status === 'em_rota' && (
+                                          <OpcoesBaixa
+                                            marcado={marcasBaixa[p.pedidoId]}
+                                            desabilitado={baixando}
+                                            onMarcar={(res) => marcarBaixa(p.pedidoId, res)}
+                                          />
+                                        )}
                                       </td>
                                     </tr>
                                     {/* O detalhe da confirmação: o "por quê" que
@@ -642,7 +881,7 @@ export function Rotas() {
                                     {e && (
                                       <tr className="confirmacao">
                                         <td />
-                                        <td colSpan={3}>
+                                        <td colSpan={4}>
                                           <strong>{ROTULO_RESULTADO[e.resultado] ?? e.resultado}</strong>{' '}
                                           às {horaDe(e.confirmadaEm)}
                                           {/* Quem recebeu é o que responde um
@@ -674,7 +913,7 @@ export function Rotas() {
                                     {!e && carregandoEntregas && (
                                       <tr className="confirmacao">
                                         <td />
-                                        <td colSpan={3}>carregando confirmação…</td>
+                                        <td colSpan={4}>carregando confirmação…</td>
                                       </tr>
                                     )}
                                     {/* O dossiê do local: foto e observação que
@@ -685,7 +924,7 @@ export function Rotas() {
                                       clientes[p.clienteId]?.observacoes) && (
                                       <tr className="dossie-linha">
                                         <td />
-                                        <td colSpan={3}>
+                                        <td colSpan={4}>
                                           <div className="dossie-bloco">
                                             {clientes[p.clienteId]!.fotoReferenciaPath && (
                                               <FotoReferencia
@@ -705,8 +944,43 @@ export function Rotas() {
                                   </Fragment>
                                 );
                               })}
+                              {/* Exceções: sem ponto no mapa, fora da ordem. Mesma
+                                  baixa das paradas — também saíram no caminhão. */}
+                              {(r.excecoes ?? []).map((e, i) => (
+                                <tr key={e.pedidoId}>
+                                  <td className="mono">E{i + 1}</td>
+                                  <td>
+                                    {e.nome}
+                                    <div className="excecao-endereco">{e.endereco} · sem ponto no mapa</div>
+                                  </td>
+                                  <td>
+                                    <ChipParada status={e.status} painel={Boolean(e.baixaNoPainel)} />
+                                  </td>
+                                  <td className="mono">—</td>
+                                  <td>
+                                    {e.status === 'em_rota' && (
+                                      <OpcoesBaixa
+                                        marcado={marcasBaixa[e.pedidoId]}
+                                        desabilitado={baixando}
+                                        onMarcar={(res) => marcarBaixa(e.pedidoId, res)}
+                                      />
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
                             </tbody>
                           </table>
+                          {Object.keys(marcasBaixa).length > 0 && (
+                            <div className="barra-rota">
+                              <button className="primaria" disabled={baixando} onClick={() => void registrarBaixa(r)}>
+                                {baixando ? 'REGISTRANDO…' : `REGISTRAR BAIXA (${Object.keys(marcasBaixa).length})`}
+                              </button>
+                              <button disabled={baixando} onClick={() => setMarcasBaixa({})}>
+                                Limpar marcas
+                              </button>
+                            </div>
+                          )}
+                          {erroBaixa && <div className="erro">{erroBaixa}</div>}
                         </td>
                       </tr>
                     )}
@@ -811,7 +1085,10 @@ export function Rotas() {
                     <button
                       key={i}
                       className="grupo"
-                      onClick={() => setSelecionados(new Set(g.ids))}
+                      onClick={() => {
+                        setSelecionados(new Set(g.ids));
+                        setPrevia(null);
+                      }}
                       title={`Selecionar as ${g.ids.length} paradas desta região`}
                     >
                       <strong>{g.municipios.slice(0, 3).join(' · ')}</strong>
@@ -872,6 +1149,15 @@ export function Rotas() {
                         aprox · a mapear
                       </span>
                     )}
+                    {p.voltouDeRota && (
+                      <span
+                        className="chip"
+                        style={{ marginLeft: 8 }}
+                        title={`Saiu na rota ${p.voltouDeRota.rotaId} e voltou sem ser entregue`}
+                      >
+                        voltou da rota de {formatarDia(p.voltouDeRota.data)}
+                      </span>
+                    )}
                   </td>
                   <td>
                     {formatarCarga(p.volumes, p.pesoBrutoKg)}
@@ -908,10 +1194,58 @@ export function Rotas() {
           </button>
         )}
 
+        {excecoesSugeridas.length > 0 && (
+          <div className="excecoes-sugeridas">
+            <div className="cabecalho-secao">
+              <strong>
+                Sem ponto no mapa nas mesmas cidades — {excecoesEscolhidas.length} de{' '}
+                {excecoesSugeridas.length} vão como exceção
+              </strong>
+              <button
+                type="button"
+                onClick={() =>
+                  setExcecoesDesmarcadas(
+                    excecoesEscolhidas.length > 0
+                      ? new Set(excecoesSugeridas.map((p) => p.id))
+                      : new Set(),
+                  )
+                }
+              >
+                {excecoesEscolhidas.length > 0 ? 'Desmarcar todas' : 'Marcar todas'}
+              </button>
+            </div>
+            <p>
+              Vão no caminhão e ficam reservados na rota, mas fora da ordem otimizada: saem no fim
+              do PDF e o motorista encaixa no caminho. Desmarque o que não sai hoje.
+            </p>
+            {excecoesSugeridas.map((p) => {
+              const c = clientes[p.clienteId];
+              return (
+                <label key={p.id} className="opcao">
+                  <input
+                    type="checkbox"
+                    checked={!excecoesDesmarcadas.has(p.id)}
+                    onChange={() => alternarExcecao(p.id)}
+                  />
+                  <span>
+                    {c?.nome ?? `${p.clienteId.slice(0, 8)}…`} · nota{' '}
+                    <span className="mono">{p.numeroNota}</span> · {municipioDoPedido(p, c) ?? '—'}
+                    {p.voltouDeRota && ` · voltou da rota de ${formatarDia(p.voltouDeRota.data)}`}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+
         {pendentes.length > 0 && (
           <div className="alerta">
-            {pendentes.length} pedido(s) pendente(s) de mapeamento — fora da seleção até ganharem
-            coordenada (painel de pendências ou primeira entrega em campo).
+            {pendentes.length} pedido(s) sem ponto no mapa — não entram na ordem otimizada.
+            {selecionados.size === 0
+              ? ' Marque os pedidos de uma cidade e os sem ponto dela aparecem para ir como exceção.'
+              : excecoesSugeridas.length === 0
+                ? ' Nenhum é das cidades marcadas.'
+                : ''}
           </div>
         )}
 
@@ -943,8 +1277,8 @@ export function Rotas() {
         {erro && <div className="erro">{erro}</div>}
         {publicada && (
           <div className="sucesso">
-            Rota <span className="mono">{publicada}</span> publicada — já visível no app do
-            motorista.
+            Rota <span className="mono">{publicada}</span> publicada — os pedidos dela estão
+            reservados e só voltam para a montagem pela baixa (Acompanhamento do dia).
           </div>
         )}
       </section>
@@ -1019,6 +1353,21 @@ export function Rotas() {
             </tbody>
           </table>
 
+          {excecoesEscolhidas.length > 0 && (
+            <div className="excecoes-previa">
+              <strong>Exceções — sem ponto no mapa ({excecoesEscolhidas.length})</strong>
+              <p>Vão no caminhão, fora da ordem e do traçado acima. Saem no fim do PDF.</p>
+              <ol>
+                {excecoesEscolhidas.map((p, i) => (
+                  <li key={p.id}>
+                    <span className="mono">E{i + 1}</span> · {clientes[p.clienteId]?.nome ?? p.clienteId}{' '}
+                    · {municipioDoPedido(p, clientes[p.clienteId]) ?? '—'}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
           <div className="publicacao">
             <label className="opcao">
               Motorista:
@@ -1035,11 +1384,18 @@ export function Rotas() {
             <button
               className="primaria"
               disabled={publicando || !motoristaId}
-              onClick={() => void publicar()}
+              onClick={() => void publicar(true)}
             >
-              {publicando ? 'PUBLICANDO…' : 'PUBLICAR ROTA'}
+              {publicando ? 'PUBLICANDO…' : 'PUBLICAR E BAIXAR PDF'}
+            </button>
+            <button disabled={publicando || !motoristaId} onClick={() => void publicar(false)}>
+              Publicar sem PDF
             </button>
           </div>
+          <p className="nota-publicacao">
+            Publicar reserva os pedidos: eles saem da montagem e não entram em outra rota até a
+            baixa. O PDF pode ser baixado de novo no Acompanhamento do dia.
+          </p>
         </section>
       )}
     </>
@@ -1099,6 +1455,49 @@ function PosicaoDoMotorista({
         </div>
       )}
       {velha && <div className="sub">sem sinal ou app fechado</div>}
+    </div>
+  );
+}
+
+/** Status da parada; "pelo painel" quando a baixa veio do escritório e não do
+ * motorista — sem GPS nem hora real, e quem lê precisa saber a diferença. */
+function ChipParada({ status, painel }: { status: string; painel: boolean }) {
+  const classe = status === 'entregue' ? 'pronto' : status === 'insucesso' ? '' : 'pendente';
+  return (
+    <span className={`chip ${classe}`}>
+      {(status === 'insucesso' && painel ? 'Não entregue' : ROTULO_PARADA[status]) ?? status}
+      {painel && ' · pelo painel'}
+    </span>
+  );
+}
+
+function OpcoesBaixa({
+  marcado,
+  desabilitado,
+  onMarcar,
+}: {
+  marcado: ResultadoBaixa | undefined;
+  desabilitado: boolean;
+  onMarcar: (resultado: ResultadoBaixa) => void;
+}) {
+  return (
+    <div className="opcoes-baixa" role="group" aria-label="Resultado da entrega">
+      <button
+        className={marcado === 'entregue' ? 'marcado entregue' : ''}
+        aria-pressed={marcado === 'entregue'}
+        disabled={desabilitado}
+        onClick={() => onMarcar('entregue')}
+      >
+        Entregue
+      </button>
+      <button
+        className={marcado === 'nao_entregue' ? 'marcado nao-entregue' : ''}
+        aria-pressed={marcado === 'nao_entregue'}
+        disabled={desabilitado}
+        onClick={() => onMarcar('nao_entregue')}
+      >
+        Não entregue
+      </button>
     </div>
   );
 }

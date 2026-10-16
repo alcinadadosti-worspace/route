@@ -54,3 +54,19 @@ export function haQuantoTempo(iso: string | null | undefined, agoraMs: number): 
   if (min === null) return SEM_DADO;
   return min === 0 ? 'agora' : `há ${min} min`;
 }
+
+/**
+ * Dia operacional (`AAAA-MM-DD`) no fuso de Alagoas — o mesmo formato da
+ * `data` da rota. Pelo relógio do navegador, uma rota publicada às 22h viraria
+ * o dia seguinte em UTC e o aviso de "rota sem baixa" acenderia antes da hora.
+ */
+export function diaEmAlagoas(agora: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Maceio' }).format(agora);
+}
+
+/** `2026-10-16` → `16/10` (ou `16/10/2026` com `ano`). Lixo vira traço. */
+export function formatarDia(dia: string | null | undefined, ano = false): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dia ?? '');
+  if (!m) return SEM_DADO;
+  return ano ? `${m[3]}/${m[2]}/${m[1]}` : `${m[3]}/${m[2]}`;
+}

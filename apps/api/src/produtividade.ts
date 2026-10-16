@@ -65,7 +65,17 @@ export function calcularProdutividade(
 
   // A janela é pela DATA DA ROTA, que é o dia operacional — e não pela hora da
   // confirmação, que atravessaria a meia-noite numa rota que terminou tarde.
-  const rotas = dados.rotas.filter((r) => r.data >= entrada.desde && r.data <= entrada.ate);
+  //
+  // Rota com baixa dada no PAINEL fica de fora: saiu em PDF, sem o app, e não
+  // tem registro de entrega, hora nem GPS. Contá-la somaria paradas planejadas
+  // com zero entregues — o motorista do papel apareceria com taxa de sucesso
+  // nula num dia em que entregou tudo.
+  const rotas = dados.rotas.filter(
+    (r) =>
+      r.data >= entrada.desde &&
+      r.data <= entrada.ate &&
+      ![...r.paradas, ...(r.excecoes ?? [])].some((p) => p.baixaNoPainel),
+  );
   const rotaPorId = new Map(rotas.map((r) => [r.id, r]));
   const entregas = dados.entregas.filter((e) => rotaPorId.has(e.rotaId));
 

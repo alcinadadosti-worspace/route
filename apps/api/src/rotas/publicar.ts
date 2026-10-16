@@ -1,6 +1,6 @@
-import type { ParadaRota, Rota } from '@rota/shared';
+import type { ExcecaoRota, ParadaRota, Rota, StatusPedido } from '@rota/shared';
 import { randomUUID } from 'node:crypto';
-import { coletarParadas, type FalhaColeta } from './previa.js';
+import { coletarParadas, enderecoEmLinha, type FalhaColeta } from './previa.js';
 import type { Repositorio } from '../db/repositorio.js';
 import type { ClienteOsrm } from './osrm.js';
 
@@ -14,6 +14,12 @@ import type { ClienteOsrm } from './osrm.js';
 export interface EntradaPublicacao {
   /** Ordem FINAL das paradas (já otimizada e/ou ajustada no painel). */
   pedidoIds: string[];
+  /**
+   * Pedidos SEM ponto no mapa que vão no caminhão mesmo assim (zona rural que
+   * o motorista conhece). Entram na rota como exceção — fora da ordem, do
+   * traçado e do ETA — e ficam reservados como as paradas.
+   */
+  excecaoIds?: string[];
   cdId: string;
   retornaAoCd?: boolean;
   motoristaId: string;
@@ -30,8 +36,27 @@ export async function publicarRota(
   repo: Repositorio,
   osrm: ClienteOsrm,
 ): Promise<ResultadoPublicacao> {
-  if (!entrada.pedidoIds?.length) {
+  if (!Array.isArray(entrada.pedidoIds) || entrada.pedidoIds.length === 0) {
     return { ok: false, status: 400, erro: 'Selecione ao menos um pedido' };
+  }
+  const excecaoIds = entrada.excecaoIds ?? [];
+  if (!Array.isArray(excecaoIds)) {
+    return { ok: false, status: 400, erro: 'excecaoIds inválido' };
+  }
+  // O id vira caminho de documento: número estoura no SDK do Firestore (500
+  // em vez de 400) e barra apontaria para outra coleção.
+  const idInvalido = [...entrada.pedidoIds, ...excecaoIds].find(
+    (id) => typeof id !== 'string' || id === '' || id.includes('/'),
+  );
+  if (idInvalido !== undefined) {
+    return { ok: false, status: 400, erro: `Pedido inválido: ${JSON.stringify(idInvalido)}` };
+  }
+  // O mesmo pedido duas vezes viraria duas paradas — o motorista bateria duas
+  // vezes na mesma porta e a baixa de uma deixaria a outra pendurada.
+  const todos = [...entrada.pedidoIds, ...excecaoIds];
+  const repetido = todos.find((id, i) => todos.indexOf(id) !== i);
+  if (repetido) {
+    return { ok: false, status: 400, erro: `Pedido ${repetido} aparece duas vezes na rota` };
   }
   if (!entrada.motoristaId) {
     return { ok: false, status: 400, erro: 'Escolha o motorista da rota' };
@@ -60,13 +85,82 @@ export async function publicarRota(
   if (!coleta.ok) return coleta;
   const candidatas = coleta.candidatas;
 
-  for (const c of candidatas) {
-    const pedido = (await repo.obterPedido(c.pedidoId))!;
+  // O status lido AGORA é o que a gravação confere: se outro operador publicar
+  // um destes pedidos enquanto o OSRM responde, a transação recusa.
+  const statusLido: Record<string, StatusPedido> = {};
+  const notaDe: Record<string, number> = {};
+  // Leituras em paralelo, aqui e nas exceções: uma a uma, as 237 exceções
+  // sugeridas numa cidade sem localização feita seriam ~480 idas ao Firestore
+  // em série — perto de um minuto antes mesmo do OSRM, com o proxy do Render
+  // cortando a requisição e o operador sem saber se a rota foi gravada.
+  const lidos = await Promise.all(candidatas.map((c) => repo.obterPedido(c.pedidoId)));
+  for (const [i, c] of candidatas.entries()) {
+    const pedido = lidos[i]!;
     if (pedido.status === 'em_rota') {
       return { ok: false, status: 409, erro: `Pedido ${pedido.numeroNota} já está em outra rota` };
     }
     if (pedido.status === 'entregue') {
       return { ok: false, status: 409, erro: `Pedido ${pedido.numeroNota} já foi entregue` };
+    }
+    statusLido[c.pedidoId] = pedido.status;
+    notaDe[c.pedidoId] = pedido.numeroNota;
+  }
+
+  const excecoes: ExcecaoRota[] = [];
+  const cdsDaRota = new Set(candidatas.map((c) => c.cdId).filter(Boolean));
+  const lidasExcecoes = await Promise.all(
+    excecaoIds.map(async (id) => {
+      const pedido = await repo.obterPedido(id);
+      return { id, pedido, cliente: pedido ? await repo.obterCliente(pedido.clienteId) : null };
+    }),
+  );
+  for (const { id, pedido, cliente } of lidasExcecoes) {
+    if (!pedido) return { ok: false, status: 404, erro: `Pedido ${id} não encontrado` };
+    // Só quem está esperando ponto entra como exceção. Pedido COM ponto é
+    // parada (tem lugar na ordem); os demais status são os mesmos bloqueios
+    // das paradas — rota, retirada, decisão pendente, já executado.
+    if (pedido.status !== 'pendente_de_mapeamento') {
+      const motivo =
+        pedido.status === 'pronto_para_rota'
+          ? 'já tem ponto no mapa — entra como parada, não como exceção'
+          : pedido.status === 'em_rota'
+            ? `já está na rota ${pedido.rotaId ?? '(publicada)'}`
+            : `está como ${pedido.status}`;
+      return { ok: false, status: 409, erro: `Pedido ${pedido.numeroNota} ${motivo} — atualize a tela e monte de novo` };
+    }
+    if (!cliente) {
+      return { ok: false, status: 404, erro: `Cliente do pedido ${id} não encontrado` };
+    }
+    const e =
+      pedido.usarEnderecoEntrega === true && pedido.enderecoEntrega
+        ? pedido.enderecoEntrega
+        : cliente.enderecoFiscal;
+    excecoes.push({
+      pedidoId: id,
+      clienteId: pedido.clienteId,
+      nome: cliente.nome,
+      endereco: enderecoEmLinha(e),
+      telefone: cliente.telefone,
+      numeroNota: pedido.numeroNota,
+      serie: pedido.serie,
+      numeroPedido: pedido.numeroPedido,
+      volumes: pedido.volumes,
+      pesoBrutoKg: pedido.pesoBrutoKg,
+      ...(pedido.quantidadeMateriais !== undefined
+        ? { quantidadeMateriais: pedido.quantidadeMateriais }
+        : {}),
+      status: 'em_rota',
+    });
+    statusLido[id] = pedido.status;
+    notaDe[id] = pedido.numeroNota;
+    // A mercadoria de outro galpão não está neste caminhão — mesma regra das
+    // paradas (seção 8.5), que `coletarParadas` já aplicou a elas.
+    if (pedido.cdId && cdsDaRota.size > 0 && !cdsDaRota.has(pedido.cdId)) {
+      return {
+        ok: false,
+        status: 422,
+        erro: `Exceção ${pedido.numeroNota} é de outro CD (${pedido.cdId}) — monte uma rota por CD`,
+      };
     }
   }
 
@@ -117,6 +211,9 @@ export async function publicarRota(
     origemCoordenada: cd.coordenada,
     retornaAoCd,
     paradas,
+    // Só grava o campo quando há exceção: rota sem nenhuma fica com a forma de
+    // sempre, e quem lê `excecoes ?? []` não distingue as duas.
+    ...(excecoes.length > 0 ? { excecoes } : {}),
     polylinePlanejada: tracado.polyline,
     distanciaTotalKm: tracado.distanciaKm,
     duracaoTotalMin: tracado.duracaoMin,
@@ -125,14 +222,22 @@ export async function publicarRota(
     concluidaEm: null,
   };
 
-  // Escrita atômica (batch): grava a rota e move os pedidos para em_rota de uma
-  // vez. Sem isso, um crash entre as escritas deixaria a rota publicada com
-  // pedidos ainda pronto_para_rota — que entrariam numa segunda rota.
-  await repo.publicarRotaAtomica(
-    rotaId,
-    rota,
-    candidatas.map((c) => c.pedidoId),
-  );
+  // Escrita atômica: grava a rota e move os pedidos para em_rota de uma vez, e
+  // só se nenhum deles mudou desde a leitura (ver publicarRotaAtomica).
+  const conflito = await repo.publicarRotaAtomica(rotaId, rota, statusLido);
+  if (conflito) {
+    const onde =
+      conflito.status === 'em_rota'
+        ? `acabou de entrar na rota ${conflito.rotaId ?? '(publicada)'}`
+        : conflito.status === null
+          ? 'foi apagado'
+          : `mudou para ${conflito.status}`;
+    return {
+      ok: false,
+      status: 409,
+      erro: `Pedido ${notaDe[conflito.pedidoId] ?? conflito.pedidoId} ${onde} enquanto esta rota era publicada — nada foi gravado. Atualize a tela e monte de novo.`,
+    };
+  }
 
   return { ok: true, rotaId, rota };
 }

@@ -15,3 +15,5 @@ export * from './aviso.js';
 export * from './agrupamento.js';
 export * from './posicao.js';
 export * from './datahora.js';
+export * from './baixa.js';
+export * from './excecoes.js';

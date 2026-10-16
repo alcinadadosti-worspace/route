@@ -7,11 +7,17 @@ import type {
   Pedido,
   PosicaoMotorista,
   Rota,
+  StatusPedido,
   Trilha,
   TrilhaBruta,
   Usuario,
 } from '@rota/shared';
-import type { Repositorio } from './repositorio.js';
+import type {
+  ConflitoPublicacao,
+  EscritaTransacao,
+  LeituraTransacao,
+  Repositorio,
+} from './repositorio.js';
 import { appFirebase } from '../firebase.js';
 
 /**
@@ -178,13 +184,54 @@ class RepositorioFirestore implements Repositorio {
     await this.db.collection('rotas').doc(rotaId).set(rota);
   }
 
-  async publicarRotaAtomica(rotaId: string, rota: Rota, pedidoIds: string[]): Promise<void> {
-    const lote = this.db.batch();
-    lote.set(this.db.collection('rotas').doc(rotaId), rota);
-    for (const id of pedidoIds) {
-      lote.update(this.pedidos.doc(id), { status: 'em_rota', rotaId });
-    }
-    await lote.commit();
+  async publicarRotaAtomica(
+    rotaId: string,
+    rota: Rota,
+    statusLido: Record<string, StatusPedido>,
+  ): Promise<ConflitoPublicacao | null> {
+    const ids = Object.keys(statusLido);
+    return this.db.runTransaction(async (t) => {
+      const docs = ids.length > 0 ? await t.getAll(...ids.map((id) => this.pedidos.doc(id))) : [];
+      for (const doc of docs) {
+        const atual = doc.exists ? (doc.data() as Pedido) : null;
+        if (!atual || atual.status !== statusLido[doc.id]) {
+          return { pedidoId: doc.id, status: atual?.status ?? null, rotaId: atual?.rotaId ?? null };
+        }
+      }
+      t.set(this.db.collection('rotas').doc(rotaId), rota);
+      for (const id of ids) t.update(this.pedidos.doc(id), { status: 'em_rota', rotaId });
+      return null;
+    });
+  }
+
+  async transacaoNaRota<T>(
+    rotaId: string,
+    fn: (rota: Rota, ler: LeituraTransacao) => Promise<EscritaTransacao<T>>,
+  ): Promise<{ resultado: T } | null> {
+    const ref = this.db.collection('rotas').doc(rotaId);
+    return this.db.runTransaction(async (t) => {
+      const doc = await t.get(ref);
+      if (!doc.exists) return null;
+      // Toda leitura acontece dentro de `fn`, antes de qualquer escrita — a
+      // ordem que a transação do Firestore exige.
+      const escrita = await fn(doc.data() as Rota, {
+        pedido: async (id) => {
+          const d = await t.get(this.pedidos.doc(id));
+          return d.exists ? (d.data() as Pedido) : null;
+        },
+        cliente: async (id) => {
+          const d = await t.get(this.clientes.doc(id));
+          return d.exists ? (d.data() as Cliente) : null;
+        },
+      });
+      if (escrita.gravar) {
+        t.set(ref, escrita.rota);
+        for (const [id, campos] of Object.entries(escrita.pedidos)) {
+          t.update(this.pedidos.doc(id), campos);
+        }
+      }
+      return { resultado: escrita.resultado };
+    });
   }
 
   async obterRota(rotaId: string): Promise<({ id: string } & Rota) | null> {
