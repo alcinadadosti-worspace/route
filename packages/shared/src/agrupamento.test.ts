@@ -7,6 +7,8 @@ const PENEDO = { lat: -10.2808, lng: -36.5595 };
 const CORURIPE = { lat: -10.1254, lng: -36.1755 };
 const IGREJA_NOVA = { lat: -10.1123, lng: -36.6597 };
 const SAO_SEBASTIAO = { lat: -9.9294, lng: -36.5642 };
+const PIACABUCU = { lat: -10.4056, lng: -36.4339 };
+const FELIZ_DESERTO = { lat: -10.2935, lng: -36.3028 };
 
 /** N pontos espalhados em ~2 km em volta de um centro. */
 function perto(municipio: string, centro: { lat: number; lng: number }, n: number, prefixo = ''): PontoAgrupavel[] {
@@ -27,73 +29,61 @@ test('cada município vira um grupo — é o vocabulário da operação', () => 
   );
   assert.equal(grupos.length, 2);
   // Mais longe primeiro: é a região que precisa do dia inteiro.
-  assert.equal(grupos[0]!.municipios[0], 'CORURIPE');
+  assert.equal(grupos[0]!.municipio, 'CORURIPE');
   assert.equal(grupos[0]!.ids.length, 12);
+  assert.equal(grupos[0]!.parte, null);
   assert.ok(grupos[0]!.distanciaDoCdKm! > grupos[1]!.distanciaDoCdKm!);
 });
 
-test('município grande demais para um dia é DIVIDIDO, não empurrado inteiro', () => {
-  // 70 paradas num município só: não fecha num dia.
-  const grupos = agruparPorRegiao(perto('PENEDO', PENEDO, 70), { maximoPorRota: 30 });
-  assert.ok(grupos.length >= 3, `esperava 3+ grupos, veio ${grupos.length}`);
-  for (const g of grupos) assert.ok(g.ids.length <= 30, `grupo com ${g.ids.length} paradas`);
-  // Nenhuma parada se perde nem se duplica na divisão.
-  const todos = grupos.flatMap((g) => g.ids);
-  assert.equal(todos.length, 70);
-  assert.equal(new Set(todos).size, 70);
-});
-
-test('município pequeno demais se JUNTA ao vizinho próximo', () => {
-  // Igreja Nova com 3 paradas não paga a viagem sozinha; Penedo está a ~20 km.
-  const grupos = agruparPorRegiao(
-    [...perto('PENEDO', PENEDO, 14), ...perto('IGREJA NOVA', IGREJA_NOVA, 3)],
-    { minimoPorRota: 8, raioDeFusaoKm: 25 },
-  );
-  assert.equal(grupos.length, 1);
-  assert.equal(grupos[0]!.ids.length, 17);
-  assert.deepEqual(grupos[0]!.municipios, ['PENEDO', 'IGREJA NOVA']);
-});
-
-test('ilha distante NÃO é fundida — juntar atravessaria o estado no meio da rota', () => {
-  // Coruripe fica a ~42 km de Penedo: além do raio de fusão. Um grupo de 3
-  // paradas lá continua sendo 3 paradas lá, e o operador decide o que fazer.
-  const grupos = agruparPorRegiao(
-    [...perto('PENEDO', PENEDO, 14), ...perto('CORURIPE', CORURIPE, 3)],
-    { minimoPorRota: 8, raioDeFusaoKm: 25 },
-  );
-  assert.equal(grupos.length, 2);
-  const coruripe = grupos.find((g) => g.municipios.includes('CORURIPE'))!;
-  assert.equal(coruripe.ids.length, 3);
-});
-
-test('uma ilha distante não IMPEDE a fusão dos outros grupos pequenos', () => {
-  // Coruripe (3 paradas, fora do raio de todo mundo) é a MENOR — e a primeira
-  // versão dava `break` ao não achar par para ela, deixando Igreja Nova (4) e
-  // Penedo (14), a ~20 km um do outro, separados sem motivo.
+test('cidade pequena NUNCA é fundida com a vizinha — juntar é escolha do operador', () => {
+  // O que o usuário viu com a planilha real: "PIAÇABUÇU · FELIZ DESERTO ·
+  // PENEDO" num bloco só, e não havia como levar Piaçabuçu sem as outras.
   const grupos = agruparPorRegiao(
     [
-      ...perto('CORURIPE', CORURIPE, 3),
-      ...perto('IGREJA NOVA', IGREJA_NOVA, 4),
-      ...perto('PENEDO', PENEDO, 14),
+      ...perto('PIAÇABUÇU', PIACABUCU, 14),
+      ...perto('FELIZ DESERTO', FELIZ_DESERTO, 6),
+      ...perto('PENEDO', PENEDO, 6),
+      ...perto('IGREJA NOVA', IGREJA_NOVA, 1),
     ],
-    { minimoPorRota: 8, raioDeFusaoKm: 25 },
+    { origem: PENEDO },
   );
-  assert.equal(grupos.length, 2);
-  const coruripe = grupos.find((g) => g.municipios.includes('CORURIPE'))!;
-  assert.equal(coruripe.ids.length, 3, 'a ilha continua ilha');
-  const fundido = grupos.find((g) => g.municipios.includes('PENEDO'))!;
-  assert.deepEqual(fundido.municipios, ['PENEDO', 'IGREJA NOVA']);
-  assert.equal(fundido.ids.length, 18);
+  assert.deepEqual(
+    grupos.map((g) => [g.municipio, g.ids.length]).sort(),
+    [['FELIZ DESERTO', 6], ['IGREJA NOVA', 1], ['PENEDO', 6], ['PIAÇABUÇU', 14]],
+  );
 });
 
-test('fusão não estoura o teto de paradas do dia', () => {
+test('a mesma cidade com e sem acento é UM cartão, com o nome mais usado', () => {
+  // Planilha, NF-e e endereço de entrega escrevem a cidade de jeitos diferentes.
+  const grupos = agruparPorRegiao([
+    ...perto('TEOTÔNIO VILELA', CORURIPE, 4),
+    ...perto('Teotonio  Vilela', CORURIPE, 1, 'b'),
+  ]);
+  assert.equal(grupos.length, 1);
+  assert.equal(grupos[0]!.municipio, 'TEOTÔNIO VILELA');
+  assert.equal(grupos[0]!.ids.length, 5);
+});
+
+test('município grande demais para um dia é DIVIDIDO, e cada pedaço diz de quantos', () => {
+  // 70 paradas num município só: não fecha num dia.
   const grupos = agruparPorRegiao(
-    [...perto('PENEDO', PENEDO, 29), ...perto('IGREJA NOVA', IGREJA_NOVA, 5)],
-    { maximoPorRota: 30, minimoPorRota: 8, raioDeFusaoKm: 100 },
+    [...perto('PENEDO', PENEDO, 70), ...perto('CORURIPE', CORURIPE, 5)],
+    { maximoPorRota: 30, origem: IGREJA_NOVA },
   );
-  // 29 + 5 = 34 estouraria: os dois ficam separados mesmo com raio folgado.
-  assert.equal(grupos.length, 2);
-  for (const g of grupos) assert.ok(g.ids.length <= 30);
+  const penedo = grupos.filter((g) => g.municipio === 'PENEDO');
+  assert.ok(penedo.length >= 3, `esperava 3+ pedaços, veio ${penedo.length}`);
+  for (const g of penedo) assert.ok(g.ids.length <= 30, `pedaço com ${g.ids.length} paradas`);
+  assert.deepEqual(
+    penedo.map((g) => g.parte),
+    penedo.map((_, i) => ({ indice: i + 1, total: penedo.length })),
+  );
+  // Os pedaços da mesma cidade saem juntos na lista, não espalhados entre as outras.
+  const posicoes = grupos.flatMap((g, i) => (g.municipio === 'PENEDO' ? [i] : []));
+  assert.equal(posicoes.at(-1)! - posicoes[0]!, penedo.length - 1);
+  // Nenhuma parada se perde nem se duplica na divisão.
+  const todos = penedo.flatMap((g) => g.ids);
+  assert.equal(todos.length, 70);
+  assert.equal(new Set(todos).size, 70);
 });
 
 test('a extensão denuncia agrupamento ruim melhor que a contagem', () => {
@@ -148,12 +138,4 @@ test('teto fracionário não pendura o processo — vira inteiro', () => {
     // JSON e desenharia um marcador em lugar nenhum.
     for (const g of grupos) assert.ok(g.ids.length >= 1, `grupo vazio com teto ${teto}`);
   }
-});
-
-test('piso fracionário também não trava a fusão', () => {
-  const grupos = agruparPorRegiao(
-    [...perto('CORURIPE', CORURIPE, 3), ...perto('PENEDO', PENEDO, 2)],
-    { minimoPorRota: 0.3 },
-  );
-  assert.equal(grupos.flatMap((g) => g.ids).length, 5);
 });

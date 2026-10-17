@@ -7,6 +7,7 @@ import {
   formatarDia,
   formatarHora,
   municipioDoPedido,
+  normalizar,
   paradasEmAberto,
   rotasSemBaixa,
   type ResultadoBaixa,
@@ -43,6 +44,7 @@ import { LimiteDeErro } from '../LimiteDeErro';
 import { FotoReferencia } from '../FotoReferencia';
 import { montarRoteiro } from '../roteiro';
 import { baixarPdfRoteiro } from '../roteiroPdf';
+import { alternarGrupo, estadoDoGrupo } from '../selecaoCidades';
 
 /** Status da parada em português — o enum cru não é para o operador ler. */
 const ROTULO_PARADA: Record<string, string> = {
@@ -187,26 +189,44 @@ export function Rotas() {
     () => pedidos.filter((p) => p.status === 'pendente_de_mapeamento'),
     [pedidos],
   );
+  const idsProntos = useMemo(() => new Set(prontos.map((p) => p.id)), [prontos]);
 
   /**
    * Pedidos sem ponto das MESMAS cidades da seleção: vão como exceção, fora da
    * ordem otimizada (o motorista conhece o caminho). É sugestão — vem marcada
    * e o operador desmarca o que não sai hoje.
    */
+  const pendentesPorLugar = useMemo(
+    () =>
+      pendentes.map((p) => ({
+        id: p.id,
+        municipio: municipioDoPedido(p, clientes[p.clienteId]),
+        cdId: p.cdId,
+      })),
+    [pendentes, clientes],
+  );
   const excecoesSugeridas = useMemo(() => {
     const marcados = prontos.filter((p) => selecionados.has(p.id));
     const ids = new Set(
       excecoesDaSelecao(
         marcados.map((p) => ({ municipio: municipioDoPedido(p, clientes[p.clienteId]), cdId: p.cdId })),
-        pendentes.map((p) => ({
-          id: p.id,
-          municipio: municipioDoPedido(p, clientes[p.clienteId]),
-          cdId: p.cdId,
-        })),
+        pendentesPorLugar,
       ),
     );
     return pendentes.filter((p) => ids.has(p.id));
-  }, [prontos, pendentes, selecionados, clientes]);
+  }, [prontos, pendentes, pendentesPorLugar, selecionados, clientes]);
+  /** Cidades da seleção atual, para o resumo acima da lista — uma vez cada,
+   * com ou sem acento (mesma chave do agrupamento). */
+  const cidadesSelecionadas = useMemo(() => {
+    const porChave = new Map<string, string>();
+    for (const p of prontos) {
+      if (!selecionados.has(p.id)) continue;
+      const nome = (municipioDoPedido(p, clientes[p.clienteId]) ?? '—').trim().toUpperCase();
+      const chave = normalizar(nome);
+      if (!porChave.has(chave)) porChave.set(chave, nome);
+    }
+    return [...porChave.values()];
+  }, [prontos, selecionados, clientes]);
   const excecoesEscolhidas = excecoesSugeridas.filter((p) => !excecoesDesmarcadas.has(p.id));
 
   /** Rotas de dias anteriores ainda com parada sem baixa — prendem pedidos. */
@@ -297,6 +317,10 @@ export function Rotas() {
   const [grupos, setGrupos] = useState<GrupoSugerido[] | null>(null);
   const [carregandoGrupos, setCarregandoGrupos] = useState(false);
   const [erroGrupos, setErroGrupos] = useState<string | null>(null);
+  /** A sugestão é de quando foi pedida: cidade que saiu inteira numa rota some
+   * dela, e quando somem todas a tela precisa dizer isso, não ficar em branco. */
+  const algumaCidadeAberta =
+    grupos?.some((g) => estadoDoGrupo(g.ids, idsProntos, selecionados).vivos.length > 0) ?? false;
 
   async function sugerirGrupos() {
     setCarregandoGrupos(true);
@@ -397,6 +421,11 @@ export function Rotas() {
     if (proximo.has(id)) proximo.delete(id);
     else proximo.add(id);
     setSelecionados(proximo);
+    setPrevia(null);
+  }
+
+  function alternarCidade(ids: string[]) {
+    setSelecionados(alternarGrupo(ids, idsProntos, selecionados));
     setPrevia(null);
   }
 
@@ -1059,47 +1088,89 @@ export function Rotas() {
         {/* Agrupamento geográfico: o passo ANTES de otimizar a ordem. O OSRM
             responde "em que ordem visitar estes N"; escolher QUAIS são os N no
             olho só funciona com meia dúzia de pedidos. Não decide nada — cada
-            grupo é um clique que marca a seleção, e o operador segue do jeito
-            de sempre. */}
+            cidade é um clique que entra ou sai da seleção, e quantas cabem num
+            dia é o operador quem sabe. */}
         {prontos.length > 0 && (
           <div className="agrupamento">
             <div className="cabecalho-secao">
-              <strong>Sugestão de regiões</strong>
+              <strong>Cidades</strong>
               <button disabled={carregandoGrupos} onClick={() => void sugerirGrupos()}>
-                {carregandoGrupos ? 'agrupando…' : '🗺 agrupar por região'}
+                {carregandoGrupos ? 'agrupando…' : '🗺 agrupar por cidade'}
               </button>
             </div>
             {erroGrupos && <div className="erro">{erroGrupos}</div>}
             {grupos !== null && grupos.length === 0 && (
               <div className="vazio">Nada a agrupar com os pedidos prontos de agora.</div>
             )}
-            {grupos !== null && grupos.length > 0 && (
+            {grupos !== null && grupos.length > 0 && !algumaCidadeAberta && (
+              <div className="vazio">
+                As cidades sugeridas já saíram em rota. Clique em agrupar de novo para ver o que
+                ficou pronto depois.
+              </div>
+            )}
+            {grupos !== null && algumaCidadeAberta && (
               <>
                 <p style={{ color: 'var(--texto-2)', margin: '4px 0 8px' }}>
-                  Do mais distante para o mais perto do CD — a região longe é a que precisa do dia
-                  inteiro. Clicar marca os pedidos do grupo; a ordem das paradas continua saindo da
+                  Da mais distante para a mais perto do CD. Clique para pôr a cidade na rota ou
+                  tirar — dá para juntar quantas couberem no dia. A ordem das paradas sai da
                   otimização.
                 </p>
                 <div className="grupos">
-                  {grupos.map((g, i) => (
+                  {grupos.map((g) => {
+                    const { vivos, marcado } = estadoDoGrupo(g.ids, idsProntos, selecionados);
+                    // Cidade que já saiu inteira numa rota publicada some da sugestão.
+                    if (vivos.length === 0) return null;
+                    const semPonto = excecoesDaSelecao(
+                      [{ municipio: g.municipio, cdId: cdId || null }],
+                      pendentesPorLugar,
+                    ).length;
+                    const nome = g.parte ? `${g.municipio} (${g.parte.indice}/${g.parte.total})` : g.municipio;
+                    return (
+                      <button
+                        key={`${g.municipio}-${g.parte?.indice ?? 0}`}
+                        className="grupo"
+                        aria-pressed={marcado}
+                        onClick={() => alternarCidade(g.ids)}
+                        title={marcado === true ? `Tirar ${nome} da rota` : `Pôr ${nome} na rota`}
+                      >
+                        <strong>
+                          {marcado === true ? '✓ ' : ''}
+                          {nome}
+                        </strong>
+                        <div className="grupo-numeros">
+                          {vivos.length} parada(s)
+                          {/* Cidade dividida: as exceções são da cidade, não do
+                              pedaço — sem o "na cidade", duas partes com "+ 17"
+                              pareceriam 34. */}
+                          {semPonto > 0 && ` + ${semPonto} sem ponto${g.parte ? ' na cidade' : ''}`}
+                          {g.distanciaDoCdKm != null && ` · ${g.distanciaDoCdKm} km do CD`}
+                          {` · ${g.extensaoKm} km de ponta a ponta`}
+                        </div>
+                        {g.parte && (
+                          <div className="grupo-numeros">
+                            cidade grande para um dia — dividida em {g.parte.total}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {selecionados.size > 0 && (
+                  <div className="selecao-cidades">
+                    <span>
+                      Na rota: <strong>{cidadesSelecionadas.join(' + ')}</strong> ·{' '}
+                      {selecionados.size} parada(s)
+                    </span>
                     <button
-                      key={i}
-                      className="grupo"
                       onClick={() => {
-                        setSelecionados(new Set(g.ids));
+                        setSelecionados(new Set());
                         setPrevia(null);
                       }}
-                      title={`Selecionar as ${g.ids.length} paradas desta região`}
                     >
-                      <strong>{g.municipios.slice(0, 3).join(' · ')}</strong>
-                      {g.municipios.length > 3 && <span> +{g.municipios.length - 3}</span>}
-                      <div className="grupo-numeros">
-                        {g.ids.length} paradas · {g.extensaoKm} km de extensão
-                        {g.distanciaDoCdKm != null && ` · ${g.distanciaDoCdKm} km do CD`}
-                      </div>
+                      Limpar seleção
                     </button>
-                  ))}
-                </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -1123,6 +1194,9 @@ export function Rotas() {
                 <th>Nota</th>
                 <th>CD</th>
                 <th>Cliente</th>
+                {/* Com várias cidades marcadas, é a coluna que diz de qual
+                    cidade é cada pedido — a montagem é pensada por cidade. */}
+                <th>Cidade</th>
                 <th>Vol · Peso</th>
                 <th></th>
               </tr>
@@ -1159,6 +1233,7 @@ export function Rotas() {
                       </span>
                     )}
                   </td>
+                  <td>{municipioDoPedido(p, clientes[p.clienteId]) ?? '—'}</td>
                   <td>
                     {formatarCarga(p.volumes, p.pesoBrutoKg)}
                   </td>

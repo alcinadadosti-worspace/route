@@ -483,10 +483,9 @@ export async function criarApp({
    * seleciona o que quiser montar.
    */
   app.get('/api/rotas/agrupamento', { config: { papeis: ESCRITORIO } }, async (req) => {
-    const { cdId, maximoPorRota, minimoPorRota } = req.query as {
+    const { cdId, maximoPorRota } = req.query as {
       cdId?: string;
       maximoPorRota?: string;
-      minimoPorRota?: string;
     };
     const [pedidos, clientes, cds] = await Promise.all([
       repo.listarPedidos(),
@@ -518,7 +517,6 @@ export async function criarApp({
     const grupos = agruparPorRegiao(pontos, {
       origem,
       maximoPorRota: Number(maximoPorRota) || undefined,
-      minimoPorRota: Number(minimoPorRota) || undefined,
     });
     return { grupos, totalProntos: pontos.length };
   });

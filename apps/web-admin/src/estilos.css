@@ -734,6 +734,24 @@ tr.dossie-linha .dossie-bloco {
 .agrupamento .grupo:hover {
   border-color: var(--acento, var(--texto-2));
 }
+/* Cidade na rota: a borda dourada é o que diz, de longe, quais já foram
+   escolhidas — com várias marcadas, o texto sozinho não se lê de relance. */
+.agrupamento .grupo[aria-pressed='true'] {
+  border-color: var(--ambar);
+  box-shadow: inset 0 0 0 1px var(--ambar);
+}
+.agrupamento .grupo[aria-pressed='mixed'] {
+  border-color: var(--ambar);
+  border-style: dashed;
+}
+.agrupamento .selecao-cidades {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
 .agrupamento .grupo-numeros {
   margin-top: 4px;
   font-size: 0.8rem;
