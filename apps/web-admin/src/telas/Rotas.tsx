@@ -1495,7 +1495,17 @@ export function Rotas() {
         )}
       </section>
 
-      <ForaDaMontagem pedidos={pedidos} clientes={clientes} aoAlterar={carregar} />
+      <ForaDaMontagem
+        pedidos={pedidos}
+        clientes={clientes}
+        aoAlterar={() => {
+          carregar();
+          // A sugestão de cidades é de quando foi pedida: sem refazer, o
+          // pedido liberado não contava no cartão da cidade dele, e a cidade
+          // já marcada não ficava "em parte" para um clique completar.
+          if (grupos !== null) void sugerirGrupos();
+        }}
+      />
 
       {previa && (
         <section className="cartao">

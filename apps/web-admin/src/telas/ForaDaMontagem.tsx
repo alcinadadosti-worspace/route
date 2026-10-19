@@ -240,18 +240,35 @@ export function ForaDaMontagem({
             </div>
           )}
 
-          {marcados.size > 0 && (
-            <div className="barra-rota">
-              <button className="primaria" disabled={enviando} onClick={() => void aplicar()}>
+          {/* Presa no pé da tela enquanto a lista está aberta. Ficava DEPOIS
+              das 150 linhas, só aparecia com algo marcado — e o usuário marcou,
+              não viu botão nenhum e concluiu que marcar não fazia nada
+              (19/10/2026: pedidos marcados, nenhuma liberação gravada). */}
+          <div className="barra-liberacao">
+            {mensagem && <div className={mensagem.erro ? 'alerta' : 'sucesso'}>{mensagem.texto}</div>}
+            <div className="barra-liberacao-acoes">
+              <button
+                className="primaria"
+                disabled={enviando || marcados.size === 0}
+                onClick={() => void aplicar()}
+              >
                 {enviando
                   ? 'GRAVANDO…'
                   : vista === 'fora'
-                    ? `LIBERAR ${marcados.size} PARA A MONTAGEM`
-                    : `DEVOLVER ${marcados.size} PARA FORA DA MONTAGEM`}
+                    ? `LIBERAR${marcados.size ? ` ${marcados.size}` : ''} PARA A MONTAGEM`
+                    : `DEVOLVER${marcados.size ? ` ${marcados.size}` : ''} PARA FORA DA MONTAGEM`}
               </button>
-              <button disabled={enviando} onClick={() => setMarcados(new Set())}>
-                Limpar marcas
-              </button>
+              {marcados.size > 0 ? (
+                <button disabled={enviando} onClick={() => setMarcados(new Set())}>
+                  Limpar marcas
+                </button>
+              ) : (
+                <span className="nota-publicacao">
+                  {vista === 'fora'
+                    ? 'Marque os pedidos que ainda não foram entregues e clique em Liberar — só marcar não muda nada.'
+                    : 'Marque os que não vão mais na rota e clique em Devolver.'}
+                </span>
+              )}
               {/* Marcado e escondido pelo filtro também vai — dizer antes. */}
               {marcadosEscondidos > 0 && (
                 <span className="nota-publicacao">
@@ -259,8 +276,7 @@ export function ForaDaMontagem({
                 </span>
               )}
             </div>
-          )}
-          {mensagem && <div className={mensagem.erro ? 'alerta' : 'sucesso'}>{mensagem.texto}</div>}
+          </div>
         </>
       )}
     </section>
@@ -280,6 +296,10 @@ function resumo(
     const semPonto = conta('pendente_de_mapeamento');
     const decisao = conta('pendente_de_decisao');
     partes.push(`${alterados.length} liberado(s): ${prontos} pronto(s) na montagem`);
+    // Liberar não põe na rota: a prévia é dos pedidos MARCADOS na montagem.
+    if (prontos > 0) {
+      partes.push('para irem na rota, marque-os na montagem (ou clique na cidade) e otimize de novo');
+    }
     if (semPonto > 0) {
       partes.push(
         `${semPonto} sem ponto no mapa (vão como exceção da cidade, ou use "Localizar endereços" na Importação)`,

@@ -934,6 +934,28 @@ tr.dossie-linha .dossie-bloco {
   gap: 8px;
 }
 
+/* Fora da montagem: o botão de liberar fica preso no pé da tela enquanto a
+   lista rola — escondido depois de 150 linhas, ninguém o achava. */
+.fora-da-montagem .barra-liberacao {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: var(--superficie);
+  border-top: 1px solid var(--borda);
+  padding: 10px 0 4px;
+  margin-top: 8px;
+}
+.fora-da-montagem .barra-liberacao .sucesso,
+.fora-da-montagem .barra-liberacao .alerta {
+  margin: 0 0 8px;
+}
+.fora-da-montagem .barra-liberacao-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Fora da montagem: filtros numa linha, que quebra no celular. */
 .fora-da-montagem .filtros-fora {
   display: flex;
