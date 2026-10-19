@@ -1,6 +1,7 @@
 import {
   ehEnderecoRural,
   enderecosDivergem,
+  formatarDia,
   normalizarTelefone,
   type Cliente,
   type Pedido,
@@ -14,6 +15,7 @@ import {
   type LinhaPlanilha,
 } from './planilha.js';
 import type { Repositorio } from '../db/repositorio.js';
+import { removerPedido } from '../rotas/remover.js';
 
 /**
  * Importação pela PLANILHA do ERP (`ConsultaPedidos_*.xlsx`) — o caminho que
@@ -77,10 +79,11 @@ export async function importarPlanilha(
     return relatorio;
   }
 
-  // Duas consultas para a remessa inteira, em vez de duas por linha.
-  const [idsExistentes, clientesExistentes] = await Promise.all([
+  // Três consultas para a remessa inteira, em vez de duas por linha.
+  const [idsExistentes, clientesExistentes, cancelados] = await Promise.all([
     repo.idsDePedidos(),
     repo.listarClientes(),
+    repo.idsDeCancelados(),
   ]);
   const clientes = new Map<string, Cliente>(
     clientesExistentes.map(({ id, ...c }) => [id, c as Cliente]),
@@ -105,6 +108,9 @@ export async function importarPlanilha(
    * várias notas no ciclo, e repetir o aviso a cada uma afogaria os alertas
    * raros — a mesma inundação já consertada no aviso de retirada. */
   const revisaoAlertada = new Set<string>();
+  const canceladosJaImportados: LinhaPlanilha[] = [];
+  /** Cancelados vistos pela PRIMEIRA vez nesta remessa — viram marca no banco. */
+  const canceladosNovos: LinhaPlanilha[] = [];
   let pinsDoCadastro = 0;
   let aGeocodificar = 0;
 
@@ -133,24 +139,41 @@ export async function importarPlanilha(
       continue;
     }
 
-    const jaExiste = idsExistentes.has(linha.codigoPedido) || vistos.has(linha.codigoPedido);
+    // Já cancelado numa importação anterior: uma planilha mais velha, de quando
+    // ele ainda estava ativo, conta como repetida — não o traz de volta.
+    const jaExiste =
+      idsExistentes.has(linha.codigoPedido) ||
+      vistos.has(linha.codigoPedido) ||
+      cancelados.has(linha.codigoPedido);
 
-    // Cancelado no ERP: não entra. Se JÁ tinha entrado numa importação
-    // anterior, ninguém apaga sozinho — o Admin Estoque é avisado e apaga pelo
-    // painel (o caminho existente já tira a parada da rota junto, se houver).
+    // Cancelado no ERP: não entra, e o que JÁ tinha entrado numa importação
+    // anterior é apagado depois das gravações (ver `apagarCancelado`).
     if (linha.cancelada) {
       relatorio.canceladas = (relatorio.canceladas ?? 0) + 1;
-      if (jaExiste) {
+      // Já tratado antes (apagado, ou alertado): repetir o alerta a cada
+      // planilha que o traz afogaria os novos.
+      if (cancelados.has(linha.codigoPedido)) continue;
+      if (idsExistentes.has(linha.codigoPedido)) {
+        canceladosJaImportados.push(linha);
+        canceladosNovos.push(linha);
+      } else if (!vistos.has(linha.codigoPedido)) {
+        canceladosNovos.push(linha);
+      } else {
+        // Ativo numa linha e cancelado noutra da MESMA planilha: não dá para
+        // saber qual vale, e o ativo já está na fila de gravação. Fica e avisa.
         relatorio.alertas.push({
           clienteId: linha.pessoa,
           nome: linha.nome,
-          mensagem: `Pedido ${linha.codigoPedido} (nota ${linha.notaFiscal}) foi CANCELADO no ERP depois de importado — apague pela aba Pedidos.`,
+          mensagem: `Pedido ${linha.codigoPedido} aparece ativo E cancelado na mesma planilha — ficou importado. Confira no ERP e, se estiver cancelado, apague pela aba Pedidos.`,
         });
       }
       continue;
     }
 
     if (jaExiste) {
+      // Nem o "Entregue" do ERP mexe no que já está aqui: ele marca sozinho
+      // depois de 6 dias, e um pedido esperando rota sairia da montagem sem
+      // ter sido entregue. O estado daqui (baixa, liberação) é o que vale.
       relatorio.duplicados += 1;
       continue;
     }
@@ -193,6 +216,9 @@ export async function importarPlanilha(
           linha.enderecoEntrega.referencia,
         ])
       : null;
+    const gpsDoCadastroNaRetirada = linhaDeRota
+      ? null
+      : extrairCoordenada([linha.enderecoCadastro.complemento, linha.enderecoCadastro.referencia]);
 
     const existente = clientes.get(linha.pessoa);
     let cliente: Cliente;
@@ -272,7 +298,16 @@ export async function importarPlanilha(
     }
     clientes.set(linha.pessoa, cliente);
 
-    const status = statusDaLinha(linha, cliente, enderecoAnterior);
+    // "No endereço de entrega" que o ERP JÁ DÁ COMO ENTREGUE fica fora da
+    // montagem, numa lista de onde o Admin Estoque libera o que não foi (ver
+    // `liberacao.ts`). Entrava pronto para rota: no ciclo 11 eram 756 dos 1060.
+    // Mas o ERP marca entregue sozinho depois de 6 dias, então não dá para
+    // tratar como entregue de verdade — por isso status próprio, e não
+    // `entregue`, que é o que a rota daqui confirmou e não se desfaz.
+    const status: StatusPedido =
+      linhaDeRota && linha.entregueNoErp
+        ? 'entregue_no_erp'
+        : statusDaLinha(linha, cliente, enderecoAnterior);
     if (status === 'pendente_de_mapeamento' && !cliente.coordenada) aGeocodificar += 1;
     if (status === 'pendente_de_decisao' && enderecoAnterior && !revisaoAlertada.has(linha.pessoa)) {
       revisaoAlertada.add(linha.pessoa);
@@ -304,17 +339,27 @@ export async function importarPlanilha(
         xmlStoragePath: null,
         modoEntrega: linha.tipoEntrega,
         cdId: cd?.cdId ?? null,
+        // A aba Decisões desenha o cartão — e a resposta acha o pedido — por
+        // este campo, como no fluxo do XML. Sem ele, o pedido da planilha com
+        // endereço em revisão ficava preso numa decisão que nenhuma tela mostrava.
+        ...(status === 'pendente_de_decisao' && enderecoAnterior ? { enderecoAnterior } : {}),
+        // Retirada não grava lugar no cliente, mas guarda o GPS do cadastro:
+        // se for liberada para a rota, o ponto vem daqui (ver `liberacao.ts`).
+        ...(!linhaDeRota && gpsDoCadastroNaRetirada ? { pinDoCadastro: gpsDoCadastroNaRetirada } : {}),
+        // Também na retirada: a lista de liberação mostra o que o ERP afirma.
+        ...(linha.entregueNoErp ? { entregueNoErp: { data: linha.dataEntrega } } : {}),
       },
     });
     relatorio.importados += 1;
 
     if (status === 'retirada') relatorio.retiradas = (relatorio.retiradas ?? 0) + 1;
+    else if (status === 'entregue_no_erp') relatorio.jaEntregues = (relatorio.jaEntregues ?? 0) + 1;
     else if (status === 'pronto_para_rota') relatorio.prontosParaRota += 1;
     else if (status === 'pendente_de_decisao') relatorio.pendentesDeDecisao += 1;
     else relatorio.pendentesDeMapeamento += 1;
 
     // Peso zerado só importa para quem VAI NO CAMINHÃO (mesma régua do XML).
-    if (linha.tipoEntrega === 'rota' && linha.volumes <= 0 && linha.pesoBrutoKg <= 0) {
+    if (status !== 'entregue_no_erp' && linhaDeRota && linha.volumes <= 0 && linha.pesoBrutoKg <= 0) {
       relatorio.semCarga += 1;
     }
   }
@@ -328,6 +373,25 @@ export async function importarPlanilha(
     })),
     ...escritasDePedido,
   ]);
+
+  // Um a um e depois das gravações: são poucos por remessa (9 no ciclo 11
+  // inteiro), e cada um pode mexer numa rota — o mesmo caminho do botão Apagar.
+  for (const linha of canceladosJaImportados) {
+    const resultado = await apagarCancelado(repo, linha);
+    if (resultado.apagado) {
+      relatorio.canceladasApagadas = (relatorio.canceladasApagadas ?? 0) + 1;
+    }
+    relatorio.alertas.push({ clienteId: linha.pessoa, nome: linha.nome, mensagem: resultado.mensagem });
+  }
+  // A marca vem DEPOIS de apagar: se a importação cair no meio, a próxima
+  // planilha ainda encontra o pedido e o apaga — marcado antes, ele ficaria.
+  const registradoEm = new Date().toISOString();
+  await repo.registrarCancelados(
+    canceladosNovos.map((l) => ({
+      id: l.codigoPedido,
+      dados: { notaFiscal: l.notaFiscal, clienteId: l.pessoa, registradoEm },
+    })),
+  );
 
   if (pinsDoCadastro > 0) {
     relatorio.alertas.push({
@@ -345,6 +409,44 @@ export async function importarPlanilha(
   }
 
   return relatorio;
+}
+
+/**
+ * Pedido CANCELADO no ERP depois de importado: sai sozinho, e o relatório diz
+ * que saiu. Antes era só um alerta mandando apagar pela aba Pedidos — e até
+ * alguém fazer isso, o pedido seguia na montagem, podendo entrar numa rota e
+ * ir no caminhão. O usuário pediu (17/10/2026): "se o pedido está cancelado,
+ * deixe um alerta nele dizendo que está cancelado e elimine".
+ *
+ * O caminho é o do botão Apagar (`removerPedido`), que tira a parada da rota
+ * junto. O que já foi entregue ou teve insucesso NÃO se apaga — é histórico da
+ * operação, e um cancelamento depois da entrega é coisa para conferir com o ERP,
+ * não para sumir em silêncio.
+ */
+async function apagarCancelado(
+  repo: Repositorio,
+  linha: LinhaPlanilha,
+): Promise<{ apagado: boolean; mensagem: string }> {
+  const quem = `Pedido ${linha.codigoPedido} (nota ${linha.notaFiscal}) foi CANCELADO no ERP`;
+  const pedido = await repo.obterPedido(linha.codigoPedido);
+  if (!pedido) return { apagado: false, mensagem: `${quem} — já não estava no sistema.` };
+
+  const rota = pedido.status === 'em_rota' && pedido.rotaId ? await repo.obterRota(pedido.rotaId) : null;
+  const r = await removerPedido(repo, linha.codigoPedido);
+  if (!r.ok) {
+    return { apagado: false, mensagem: `${quem}, mas NÃO foi apagado: ${r.erro}. Confira com o ERP.` };
+  }
+  if (!rota) return { apagado: true, mensagem: `${quem} — apagado automaticamente.` };
+
+  // Saiu de uma rota: o PDF dela pode já estar no caminhão, com a parada lá.
+  const dia = formatarDia(rota.data);
+  const desfeita = r.rotaApagada ? ', que só tinha ele e foi desfeita' : '';
+  return {
+    apagado: true,
+    mensagem:
+      `${quem} — apagado e tirado da rota ${rota.id} de ${dia}${desfeita}. ` +
+      'Se o PDF dessa rota já foi impresso, avise o motorista para NÃO entregar.',
+  };
 }
 
 /**

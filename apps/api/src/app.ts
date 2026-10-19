@@ -13,6 +13,7 @@ import {
 import { importarPlanilha } from './importacao/servico-planilha.js';
 import { localizarEnderecos } from './importacao/geocodificacao-lote.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
+import { alterarLiberacao } from './rotas/liberacao.js';
 import { darBaixa } from './rotas/baixa.js';
 import { agruparPorRegiao, type BaixaPedida } from '@rota/shared';
 import { FORMATO_ROTA_ID } from './rotas/comum.js';
@@ -255,6 +256,17 @@ export async function criarApp({
     },
   );
 
+  // Liberar para a rota o que o ERP deixou de fora (retirada, ou "entregue"
+  // segundo ele) — ou desfazer a liberação. Em lote: a lista é marcada às
+  // dezenas (ver rotas/liberacao.ts).
+  app.post('/api/pedidos/liberacao', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
+    const corpo = (req.body ?? {}) as { pedidoIds?: unknown; acao?: unknown };
+    const quem = req.usuario?.uid ?? 'sem-autenticacao';
+    const resultado = await alterarLiberacao(repo, corpo.pedidoIds, corpo.acao, quem);
+    if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+    return { alterados: resultado.alterados, recusados: resultado.recusados };
+  });
+
   // Apagar nota. Se ela estiver numa rota publicada, a parada sai da rota
   // junto; só o que já foi executado em campo é intocável (ver remover.ts).
   app.delete('/api/pedidos/:chave', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
@@ -483,10 +495,7 @@ export async function criarApp({
    * seleciona o que quiser montar.
    */
   app.get('/api/rotas/agrupamento', { config: { papeis: ESCRITORIO } }, async (req) => {
-    const { cdId, maximoPorRota } = req.query as {
-      cdId?: string;
-      maximoPorRota?: string;
-    };
+    const { cdId } = req.query as { cdId?: string };
     const [pedidos, clientes, cds] = await Promise.all([
       repo.listarPedidos(),
       repo.listarClientes(),
@@ -514,10 +523,7 @@ export async function criarApp({
     }
 
     const origem = cdId ? (cds[cdId]?.coordenada ?? null) : null;
-    const grupos = agruparPorRegiao(pontos, {
-      origem,
-      maximoPorRota: Number(maximoPorRota) || undefined,
-    });
+    const grupos = agruparPorRegiao(pontos, { origem });
     return { grupos, totalProntos: pontos.length };
   });
 

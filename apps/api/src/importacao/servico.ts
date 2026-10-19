@@ -775,6 +775,10 @@ export function mesclarRelatorios(
   }
   if (origem.retiradas) destino.retiradas = (destino.retiradas ?? 0) + origem.retiradas;
   if (origem.canceladas) destino.canceladas = (destino.canceladas ?? 0) + origem.canceladas;
+  if (origem.canceladasApagadas) {
+    destino.canceladasApagadas = (destino.canceladasApagadas ?? 0) + origem.canceladasApagadas;
+  }
+  if (origem.jaEntregues) destino.jaEntregues = (destino.jaEntregues ?? 0) + origem.jaEntregues;
   destino.rejeitados.push(...origem.rejeitados);
   destino.alertas.push(...origem.alertas);
   for (const [cd, n] of Object.entries(origem.porCd)) {

@@ -17,6 +17,10 @@ export type StatusPedido =
   | 'pendente_de_decisao'
   | 'pronto_para_rota'
   | 'retirada'
+  /** "No endereço de entrega" que o ERP já dá como ENTREGUE. Fica fora da
+   * montagem até o Admin Estoque liberar — o ERP marca sozinho depois de 6
+   * dias, então "entregue" lá nem sempre é verdade (ver `liberacao.ts`). */
+  | 'entregue_no_erp'
   | 'em_rota'
   | 'entregue'
   | 'insucesso';
@@ -156,6 +160,27 @@ export interface Pedido {
    * entrar na rota de hoje passa a ser acidente em vez de escolha.
    */
   voltouDeRota?: { rotaId: string; data: string } | null;
+  /**
+   * O ERP dizia ENTREGUE quando a planilha trouxe o pedido pela primeira vez
+   * (`SituaçãoComercial = Entregue`; `DataEntrega` em AAAA-MM-DD). É o que o
+   * ERP AFIRMA, não o que aconteceu: ele marca sozinho depois de 6 dias, e
+   * retirada aparece entregue mesmo indo no caminhão. Só informa a lista de
+   * liberação — quem decide é o Admin Estoque.
+   */
+  entregueNoErp?: { data: string | null } | null;
+  /**
+   * O Admin Estoque tirou o pedido de "fora da montagem" (retirada, ou entregue
+   * segundo o ERP) e o mandou para a rota. `de` é para onde ele volta se a
+   * liberação for desfeita.
+   */
+  liberadoParaRota?: { de: 'retirada' | 'entregue_no_erp'; em: string; por: string } | null;
+  /**
+   * GPS digitado no cadastro do ERP, guardado na RETIRADA — que de propósito
+   * não grava lugar no cliente (ver servico-planilha.ts). Se ela for liberada
+   * para a rota, o ponto vem daqui em vez da busca paga: no ciclo 11, 81 das
+   * 954 retiradas tinham GPS no cadastro e iriam "sem ponto".
+   */
+  pinDoCadastro?: GeoPonto | null;
 }
 
 /**
@@ -166,6 +191,14 @@ export interface Pedido {
  */
 export interface ParadaRota {
   pedidoId: string;
+  /**
+   * Número impresso no PDF (01, 02… nas paradas; E1, E2… nas exceções),
+   * gravado na publicação. A tela numerava pela POSIÇÃO na lista: tirado um
+   * pedido cancelado do meio da rota, as paradas seguintes mudavam de número e
+   * deixavam de bater com o papel que o motorista marcou — a baixa feita pelo
+   * número caía na cliente errada. Ausente em rotas antigas (vale a posição).
+   */
+  numero?: number;
   clienteId: string;
   nome: string;
   endereco: string;
@@ -263,6 +296,9 @@ export interface BaixaNoPainel {
  */
 export interface ExcecaoRota {
   pedidoId: string;
+  /** Número impresso no PDF (E1, E2…), gravado na publicação — ver
+   * `ParadaRota.numero`. */
+  numero?: number;
   clienteId: string;
   nome: string;
   endereco: string;
@@ -579,6 +615,13 @@ export interface RelatorioImportacao {
   /** Importação por planilha: linhas com `SituaçãoComercial = Cancelado`,
    * ignoradas de propósito (pedido cancelado não gera entrega). */
   canceladas?: number;
+  /** Das canceladas, as que JÁ estavam importadas e foram apagadas agora (cada
+   * uma com seu alerta, dizendo se saiu de alguma rota). */
+  canceladasApagadas?: number;
+  /** Importação por planilha: pedidos "No endereço de entrega" que o ERP já
+   * dava como entregues — entram como `entregue_no_erp`, fora da montagem até
+   * alguém liberar. */
+  jaEntregues?: number;
   /** Destinos urbanos resolvidos pela geocodificação automática (seção 9). */
   geocodificados: number;
   /** Destinos aproximados (rural/impreciso, mas no município certo): despacháveis

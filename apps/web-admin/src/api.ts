@@ -166,6 +166,17 @@ export async function localizarEnderecos(pular = 0): Promise<{
  * Rota × retirada: o `modFrete` da nota sugere que a revendedora vem buscar no
  * CD, e o Admin Estoque confirma. Reversível enquanto o pedido não saiu.
  */
+/** Libera para a rota (ou devolve) o que o ERP deixou fora da montagem. */
+export async function alterarLiberacao(
+  pedidoIds: string[],
+  acao: 'liberar' | 'devolver',
+): Promise<{
+  alterados: Array<{ id: string; status: string }>;
+  recusados: Array<{ id: string; motivo: string }>;
+}> {
+  return post(`${BASE}/api/pedidos/liberacao`, { pedidoIds, acao });
+}
+
 export async function decidirModoEntrega(
   pedidoId: string,
   escolha: 'rota' | 'retirada',

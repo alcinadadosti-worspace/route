@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { zipSync, strToU8 } from 'fflate';
 import { importarPlanilha } from './servico-planilha.js';
+import { decidirMudancaEndereco } from './servico.js';
 import { extrairCoordenada, lerPlanilha } from './planilha.js';
 import { RepositorioMemoria } from '../db/repositorio.js';
 import type { Cliente } from '@rota/shared';
@@ -43,6 +44,7 @@ function xlsxDe(linhas: Array<Record<string, string>>): Uint8Array {
     'Peso Real',
     'Peso Estimado',
     'DataFaturamento',
+    'DataEntrega',
   ];
   const letra = (i: number) => {
     let s = '';
@@ -85,7 +87,9 @@ function linhaRota(extra: Record<string, string> = {}): Record<string, string> {
     QtdeMateriais: '7',
     ValorPraticado: '662.82',
     'Tipo de Entrega': 'No endereço de entrega',
-    'SituaçãoComercial': 'Entregue',
+    // Pedido de rota ainda por entregar está "Transporte" no ERP; "Entregue" é
+    // o que já foi entregue e não vai mais para a montagem.
+    'SituaçãoComercial': 'Transporte',
     Logradouro: 'RUA DA PROVIDENCIA',
     Complemento: '149',
     Bairro: 'CENTRO',
@@ -308,9 +312,20 @@ test('revisão de endereço gera UM alerta por cliente, não um por nota', async
   assert.equal(rel.pendentesDeDecisao, 3, 'os TRÊS pedidos aguardam a decisão');
   const doEndereco = rel.alertas.filter((a) => /Endereço do cadastro mudou/.test(a.mensagem));
   assert.equal(doEndereco.length, 1, 'mas o aviso é um só');
+  // Sem `enderecoAnterior` no pedido a aba Decisões não desenhava o cartão e a
+  // resposta recusava (409): o pedido ficava preso para sempre.
+  const preso = (await repo.obterPedido('600000021'))!;
+  assert.equal(preso.enderecoAnterior?.logradouro, 'RUA DA PROVIDENCIA');
+  const r = await decidirMudancaEndereco(repo, '600000021', 'manter');
+  assert.ok(r.ok, JSON.stringify(r));
+  for (const id of ['600000021', '600000022', '600000023']) {
+    assert.equal((await repo.obterPedido(id))!.status, 'pronto_para_rota', id);
+  }
 });
 
-test('cancelada NOVA é ignorada; cancelada JÁ IMPORTADA vira alerta com ação manual', async () => {
+test('cancelada NOVA é ignorada; cancelada JÁ IMPORTADA é apagada sozinha, com alerta', async () => {
+  // Antes o já-importado só gerava "apague pela aba Pedidos" e seguia na
+  // montagem até alguém lembrar. O usuário pediu que saia sozinho.
   const repo = new RepositorioMemoria();
   // 1º dia: pedido entra normal.
   await importarPlanilha('d1.xlsx', xlsxDe([linhaRota()]), repo);
@@ -325,13 +340,207 @@ test('cancelada NOVA é ignorada; cancelada JÁ IMPORTADA vira alerta com ação
   );
 
   assert.equal(rel.canceladas, 2);
+  assert.equal(rel.canceladasApagadas, 1);
   assert.equal(rel.importados, 0);
-  // o novo cancelado nunca virou pedido
-  assert.equal((await repo.listarPedidos()).length, 1);
-  // o existente NÃO foi apagado sozinho (nada decide sozinho) — virou alerta
+  assert.equal((await repo.listarPedidos()).length, 0, 'nem o novo entrou, nem o antigo ficou');
   const alerta = rel.alertas.find((a) => /CANCELADO/i.test(a.mensagem));
   assert.ok(alerta);
-  assert.match(alerta!.mensagem, /523636997/);
+  assert.match(alerta!.mensagem, /523636997.*apagado automaticamente/);
+});
+
+/** Põe o pedido já importado numa rota publicada (o PDF pode estar impresso). */
+async function emRota(repo: RepositorioMemoria, pedidoId: string, outros: string[] = []) {
+  const rotaId = '2026-10-17_abcdef01';
+  const parada = (id: string) => ({
+    pedidoId: id,
+    clienteId: '1260943',
+    nome: 'CLAUDEANE',
+    endereco: 'RUA DA PROVIDENCIA, 149',
+    telefone: null,
+    itens: [],
+    volumes: 1,
+    pesoBrutoKg: 12,
+    coordenada: { lat: -10.11, lng: -36.66 },
+    etaMin: 10,
+    distanciaKm: 5,
+    status: 'em_rota' as const,
+  });
+  await repo.salvarRota(rotaId, {
+    data: '2026-10-17',
+    motoristaId: 'm',
+    origemCdId: 'penedo',
+    origemNome: 'CD Penedo',
+    origemCoordenada: { lat: -10.28, lng: -36.56 },
+    retornaAoCd: true,
+    paradas: [pedidoId, ...outros].map(parada),
+    polylinePlanejada: '',
+    distanciaTotalKm: 10,
+    duracaoTotalMin: 20,
+    status: 'publicada',
+    publicadaEm: '2026-10-17T08:00:00.000Z',
+    concluidaEm: null,
+  });
+  for (const id of [pedidoId, ...outros]) {
+    const p = (await repo.obterPedido(id))!;
+    await repo.salvarPedido(id, { ...p, status: 'em_rota', rotaId });
+  }
+  return rotaId;
+}
+
+test('cancelada que estava NUMA ROTA sai da rota, e o alerta manda avisar o motorista', async () => {
+  const repo = new RepositorioMemoria();
+  await importarPlanilha(
+    'd1.xlsx',
+    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605' })]),
+    repo,
+  );
+  const rotaId = await emRota(repo, '523636997', ['523636998']);
+
+  const rel = await importarPlanilha('d2.xlsx', xlsxDe([linhaRota({ 'SituaçãoComercial': 'Cancelado' })]), repo);
+
+  assert.equal(rel.canceladasApagadas, 1);
+  assert.equal(await repo.obterPedido('523636997'), null);
+  const rota = (await repo.obterRota(rotaId))!;
+  assert.deepEqual(rota.paradas.map((p) => p.pedidoId), ['523636998'], 'a outra parada fica');
+  const alerta = rel.alertas.find((a) => /CANCELADO/.test(a.mensagem))!;
+  assert.match(alerta.mensagem, new RegExp(`tirado da rota ${rotaId} de 17/10`));
+  assert.match(alerta.mensagem, /avise o motorista para NÃO entregar/);
+});
+
+test('cancelada que era a ÚNICA parada desfaz a rota; já ENTREGUE não se apaga', async () => {
+  const repo = new RepositorioMemoria();
+  await importarPlanilha(
+    'd1.xlsx',
+    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605' })]),
+    repo,
+  );
+  const rotaId = await emRota(repo, '523636997');
+  const entregue = (await repo.obterPedido('523636998'))!;
+  await repo.salvarPedido('523636998', { ...entregue, status: 'entregue' });
+
+  const rel = await importarPlanilha(
+    'd2.xlsx',
+    xlsxDe([
+      linhaRota({ 'SituaçãoComercial': 'Cancelado' }),
+      linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605', 'SituaçãoComercial': 'Cancelado' }),
+    ]),
+    repo,
+  );
+
+  assert.equal(rel.canceladasApagadas, 1);
+  assert.equal(await repo.obterRota(rotaId), null, 'rota sem parada nenhuma não fica');
+  const [desfeita, historico] = rel.alertas.filter((a) => /CANCELADO/.test(a.mensagem));
+  assert.match(desfeita!.mensagem, /só tinha ele e foi desfeita/);
+  // Entrega é histórico: cancelamento depois dela é para conferir, não sumir.
+  assert.equal((await repo.obterPedido('523636998'))!.status, 'entregue');
+  assert.match(historico!.mensagem, /293605.*NÃO foi apagado.*Confira com o ERP/);
+});
+
+test('cancelado não volta quando uma planilha MAIS VELHA é importada depois', async () => {
+  // Reproduzido: duas ConsultaPedidos soltas de uma vez (nome é UUID, a ordem
+  // do upload não é a da data) — a nova apagava o cancelado e a velha o
+  // reimportava como pronto, sem alerta nenhum.
+  const repo = new RepositorioMemoria();
+  await importarPlanilha('d1.xlsx', xlsxDe([linhaRota()]), repo);
+  const nova = xlsxDe([
+    linhaRota({ 'SituaçãoComercial': 'Cancelado' }),
+    // Cancelado que nunca chegou a entrar.
+    linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605', 'SituaçãoComercial': 'Cancelado' }),
+  ]);
+  const rel = await importarPlanilha('nova.xlsx', nova, repo);
+  assert.equal(rel.canceladasApagadas, 1);
+
+  const velha = await importarPlanilha(
+    'velha.xlsx',
+    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605' })]),
+    repo,
+  );
+  assert.equal(velha.importados, 0);
+  assert.equal(velha.duplicados, 2);
+  assert.equal((await repo.listarPedidos()).length, 0);
+
+  // A mesma planilha nova de novo: conta, mas não repete o alerta.
+  const outra = await importarPlanilha('nova.xlsx', nova, repo);
+  assert.equal(outra.canceladas, 2);
+  assert.equal(outra.alertas.filter((a) => /CANCELADO/.test(a.mensagem)).length, 0);
+});
+
+test('cancelado que era a única parada COM PONTO não solta as exceções do PDF', async () => {
+  // Rota rural típica: 1 parada com ponto e o resto exceção. Cancelar a parada
+  // desfazia a rota e devolvia as exceções — que estavam no caminhão — à fila.
+  const repo = new RepositorioMemoria();
+  await importarPlanilha(
+    'd1.xlsx',
+    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605' })]),
+    repo,
+  );
+  const rotaId = await emRota(repo, '523636997');
+  const rota = (await repo.obterRota(rotaId))!;
+  const { coordenada: _c, etaMin: _e, distanciaKm: _d, itens: _i, ...excecao } = rota.paradas[0]!;
+  await repo.salvarRota(rotaId, {
+    ...rota,
+    excecoes: [{ ...excecao, pedidoId: '523636998', numero: 1 }],
+  });
+  const p = (await repo.obterPedido('523636998'))!;
+  await repo.salvarPedido('523636998', { ...p, status: 'em_rota', rotaId });
+
+  const rel = await importarPlanilha('d2.xlsx', xlsxDe([linhaRota({ 'SituaçãoComercial': 'Cancelado' })]), repo);
+
+  assert.equal(rel.canceladasApagadas, 1);
+  const depois = (await repo.obterRota(rotaId))!;
+  assert.deepEqual(depois.paradas, []);
+  assert.deepEqual(depois.excecoes!.map((e) => e.pedidoId), ['523636998']);
+  assert.equal((await repo.obterPedido('523636998'))!.status, 'em_rota', 'a exceção segue reservada');
+  const alerta = rel.alertas.find((a) => /CANCELADO/.test(a.mensagem))!;
+  assert.doesNotMatch(alerta.mensagem, /desfeita/);
+});
+
+test('pedido de rota que o ERP já dá como ENTREGUE fica fora da montagem, com o que o ERP afirma', async () => {
+  // Planilha real de 15/10/2026: 4 pedidos "No endereço de entrega" com
+  // SituaçãoComercial "Entregue" (DataEntrega 16/10) entravam prontos para rota.
+  // Não é "entregue" daqui: o ERP marca sozinho depois de 6 dias.
+  const repo = new RepositorioMemoria();
+  const rel = await importarPlanilha(
+    'd1.xlsx',
+    xlsxDe([
+      linhaRota({ 'SituaçãoComercial': 'Entregue', DataEntrega: '16/10/2026', Complemento: '149 -10.404108,-36.431132' }),
+      linhaRetirada({ 'SituaçãoComercial': 'Entregue', DataEntrega: '16/10/2026' }),
+    ]),
+    repo,
+  );
+
+  assert.equal(rel.importados, 2);
+  assert.equal(rel.jaEntregues, 1);
+  assert.equal(rel.prontosParaRota, 0, 'mesmo com pin do cadastro, não vai para a montagem');
+  assert.equal(rel.retiradas, 1, 'retirada entregue continua retirada');
+  const pedido = (await repo.obterPedido('523636997'))!;
+  assert.equal(pedido.status, 'entregue_no_erp');
+  assert.deepEqual(pedido.entregueNoErp, { data: '2026-10-16' });
+  assert.deepEqual((await repo.obterPedido('521670637'))!.entregueNoErp, { data: '2026-10-16' });
+  // Não pede a busca paga de endereço por um pedido que ninguém liberou.
+  assert.equal((await repo.clientesComEntregaPendente()).size, 0);
+
+  // Planilha mais velha, de quando ele ainda estava em transporte: o dedupe
+  // segura — não volta sozinho para a montagem.
+  const velha = await importarPlanilha('d0.xlsx', xlsxDe([linhaRota()]), repo);
+  assert.equal(velha.duplicados, 1);
+  assert.equal((await repo.obterPedido('523636997'))!.status, 'entregue_no_erp');
+});
+
+test('o "Entregue" do ERP NÃO tira da montagem o que já estava esperando rota', async () => {
+  // O ERP dá entregue sozinho depois de 6 dias: o pedido importado em
+  // transporte e ainda não levado sairia da montagem sem ter sido entregue.
+  const repo = new RepositorioMemoria();
+  await importarPlanilha('d1.xlsx', xlsxDe([linhaRota({ Complemento: '149 -10.404108,-36.431132' })]), repo);
+  assert.equal((await repo.obterPedido('523636997'))!.status, 'pronto_para_rota');
+
+  const rel = await importarPlanilha(
+    'd7.xlsx',
+    xlsxDe([linhaRota({ Complemento: '149 -10.404108,-36.431132', 'SituaçãoComercial': 'Entregue', DataEntrega: '22/10/2026' })]),
+    repo,
+  );
+  assert.equal(rel.duplicados, 1);
+  assert.equal((await repo.obterPedido('523636997'))!.status, 'pronto_para_rota');
 });
 
 test('UF fora de AL é rejeitada com motivo; Tipo de Entrega desconhecido também', async () => {

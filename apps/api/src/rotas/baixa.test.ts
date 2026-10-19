@@ -174,30 +174,63 @@ test('desfazer a rota devolve paradas E exceções, cada uma ao seu status', asy
   assert.equal((await repo.obterPedido('r1'))!.rotaId, null);
 });
 
-test('apagar a última parada leva a rota e devolve a exceção que sobrou', async () => {
+test('apagar a última parada NÃO solta as exceções: a rota fica com elas, reservadas', async () => {
+  // Levava a rota e devolvia as exceções à fila — numa rota rural, dezenas de
+  // caixas já no caminhão e no PDF impresso, sem rota onde dar baixa e
+  // sugeridas de novo para o caminhão seguinte. Reproduzido com a importação
+  // apagando sozinha um pedido cancelado que era a única parada com ponto.
   const repo = await cenario();
   const r = await publicarRota({ ...ENTRADA, pedidoIds: ['p1'], excecaoIds: ['r1'] }, repo, osrmLento(0));
   assert.ok(r.ok);
   if (!r.ok) return;
   const rem = await removerPedido(repo, 'p1');
-  assert.ok(rem.ok);
-  if (rem.ok) assert.equal(rem.rotaApagada, r.rotaId);
-  assert.equal((await repo.obterPedido('r1'))!.status, 'pendente_de_mapeamento');
+  assert.deepEqual(rem, { ok: true });
+  const rota = (await repo.obterRota(r.rotaId))!;
+  assert.deepEqual(rota.paradas, []);
+  assert.deepEqual(rota.excecoes!.map((e) => [e.pedidoId, e.numero]), [['r1', 1]]);
+  const r1 = (await repo.obterPedido('r1'))!;
+  assert.equal(r1.status, 'em_rota');
+  assert.equal(r1.rotaId, r.rotaId);
+
+  // Sem parada nem exceção, aí sim a rota vai embora.
+  const ultima = await removerPedido(repo, 'r1');
+  assert.ok(ultima.ok);
+  if (ultima.ok) assert.equal(ultima.rotaApagada, r.rotaId);
+  assert.equal(await repo.obterRota(r.rotaId), null);
 });
 
-test('apagar a última parada NÃO leva a rota quando uma exceção já teve baixa', async () => {
-  // Levava, e devolvia à fila como pendente o pedido que já tinha sido ENTREGUE.
+test('apagar a última parada em aberto FECHA a rota, e o histórico da exceção baixada fica', async () => {
+  // Antes: com uma exceção já baixada, recusava (409) — e o alerta do
+  // cancelado mandava dar baixa "não entregue", que devolvia o cancelado à
+  // montagem. Sem recusa, sobrava a rota "em execução" para sempre, sem nada a
+  // baixar nem como desfazer.
   const repo = await cenario();
   const r = await publicarRota({ ...ENTRADA, pedidoIds: ['p1'], excecaoIds: ['r1'] }, repo, osrmLento(0));
   assert.ok(r.ok);
   if (!r.ok) return;
   assert.ok((await darBaixa(repo, r.rotaId, [{ pedidoId: 'r1', resultado: 'entregue' }], 'admin')).ok);
+  assert.equal((await repo.obterRota(r.rotaId))!.status, 'em_execucao');
+
   const rem = await removerPedido(repo, 'p1');
-  assert.equal(rem.ok, false);
-  if (!rem.ok) assert.equal(rem.status, 409);
-  assert.ok(await repo.obterRota(r.rotaId), 'a rota continua');
+  assert.deepEqual(rem, { ok: true });
+  assert.equal(await repo.obterPedido('p1'), null);
+  const rota = (await repo.obterRota(r.rotaId))!;
+  assert.equal(rota.status, 'concluida');
+  assert.ok(rota.concluidaEm);
+  assert.equal(rota.excecoes![0]!.status, 'entregue');
   assert.equal((await repo.obterPedido('r1'))!.status, 'entregue');
-  assert.equal((await repo.obterPedido('p1'))!.status, 'em_rota');
+});
+
+test('o número impresso não muda quando sai um pedido do meio da rota', async () => {
+  // A tela renumerava pela posição: tirado o 02, o antigo 03 virava 02 e a
+  // baixa feita olhando o papel caía na cliente errada.
+  const repo = await cenario();
+  const r = await publicarRota({ ...ENTRADA, pedidoIds: ['p1', 'p2'], excecaoIds: ['r1'] }, repo, osrmLento(0));
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  assert.deepEqual(r.rota.paradas.map((p) => p.numero), [1, 2]);
+  assert.ok((await removerPedido(repo, 'p1')).ok);
+  assert.deepEqual((await repo.obterRota(r.rotaId))!.paradas.map((p) => [p.pedidoId, p.numero]), [['p2', 2]]);
 });
 
 test('desfazer a rota não solta pedido que hoje aponta para OUTRA rota', async () => {

@@ -1,6 +1,6 @@
 import {
+  chaveDeMunicipio,
   formatarDia,
-  normalizar,
   type Cliente,
   type ExcecaoRota,
   type ParadaRota,
@@ -105,7 +105,8 @@ function municipios(rota: Rota, clientes: Record<string, Cliente>): string[] {
       // Fallback: a parada guarda "rua — bairro, MUNICÍPIO/UF".
       /, ([^,]+)\/[A-Z]{2}$/.exec(p.endereco)?.[1];
     if (!nome) continue;
-    const chave = normalizar(nome);
+    // Sem pontuação: "OLHO D'ÁGUA" e "OLHO DÁGUA" no título seriam duas cidades.
+    const chave = chaveDeMunicipio(nome);
     const atual = conta.get(chave) ?? { nome, n: 0 };
     atual.n += 1;
     conta.set(chave, atual);
@@ -137,7 +138,7 @@ export function montarRoteiro(
     const km = rota.paradas.slice(0, i + 1).reduce((t, q) => t + q.distanciaKm, 0);
     return {
       ...comum(p, clientes),
-      marca: String(i + 1).padStart(2, '0'),
+      marca: String(p.numero ?? i + 1).padStart(2, '0'),
       estimativa: `${numero.format(km)} km do CD · ~${duracaoLegivel(p.etaMin)} de direção`,
       aviso: p.precisaMapear ? 'Ponto aproximado no mapa — confirme o local com a cliente' : null,
     };
@@ -145,7 +146,7 @@ export function montarRoteiro(
 
   const itensExcecao: ItemRoteiro[] = excecoes.map((e, i) => ({
     ...comum(e, clientes),
-    marca: `E${i + 1}`,
+    marca: `E${e.numero ?? i + 1}`,
     estimativa: null,
     aviso: null,
   }));

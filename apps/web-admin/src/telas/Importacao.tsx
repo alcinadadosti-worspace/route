@@ -127,7 +127,19 @@ export function Importacao() {
               <Metrica valor={relatorio.retiradas ?? 0} rotulo="Retirada no balcão" />
             )}
             {(relatorio.canceladas ?? 0) > 0 && (
-              <Metrica valor={relatorio.canceladas ?? 0} rotulo="Canceladas (ignoradas)" />
+              <Metrica valor={relatorio.canceladas ?? 0} rotulo="Canceladas no ERP (não entram)" />
+            )}
+            {/* As que já estavam no sistema saem sozinhas; o alerta de cada
+                uma, abaixo, diz se estava numa rota. */}
+            {(relatorio.canceladasApagadas ?? 0) > 0 && (
+              <Metrica
+                valor={relatorio.canceladasApagadas ?? 0}
+                rotulo="Canceladas já importadas — apagadas"
+              />
+            )}
+            {/* O ERP pode estar errado: ficam em Rotas > Fora da montagem, liberáveis. */}
+            {(relatorio.jaEntregues ?? 0) > 0 && (
+              <Metrica valor={relatorio.jaEntregues ?? 0} rotulo="Entregues no ERP (fora da montagem)" />
             )}
             {/* XML: retirada é palpite do modFrete e pede confirmação. */}
             {(relatorio.retiradaAConfirmar ?? 0) > 0 && (

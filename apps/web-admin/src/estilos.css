@@ -348,7 +348,9 @@ td input[type='checkbox'] {
   padding-top: 16px;
 }
 
-.publicacao select {
+.publicacao select,
+.agrupamento select,
+.fora-da-montagem select {
   min-height: var(--alvo-toque);
   border: 1px solid var(--borda);
   border-radius: var(--raio);
@@ -483,6 +485,38 @@ td input[type='checkbox'] {
 .filtro:focus-visible {
   outline: 2px solid var(--ambar);
   outline-offset: 1px;
+}
+
+/* Busca com lupa: o ícone fica dentro do campo, à esquerda. */
+.campo-busca {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 380px;
+  margin-bottom: 14px;
+}
+.campo-busca svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--texto-2);
+  pointer-events: none;
+}
+.campo-busca .filtro {
+  max-width: none;
+  margin-bottom: 0;
+  padding-left: 40px;
+}
+.resultado-busca {
+  color: var(--texto-2);
+  font-size: 0.9rem;
+  margin: -6px 0 12px;
+}
+.resultado-busca ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--texto);
 }
 
 /* Pedidos de um cliente (linha expandida na aba Clientes) */
@@ -892,4 +926,26 @@ tr.dossie-linha .dossie-bloco {
   border-color: var(--vermelho-falha);
   color: var(--vermelho-falha);
   font-weight: 700;
+}
+.agrupamento .acoes-agrupamento {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Fora da montagem: filtros numa linha, que quebra no celular. */
+.fora-da-montagem .filtros-fora {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+.fora-da-montagem .filtros-fora .campo-busca {
+  flex: 1 1 240px;
+  margin-bottom: 0;
+}
+.fora-da-montagem .filtros-fora + table,
+.fora-da-montagem .filtros-fora + .vazio {
+  margin-top: 12px;
 }

@@ -168,6 +168,20 @@ test('exceções sugeridas: mesmo município (sem acento/caixa) e mesmo CD', () 
   assert.deepEqual(ids, ['mesma-cidade', 'sem-cd']);
 });
 
+test('exceção casa a cidade mesmo sem o apóstrofo ("OLHO DÁGUA" = "OLHO D\'ÁGUA")', () => {
+  // Planilha real: o pedido com ponto escrito de um jeito, os rurais do outro —
+  // e os rurais nunca apareciam como exceção da cidade.
+  const ids = excecoesDaSelecao(
+    [{ municipio: "OLHO D'ÁGUA GRANDE", cdId: 'penedo' }],
+    [
+      { id: 'sem-apostrofo', municipio: 'OLHO DÁGUA GRANDE', cdId: 'penedo' },
+      { id: 'com-hifen', municipio: 'Olho-Dagua Grande', cdId: 'penedo' },
+      { id: 'outra', municipio: "OLHO D'ÁGUA DAS FLORES", cdId: 'penedo' },
+    ],
+  );
+  assert.deepEqual(ids, ['sem-apostrofo', 'com-hifen']);
+});
+
 test('sem pedido marcado não há exceção sugerida', () => {
   assert.deepEqual(excecoesDaSelecao([], [{ id: 'a', municipio: 'Penedo', cdId: null }]), []);
 });

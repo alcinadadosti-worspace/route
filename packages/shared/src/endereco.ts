@@ -103,3 +103,14 @@ export function normalizar(texto: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+/**
+ * Chave para comparar NOMES DE CIDADE vindos de fontes diferentes: além de
+ * acento e caixa, ignora apóstrofo, hífen, ponto e espaço. A planilha do ERP
+ * escreve "OLHO DÁGUA GRANDE" e o Google "Olho d'Água Grande" — com
+ * `normalizar` puro, a busca de endereço descartava o ponto como "cidade
+ * errada", o pedido ficava sem ponto e nem entrava como exceção da cidade.
+ */
+export function chaveDeMunicipio(nome: string): string {
+  return normalizar(nome).replace(/[^A-Z0-9]/g, '');
+}

@@ -55,7 +55,7 @@ export function MapaAcompanhamento({
     // enquadramento com NaN — que levaria o MapLibre a um zoom impossível e
     // apagaria o mapa inteiro por causa de uma parada.
     const paradasNoMapa = rota.paradas
-      .map((p, i) => ({ parada: p, numero: i + 1, ponto: validarGeoPonto(p.coordenada) }))
+      .map((p, i) => ({ parada: p, numero: p.numero ?? i + 1, ponto: validarGeoPonto(p.coordenada) }))
       .filter((x): x is { parada: (typeof rota.paradas)[number]; numero: number; ponto: GeoPonto } =>
         x.ponto !== null,
       );

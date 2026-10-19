@@ -1,4 +1,4 @@
-import { statusForaDeRota, type Pedido } from '@rota/shared';
+import { statusForaDeRota, type Pedido, type Rota } from '@rota/shared';
 import { FORMATO_ROTA_ID } from './comum.js';
 import type { Repositorio } from '../db/repositorio.js';
 
@@ -51,59 +51,67 @@ const executada = (p: { status: Pedido['status'] }) => p.status === 'entregue' |
  * pelo lugar da parada removida e a quilometragem segue a da rota original. É
  * assumido de propósito — recalcular exigiria o OSRM e rede, e o motorista pode
  * estar na estrada. A lista de paradas, que é o que ele executa, fica correta.
+ *
+ * Apagar UM pedido nunca solta os OUTROS. Antes, tirar a última parada com
+ * ponto desfazia a rota e devolvia à fila as exceções dela — numa rota rural,
+ * dezenas de caixas que já estavam no caminhão e no PDF impresso, sem mais
+ * rota onde dar baixa, e sugeridas de novo para o caminhão seguinte. Agora a
+ * rota só some quando não sobra nada nela; para soltar tudo, existe o
+ * "Desfazer a rota", que é uma decisão explícita.
+ *
+ * Tudo numa transação na rota: a baixa também é, e as duas lado a lado sem
+ * isso deixavam a baixa recém-gravada ser sobrescrita pela rota lida antes
+ * dela (parada de volta a "em rota" com o pedido já entregue).
  */
 export async function removerPedido(repo: Repositorio, pedidoId: string): Promise<ResultadoRemocao> {
   const pedido = await repo.obterPedido(pedidoId);
   if (!pedido) return { ok: false, status: 404, erro: 'Pedido não encontrado' };
+  if (executada(pedido)) return historico(pedido);
 
-  if (pedido.status === 'entregue' || pedido.status === 'insucesso') {
-    return {
-      ok: false,
-      status: 409,
-      erro: `Nota ${pedido.numeroNota} já foi executada em campo — é histórico da operação`,
-    };
-  }
-
-  let rotaApagada: string | undefined;
   if (pedido.rotaId) {
-    const rota = await repo.obterRota(pedido.rotaId);
-    if (rota) {
+    const rotaId = pedido.rotaId;
+    const r = await repo.transacaoNaRota<ResultadoRemocao>(rotaId, async (rota, ler) => {
+      // Relido dentro da transação: uma baixa pode ter chegado depois da
+      // primeira leitura.
+      const atual = await ler.pedido(pedidoId);
+      if (!atual) return { gravar: false, resultado: { ok: false, status: 404, erro: 'Pedido não encontrado' } };
+      if (executada(atual)) return { gravar: false, resultado: historico(atual) };
+
       const paradas = rota.paradas.filter((p) => p.pedidoId !== pedidoId);
       const excecoes = (rota.excecoes ?? []).filter((e) => e.pedidoId !== pedidoId);
-      if (paradas.length === 0) {
-        // Exceção com baixa é histórico, a mesma regra de removerRota: apagar a
-        // rota levaria junto o registro de uma entrega que aconteceu.
-        const comBaixa = excecoes.filter(executada).length;
-        if (comBaixa > 0) {
-          return {
-            ok: false,
-            status: 409,
-            erro:
-              `Nota ${pedido.numeroNota} é a última parada da rota ${rota.id}, que já tem ` +
-              `${comBaixa} exceção(ões) com baixa — apagá-la apagaria a rota e esse histórico. ` +
-              'Dê a baixa desta parada no Acompanhamento.',
-          };
-        }
-        // Rota sem parada nenhuma não é rota: ela vai embora com o último
-        // pedido. As exceções que sobrarem voltam para a fila — sem a rota,
-        // ficariam `em_rota` apontando para o nada, presas para sempre.
-        await devolverAFila(repo, rota.id, excecoes.map((e) => e.pedidoId));
-        await repo.apagarRota(rota.id);
-        await repo.apagarPosicao(rota.id);
-        rotaApagada = rota.id;
-      } else {
-        const { id: _id, ...dados } = rota;
-        await repo.salvarRota(rota.id, {
-          ...dados,
-          paradas,
-          ...(rota.excecoes ? { excecoes } : {}),
-        });
+      // Rota sem parada E sem exceção não é rota: vai embora com o último pedido.
+      if (paradas.length === 0 && excecoes.length === 0) {
+        return { gravar: true, rota: null, pedidos: {}, apagarPedidos: [pedidoId], resultado: { ok: true, rotaApagada: rotaId } };
       }
+      const restantes = [...paradas, ...excecoes];
+      // O que sobrou já tem resultado: a rota acabou. Sem isto ela ficava "em
+      // execução" para sempre, sem nada a baixar nem como desfazer.
+      const acabou = rota.status !== 'rascunho' && restantes.every(executada);
+      const nova: Rota = {
+        ...rota,
+        paradas,
+        ...(rota.excecoes ? { excecoes } : {}),
+        ...(acabou ? { status: 'concluida' as const, concluidaEm: rota.concluidaEm ?? new Date().toISOString() } : {}),
+      };
+      return { gravar: true, rota: nova, pedidos: {}, apagarPedidos: [pedidoId], resultado: { ok: true } };
+    });
+    // r === null: a rota não existe mais — o pedido apontava para o nada.
+    if (r) {
+      if (r.resultado.ok && r.resultado.rotaApagada) await repo.apagarPosicao(rotaId);
+      return r.resultado;
     }
   }
 
   await repo.apagarPedido(pedidoId);
-  return { ok: true, rotaApagada };
+  return { ok: true };
+}
+
+function historico(pedido: Pedido): ResultadoRemocao {
+  return {
+    ok: false,
+    status: 409,
+    erro: `Nota ${pedido.numeroNota} já foi executada em campo — é histórico da operação`,
+  };
 }
 
 /**

@@ -100,6 +100,23 @@ export interface Repositorio {
    * cota diária do Firestore num ciclo só (~1400 clientes × 10 lotes).
    */
   clientesPorIds(ids: string[]): Promise<Array<{ id: string } & Cliente>>;
+  /** O mesmo para pedidos: a importação precisa do status de N pedidos já
+   * existentes, e N `get` em série numa planilha do ciclo inteiro não cabem
+   * no tempo do proxy. */
+  pedidosPorIds(ids: string[]): Promise<Array<{ id: string } & Pedido>>;
+  /**
+   * Grava cada pedido SÓ se o status dele ainda é o que foi lido — senão
+   * pula e devolve o id. Para quem grava o doc inteiro em lote a partir de uma
+   * leitura (liberação, localização de endereços): um `set` cego por cima de
+   * uma publicação, uma devolução ou do apagar de um cancelado desfazia o que
+   * acabara de acontecer — o cancelado voltava pronto para sempre.
+   */
+  atualizarPedidosSeStatus(
+    alteracoes: Array<{ id: string; statusEsperado: StatusPedido; dados: Pedido }>,
+  ): Promise<string[]>;
+  /** IDs dos pedidos que o ERP cancelou e a importação já viu. */
+  idsDeCancelados(): Promise<Set<string>>;
+  registrarCancelados(registros: Array<{ id: string; dados: PedidoCancelado }>): Promise<void>;
   /** `clienteId` dos pedidos que esperam ponto. É exatamente a fila da
    * localização: pedido só fica `pendente_de_mapeamento` porque o cliente não
    * tem coordenada, e quem só faz retirada nunca entra (a operação não paga
@@ -150,7 +167,28 @@ export interface LeituraTransacao {
 
 export type EscritaTransacao<T> =
   | { gravar: false; resultado: T }
-  | { gravar: true; rota: Rota; pedidos: Record<string, Partial<Pedido>>; resultado: T };
+  | {
+      gravar: true;
+      /** `null` apaga a rota (ficou sem parada e sem exceção). */
+      rota: Rota | null;
+      pedidos: Record<string, Partial<Pedido>>;
+      /** Pedidos apagados na MESMA transação: tirar a parada da rota e apagar
+       * o pedido em dois passos deixava uma baixa gravada no meio ser
+       * sobrescrita pela rota antiga. */
+      apagarPedidos?: string[];
+      resultado: T;
+    };
+
+/**
+ * Marca de pedido CANCELADO no ERP. O pedido em si é apagado (pedido do
+ * usuário), mas sem uma marca o dedupe esquece dele: uma planilha mais velha,
+ * de quando ele ainda estava ativo, o trazia de volta como novo.
+ */
+export interface PedidoCancelado {
+  notaFiscal: number;
+  clienteId: string;
+  registradoEm: string;
+}
 
 export class RepositorioMemoria implements Repositorio {
   private clientes = new Map<string, Cliente>();
@@ -249,11 +287,13 @@ export class RepositorioMemoria implements Repositorio {
         cliente: async (id) => this.clientes.get(id) ?? null,
       });
       if (escrita.gravar) {
-        this.rotas.set(rotaId, escrita.rota);
+        if (escrita.rota) this.rotas.set(rotaId, escrita.rota);
+        else this.rotas.delete(rotaId);
         for (const [id, campos] of Object.entries(escrita.pedidos)) {
           const pedido = this.pedidos.get(id);
           if (pedido) this.pedidos.set(id, { ...pedido, ...campos });
         }
+        for (const id of escrita.apagarPedidos ?? []) this.pedidos.delete(id);
       }
       return { resultado: escrita.resultado };
     });
@@ -344,6 +384,38 @@ export class RepositorioMemoria implements Repositorio {
     for (const id of ids) {
       const c = this.clientes.get(id);
       if (c) saida.push({ ...c, id });
+    }
+    return saida;
+  }
+
+  private cancelados = new Map<string, PedidoCancelado>();
+
+  async atualizarPedidosSeStatus(
+    alteracoes: Array<{ id: string; statusEsperado: StatusPedido; dados: Pedido }>,
+  ): Promise<string[]> {
+    return this.exclusivo(async () => {
+      const conflitos: string[] = [];
+      for (const a of alteracoes) {
+        if (this.pedidos.get(a.id)?.status !== a.statusEsperado) conflitos.push(a.id);
+        else this.pedidos.set(a.id, a.dados);
+      }
+      return conflitos;
+    });
+  }
+
+  async idsDeCancelados(): Promise<Set<string>> {
+    return new Set(this.cancelados.keys());
+  }
+
+  async registrarCancelados(registros: Array<{ id: string; dados: PedidoCancelado }>): Promise<void> {
+    for (const r of registros) this.cancelados.set(r.id, r.dados);
+  }
+
+  async pedidosPorIds(ids: string[]): Promise<Array<{ id: string } & Pedido>> {
+    const saida: Array<{ id: string } & Pedido> = [];
+    for (const id of ids) {
+      const p = this.pedidos.get(id);
+      if (p) saida.push({ ...p, id });
     }
     return saida;
   }

@@ -1,4 +1,4 @@
-import { normalizar } from './endereco.js';
+import { chaveDeMunicipio } from './endereco.js';
 import { distanciaEmMetros } from './geo.js';
 import type { GeoPonto } from './tipos.js';
 
@@ -20,15 +20,14 @@ import type { GeoPonto } from './tipos.js';
  * - o município já reflete a malha viária real — dois pontos a 15 km em linha
  *   reta com um rio no meio não são vizinhos, e o k-means não saberia disso.
  *
- * Um grupo é UM município, nunca mais de um. A primeira versão fundia o
- * município pequeno (menos de 8 paradas) com o vizinho mais próximo, e a tela
- * mostrava "PIAÇABUÇU · FELIZ DESERTO · PENEDO" como um bloco só: o operador
- * não conseguia levar Piaçabuçu sem as outras duas, nem juntar dois blocos.
- * Quem sabe quais cidades cabem num dia é ele — a tela deixa marcar quantas
- * quiser, e o agrupamento só não pode decidir isso por ele.
- *
- * O único ajuste que sobrou: município grande demais para um dia é DIVIDIDO,
- * e cada pedaço diz que é parte de quantas.
+ * Um grupo é UM município, inteiro — nunca mais de um, nunca um pedaço. A
+ * primeira versão fundia o município pequeno (menos de 8 paradas) com o
+ * vizinho, e a tela mostrava "PIAÇABUÇU · FELIZ DESERTO · PENEDO" como um
+ * bloco só. A segunda ainda partia o grande (mais de 30) em "TEOTÔNIO VILELA
+ * (1/2)" e "(2/2)", a mesma cidade duas vezes no meio das outras. O usuário
+ * pediu um cartão por cidade, sempre: quantas cidades cabem num dia, e quais
+ * pedidos de uma cidade grande ficam para amanhã, é ele quem sabe — e a lista
+ * de pedidos tem a coluna Cidade para isso.
  */
 
 export interface PontoAgrupavel {
@@ -38,10 +37,8 @@ export interface PontoAgrupavel {
 }
 
 export interface GrupoSugerido {
-  /** Município do grupo, em caixa alta como veio do cadastro. */
+  /** Município do grupo, em caixa alta, na grafia mais usada nos pedidos. */
   municipio: string;
-  /** Município grande demais para um dia sai em pedaços: "parte 1 de 2". */
-  parte: { indice: number; total: number } | null;
   ids: string[];
   /** Centro geográfico — serve para ordenar os grupos e desenhar no mapa. */
   centro: GeoPonto;
@@ -53,57 +50,37 @@ export interface GrupoSugerido {
 }
 
 export interface OpcoesAgrupamento {
-  /** Teto de paradas por rota. O padrão sai do ritmo real da operação: ~10 min
-   * parado por cliente mais o deslocamento rural não fecham muito mais que
-   * isso num dia. */
-  maximoPorRota?: number;
-  /** CD de origem: quando informado, os grupos saem ordenados do mais distante
-   * para o mais perto — a região longe é a que precisa do dia inteiro. */
+  /** CD de origem: quando informado, as cidades saem ordenadas da mais distante
+   * para a mais perto — a região longe é a que precisa do dia inteiro. */
   origem?: GeoPonto | null;
 }
-
-const PADRAO = { maximoPorRota: 30 };
 
 export function agruparPorRegiao(
   pontos: PontoAgrupavel[],
   opcoes: OpcoesAgrupamento = {},
 ): GrupoSugerido[] {
-  const maximo = contagem(opcoes.maximoPorRota) ?? PADRAO.maximoPorRota;
   const origem = opcoes.origem ?? null;
   if (pontos.length === 0) return [];
 
-  // A chave é o nome SEM acento: a planilha, a NF-e e o endereço de entrega
-  // escrevem a mesma cidade de jeitos diferentes, e "TEOTÔNIO VILELA" e
-  // "TEOTONIO VILELA" viravam dois cartões. Enquanto havia fusão, a vizinha
-  // de 0 km escondia isso; sem ela, apareceria. Mesma regra das exceções.
+  // A chave ignora acento e pontuação: a planilha, a NF-e e o endereço de
+  // entrega escrevem a mesma cidade de jeitos diferentes ("TEOTÔNIO" e
+  // "TEOTONIO", "OLHO D'ÁGUA" e "OLHO DÁGUA"), e cada grafia virava um cartão.
+  // Mesma chave das exceções e da busca de endereço.
   const porMunicipio = new Map<string, PontoAgrupavel[]>();
   for (const p of pontos) {
-    const chave = normalizar(p.municipio || '—');
+    const chave = chaveDeMunicipio(p.municipio || '—');
     const atual = porMunicipio.get(chave);
     if (atual) atual.push(p);
     else porMunicipio.set(chave, [p]);
   }
 
-  const cidades = [...porMunicipio.values()].map((grupo) => {
-    const municipio = grafiaMaisComum(grupo);
-    const partes = dividir(grupo, maximo).map((parte) => montar(municipio, parte, origem));
-    // As partes da mesma cidade saem juntas, da mais longe para a mais perto.
-    partes.sort(maisLongePrimeiro);
-    partes.forEach((p, i) => {
-      p.parte = partes.length > 1 ? { indice: i + 1, total: partes.length } : null;
-    });
-    const distancia = origem ? distanciaEmMetros(origem, centroDe(grupo)) : null;
-    return { distancia, tamanho: grupo.length, partes };
-  });
+  const grupos = [...porMunicipio.values()].map((grupo) => montar(grafiaMaisComum(grupo), grupo, origem));
   // Mais longe primeiro: é a região que precisa do dia inteiro, e é a decisão
   // que o operador toma primeiro ao planejar a semana. Sem CD informado não há
   // "longe": a maior cidade vem primeiro.
-  cidades.sort((a, b) => (b.distancia ?? b.tamanho) - (a.distancia ?? a.tamanho));
-  return cidades.flatMap((c) => c.partes);
-}
-
-function maisLongePrimeiro(a: GrupoSugerido, b: GrupoSugerido): number {
-  return (b.distanciaDoCdKm ?? b.ids.length) - (a.distanciaDoCdKm ?? a.ids.length);
+  return grupos.sort(
+    (a, b) => (b.distanciaDoCdKm ?? b.ids.length) - (a.distanciaDoCdKm ?? a.ids.length),
+  );
 }
 
 /** O nome que o cartão mostra: a grafia que mais aparece (empate fica com a
@@ -125,38 +102,10 @@ function grafiaMaisComum(grupo: PontoAgrupavel[]): string {
   return melhor;
 }
 
-/**
- * Divide o que não cabe num dia. A divisão é pela MEDIANA do eixo mais
- * esticado (lat ou lng): determinística, sem semente, e corta a região no
- * sentido em que ela realmente se estende.
- */
-function dividir(grupo: PontoAgrupavel[], maximo: number): PontoAgrupavel[][] {
-  const divididos: PontoAgrupavel[][] = [];
-  const fila = [grupo];
-  while (fila.length > 0) {
-    const atual = fila.pop()!;
-    if (atual.length <= maximo) {
-      divididos.push(atual);
-      continue;
-    }
-    const [a, b] = dividirNaMediana(atual);
-    // Divisão degenerada (todos no mesmo ponto): corta pela metade na ordem de
-    // entrada em vez de repetir para sempre.
-    if (a.length === 0 || b.length === 0) {
-      const meio = Math.ceil(atual.length / 2);
-      fila.push(atual.slice(0, meio), atual.slice(meio));
-      continue;
-    }
-    fila.push(a, b);
-  }
-  return divididos;
-}
-
 function montar(municipio: string, grupo: PontoAgrupavel[], origem: GeoPonto | null): GrupoSugerido {
   const centro = centroDe(grupo);
   return {
     municipio,
-    parte: null,
     ids: grupo.map((p) => p.id),
     centro,
     extensaoKm: Math.round(extensaoEmMetros(grupo) / 100) / 10,
@@ -176,8 +125,8 @@ function centroDe(grupo: PontoAgrupavel[]): GeoPonto {
   return { lat: lat / grupo.length, lng: lng / grupo.length };
 }
 
-/** Maior distância entre dois pontos do grupo. O(n²) é aceitável: um grupo tem
- * dezenas de paradas, não milhares. */
+/** Maior distância entre dois pontos da cidade. O(n²) é aceitável: uma cidade
+ * tem dezenas de paradas por ciclo, raramente centenas — nunca milhares. */
 function extensaoEmMetros(grupo: PontoAgrupavel[]): number {
   let maior = 0;
   for (let i = 0; i < grupo.length; i++) {
@@ -187,44 +136,4 @@ function extensaoEmMetros(grupo: PontoAgrupavel[]): number {
     }
   }
   return maior;
-}
-
-/** Corta o grupo em dois pela mediana do eixo em que ele mais se estende. */
-function dividirNaMediana(grupo: PontoAgrupavel[]): [PontoAgrupavel[], PontoAgrupavel[]] {
-  const lats = grupo.map((p) => p.coordenada.lat);
-  const lngs = grupo.map((p) => p.coordenada.lng);
-  const amplitudeLat = Math.max(...lats) - Math.min(...lats);
-  // Longitude encurta com o cosseno da latitude — sem corrigir, o corte
-  // escolheria o eixo errado numa região mais alta que larga.
-  const fator = Math.cos((grupo[0]!.coordenada.lat * Math.PI) / 180);
-  const amplitudeLng = (Math.max(...lngs) - Math.min(...lngs)) * fator;
-
-  const porLat = amplitudeLat >= amplitudeLng;
-  const ordenado = [...grupo].sort((a, b) =>
-    porLat ? a.coordenada.lat - b.coordenada.lat : a.coordenada.lng - b.coordenada.lng,
-  );
-  const meio = Math.floor(ordenado.length / 2);
-  const valorMeio = porLat ? ordenado[meio]!.coordenada.lat : ordenado[meio]!.coordenada.lng;
-  const a = ordenado.filter((p) => (porLat ? p.coordenada.lat : p.coordenada.lng) < valorMeio);
-  const b = ordenado.filter((p) => (porLat ? p.coordenada.lat : p.coordenada.lng) >= valorMeio);
-  return [a, b];
-}
-
-function positivo(n: number | undefined): number | null {
-  return typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : null;
-}
-
-/**
- * Teto e piso são CONTAGENS de paradas: inteiro, no mínimo 1.
- *
- * Meia parada trava o processo. A divisão repete enquanto `grupo.length >
- * maximo`; com `maximo = 0,5` um grupo de uma parada nunca cabe, a divisão pela
- * mediana devolve um lado vazio, o ramo degenerado corta em 1 + 0 — e o grupo
- * de uma parada volta para a fila igualzinho, para sempre. O laço é síncrono:
- * a API não fica lenta, ela PARA, e numa instância só isso derruba o serviço
- * inteiro, motorista incluído. Chegava assim de `?maximoPorRota=0.5` na URL.
- */
-function contagem(n: number | undefined): number | null {
-  const p = positivo(n);
-  return p === null ? null : Math.max(1, Math.floor(p));
 }

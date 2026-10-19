@@ -31,7 +31,6 @@ test('cada município vira um grupo — é o vocabulário da operação', () => 
   // Mais longe primeiro: é a região que precisa do dia inteiro.
   assert.equal(grupos[0]!.municipio, 'CORURIPE');
   assert.equal(grupos[0]!.ids.length, 12);
-  assert.equal(grupos[0]!.parte, null);
   assert.ok(grupos[0]!.distanciaDoCdKm! > grupos[1]!.distanciaDoCdKm!);
 });
 
@@ -64,26 +63,30 @@ test('a mesma cidade com e sem acento é UM cartão, com o nome mais usado', () 
   assert.equal(grupos[0]!.ids.length, 5);
 });
 
-test('município grande demais para um dia é DIVIDIDO, e cada pedaço diz de quantos', () => {
-  // 70 paradas num município só: não fecha num dia.
+test('cidade grande continua UM cartão — o usuário escolhe o que fica para amanhã', () => {
+  // Teotônio Vilela com 41 pedidos aparecia como (1/2) e (2/2), a mesma cidade
+  // duas vezes no meio das outras.
   const grupos = agruparPorRegiao(
-    [...perto('PENEDO', PENEDO, 70), ...perto('CORURIPE', CORURIPE, 5)],
-    { maximoPorRota: 30, origem: IGREJA_NOVA },
+    [...perto('TEOTÔNIO VILELA', CORURIPE, 41), ...perto('PENEDO', PENEDO, 5)],
+    { origem: IGREJA_NOVA },
   );
-  const penedo = grupos.filter((g) => g.municipio === 'PENEDO');
-  assert.ok(penedo.length >= 3, `esperava 3+ pedaços, veio ${penedo.length}`);
-  for (const g of penedo) assert.ok(g.ids.length <= 30, `pedaço com ${g.ids.length} paradas`);
   assert.deepEqual(
-    penedo.map((g) => g.parte),
-    penedo.map((_, i) => ({ indice: i + 1, total: penedo.length })),
+    grupos.map((g) => [g.municipio, g.ids.length]),
+    [['TEOTÔNIO VILELA', 41], ['PENEDO', 5]],
   );
-  // Os pedaços da mesma cidade saem juntos na lista, não espalhados entre as outras.
-  const posicoes = grupos.flatMap((g, i) => (g.municipio === 'PENEDO' ? [i] : []));
-  assert.equal(posicoes.at(-1)! - posicoes[0]!, penedo.length - 1);
-  // Nenhuma parada se perde nem se duplica na divisão.
-  const todos = penedo.flatMap((g) => g.ids);
-  assert.equal(todos.length, 70);
-  assert.equal(new Set(todos).size, 70);
+  assert.equal(new Set(grupos[0]!.ids).size, 41);
+});
+
+test(`apóstrofo e hífen não separam a cidade: "OLHO D'ÁGUA" = "OLHO DÁGUA"`, () => {
+  // Os dois jeitos estavam na planilha real do ciclo.
+  const grupos = agruparPorRegiao([
+    ...perto("OLHO D'ÁGUA GRANDE", SAO_SEBASTIAO, 2),
+    ...perto('OLHO DÁGUA GRANDE', SAO_SEBASTIAO, 1, 'b'),
+    ...perto('OLHO-DAGUA GRANDE', SAO_SEBASTIAO, 1, 'c'),
+  ]);
+  assert.equal(grupos.length, 1);
+  assert.equal(grupos[0]!.municipio, "OLHO D'ÁGUA GRANDE");
+  assert.equal(grupos[0]!.ids.length, 4);
 });
 
 test('a extensão denuncia agrupamento ruim melhor que a contagem', () => {
@@ -99,43 +102,20 @@ test('lista vazia, um ponto só, e pontos no MESMO lugar não quebram', () => {
   assert.equal(um.length, 1);
   assert.equal(um[0]!.extensaoKm, 0);
 
-  // Divisão degenerada: 40 pedidos na MESMA coordenada (prédio, condomínio)
-  // não podem fazer a divisão pela mediana repetir para sempre.
+  // 40 pedidos na MESMA coordenada (prédio, condomínio): extensão zero, um grupo.
   const empilhados: PontoAgrupavel[] = Array.from({ length: 40 }, (_, i) => ({
     id: `x${i}`,
     municipio: 'PENEDO',
     coordenada: PENEDO,
   }));
-  const grupos = agruparPorRegiao(empilhados, { maximoPorRota: 10 });
-  assert.equal(grupos.flatMap((g) => g.ids).length, 40);
-  for (const g of grupos) assert.ok(g.ids.length <= 10);
+  const grupos = agruparPorRegiao(empilhados);
+  assert.equal(grupos.length, 1);
+  assert.equal(grupos[0]!.ids.length, 40);
+  assert.equal(grupos[0]!.extensaoKm, 0);
 });
 
 test('sem CD informado ainda agrupa (só não ordena por distância)', () => {
   const grupos = agruparPorRegiao([...perto('CORURIPE', CORURIPE, 12), ...perto('PENEDO', PENEDO, 9)]);
   assert.equal(grupos.length, 2);
   for (const g of grupos) assert.equal(g.distanciaDoCdKm, null);
-});
-
-test('teto fracionário não pendura o processo — vira inteiro', () => {
-  // `?maximoPorRota=0.5` na URL derrubava a API: a divisão repete enquanto o
-  // grupo não cabe no teto, e um grupo de UMA parada nunca cabe em meia. O
-  // ramo degenerado cortava em 1 + 0 e devolvia o mesmo grupo à fila, para
-  // sempre. Laço síncrono: a API não ficava lenta, PARAVA — e numa instância
-  // só, isso derruba o serviço para todo mundo, motorista incluído.
-  //
-  // CUIDADO ao mexer: se a guarda voltar a deixar passar fracionário, este
-  // teste não falha — ele PENDURA a suíte. É o preço de exercitar a função de
-  // verdade em vez de testar a guarda por dentro.
-  const pontos: PontoAgrupavel[] = [
-    { id: 'a', municipio: 'PENEDO', coordenada: PENEDO },
-    { id: 'b', municipio: 'PENEDO', coordenada: CORURIPE },
-  ];
-  for (const teto of [0.5, 0.9, 1.4]) {
-    const grupos = agruparPorRegiao(pontos, { maximoPorRota: teto });
-    assert.equal(grupos.flatMap((g) => g.ids).length, 2, `teto ${teto}`);
-    // Nenhum grupo vazio: centro de grupo vazio é NaN, que vaza como null no
-    // JSON e desenharia um marcador em lugar nenhum.
-    for (const g of grupos) assert.ok(g.ids.length >= 1, `grupo vazio com teto ${teto}`);
-  }
 });

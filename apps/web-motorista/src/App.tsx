@@ -208,7 +208,9 @@ export function App() {
         ? rota.paradas.map((p, i) => {
             const cliente = dossies[p.clienteId]?.cliente ?? null;
             return {
-              ordem: i + 1,
+              // O número do PDF, gravado na publicação: a posição muda quando
+              // um pedido cancelado sai do meio da rota.
+              ordem: p.numero ?? i + 1,
               cliente: p.nome,
               endereco: p.endereco,
               telefone: p.telefone ?? '',
@@ -517,7 +519,7 @@ export function App() {
     // Demais paradas por entregar, na ordem publicada — o número no mapa é o
     // mesmo do cartão, senão o motorista teria duas numerações para conciliar.
     const outrasParadas = rota.paradas
-      .map((p, i) => ({ parada: p, ordem: i + 1 }))
+      .map((p, i) => ({ parada: p, ordem: p.numero ?? i + 1 }))
       .filter(
         ({ parada: p }) =>
           p.pedidoId !== paradaNavegando.pedidoId &&
@@ -674,7 +676,7 @@ export function App() {
         ))}
       {rota && paradaFocada != null && paradas[paradaFocada] && (
         <div className="foco-trecho">
-          Mostrando o caminho até a <strong>PARADA {String(paradaFocada + 1).padStart(2, '0')}</strong>{' '}
+          Mostrando o caminho até a <strong>PARADA {String(paradas[paradaFocada]!.ordem).padStart(2, '0')}</strong>{' '}
           · {paradas[paradaFocada]!.cliente}
           <button onClick={() => setParadaFocada(null)}>ver rota toda</button>
         </div>

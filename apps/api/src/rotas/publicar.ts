@@ -137,6 +137,7 @@ export async function publicarRota(
         : cliente.enderecoFiscal;
     excecoes.push({
       pedidoId: id,
+      numero: excecoes.length + 1,
       clienteId: pedido.clienteId,
       nome: cliente.nome,
       endereco: enderecoEmLinha(e),
@@ -180,6 +181,7 @@ export async function publicarRota(
     etaAcumuladoSeg += perna.duracaoSeg;
     return {
       pedidoId: c.pedidoId,
+      numero: i + 1,
       clienteId: c.clienteId,
       nome: c.nome,
       endereco: c.endereco,

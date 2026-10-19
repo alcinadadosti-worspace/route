@@ -81,6 +81,13 @@ export async function localizarEnderecos(
     const fatia = lote.slice(i, i + CONCORRENCIA);
     await Promise.all(
       fatia.map(async ({ id, ...cliente }) => {
+        // Já tem ponto (GPS do cadastro trazido depois, retirada liberada):
+        // só falta promover os pedidos. Buscar de novo pagaria a Google para
+        // TROCAR um pin exato por um palpite.
+        if (cliente.coordenada) {
+          comPonto.add(id);
+          return;
+        }
         const r = await geocodificador.geocodificar(cliente.enderecoFiscal).catch(() => null);
         // Ponto preciso, ou aproximado NO MUNICÍPIO CERTO (rural): os dois
         // servem de partida — o motorista entrega e o app aprende a trilha na
@@ -108,19 +115,22 @@ export async function localizarEnderecos(
   // Os pedidos que esperavam esse ponto saem de "pendente de mapeamento" na
   // mesma leva — senão ficariam parados apontando para um cliente que já tem
   // coordenada, e só a montagem da rota reclamaria.
-  const escritasPedidos: Array<{ colecao: 'pedidos'; id: string; dados: Pedido }> = [];
+  const promovidos: Array<{ id: string; statusEsperado: 'pendente_de_mapeamento'; dados: Pedido }> = [];
   if (comPonto.size > 0) {
     for (const { id, ...pedido } of await repo.listarPedidos()) {
       if (pedido.status !== 'pendente_de_mapeamento') continue;
       if (!comPonto.has(pedido.clienteId)) continue;
-      escritasPedidos.push({
-        colecao: 'pedidos',
+      promovidos.push({
         id,
+        statusEsperado: 'pendente_de_mapeamento',
         dados: { ...pedido, status: statusForaDeRota(pedido, true) },
       });
     }
   }
 
-  await repo.gravarEmLote([...escritas, ...escritasPedidos]);
+  await repo.gravarEmLote(escritas);
+  // Condicional: entre a leitura e aqui o pedido pode ter saído como exceção
+  // numa rota, ou sido apagado — um `set` cego o desfaria.
+  await repo.atualizarPedidosSeStatus(promovidos);
   return resultado;
 }

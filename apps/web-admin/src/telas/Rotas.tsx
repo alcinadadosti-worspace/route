@@ -6,8 +6,8 @@ import {
   formatarCarga,
   formatarDia,
   formatarHora,
+  chaveDeMunicipio,
   municipioDoPedido,
-  normalizar,
   paradasEmAberto,
   rotasSemBaixa,
   type ResultadoBaixa,
@@ -45,6 +45,9 @@ import { FotoReferencia } from '../FotoReferencia';
 import { montarRoteiro } from '../roteiro';
 import { baixarPdfRoteiro } from '../roteiroPdf';
 import { alternarGrupo, estadoDoGrupo } from '../selecaoCidades';
+import { ForaDaMontagem } from './ForaDaMontagem';
+import { CampoBusca } from '../CampoBusca';
+import { casaBusca, ondeEstaOPedido } from '../buscaPedido';
 
 /** Status da parada em português — o enum cru não é para o operador ler. */
 const ROTULO_PARADA: Record<string, string> = {
@@ -222,7 +225,7 @@ export function Rotas() {
     for (const p of prontos) {
       if (!selecionados.has(p.id)) continue;
       const nome = (municipioDoPedido(p, clientes[p.clienteId]) ?? '—').trim().toUpperCase();
-      const chave = normalizar(nome);
+      const chave = chaveDeMunicipio(nome);
       if (!porChave.has(chave)) porChave.set(chave, nome);
     }
     return [...porChave.values()];
@@ -317,28 +320,101 @@ export function Rotas() {
   const [grupos, setGrupos] = useState<GrupoSugerido[] | null>(null);
   const [carregandoGrupos, setCarregandoGrupos] = useState(false);
   const [erroGrupos, setErroGrupos] = useState<string | null>(null);
+  /** CD para o qual a sugestão foi feita — ela só traz os pedidos dele. */
+  const [cdDosGrupos, setCdDosGrupos] = useState<string | null>(null);
+  /** Só a resposta do pedido MAIS NOVO vale: trocar de CD com um agrupamento
+   * ainda a caminho mostraria as cidades do CD anterior. */
+  const ultimoAgrupamento = useRef(0);
+  /** O CD de AGORA, para conferir a resposta que chega: se ele mudou durante
+   * a primeira busca (nada na tela ainda), ninguém mais pediria de novo. */
+  const cdAtual = useRef(cdId);
+  cdAtual.current = cdId;
   /** A sugestão é de quando foi pedida: cidade que saiu inteira numa rota some
    * dela, e quando somem todas a tela precisa dizer isso, não ficar em branco. */
   const algumaCidadeAberta =
     grupos?.some((g) => estadoDoGrupo(g.ids, idsProntos, selecionados).vivos.length > 0) ?? false;
 
   async function sugerirGrupos() {
+    const vez = ++ultimoAgrupamento.current;
     setCarregandoGrupos(true);
     setErroGrupos(null);
     try {
       // Passa o CD quando já se sabe qual é: assim a sugestão sai ordenada pela
       // distância dele e não mistura pedidos do outro galpão — que a montagem
       // barraria depois, e sugerir seria oferecer o erro.
-      const r = await agruparPorRegiao(cdId || undefined);
+      const cd = cdAtual.current || null;
+      const r = await agruparPorRegiao(cd ?? undefined);
+      if (vez !== ultimoAgrupamento.current) return;
+      if ((cdAtual.current || null) !== cd) {
+        void sugerirGrupos();
+        return;
+      }
       setGrupos(r.grupos);
+      setCdDosGrupos(cd);
     } catch (e) {
-      setErroGrupos(e instanceof Error ? e.message : 'Falha ao agrupar');
+      if (vez === ultimoAgrupamento.current) {
+        setErroGrupos(e instanceof Error ? e.message : 'Falha ao agrupar');
+      }
     } finally {
-      setCarregandoGrupos(false);
+      if (vez === ultimoAgrupamento.current) setCarregandoGrupos(false);
     }
   }
 
-  const todosProntosMarcados = prontos.length > 0 && prontos.every((p) => selecionados.has(p.id));
+  /** Quantos pedidos prontos cada CD tem — o seletor do agrupamento mostra. */
+  const prontosPorCd = useMemo(() => {
+    const conta: Record<string, number> = {};
+    for (const p of prontos) if (p.cdId) conta[p.cdId] = (conta[p.cdId] ?? 0) + 1;
+    return conta;
+  }, [prontos]);
+
+  /**
+   * O agrupamento filtra por CD, e sem nada marcado o CD não aparece na tela:
+   * ficava o primeiro do cadastro, ou o do último pedido marcado. Com pedidos
+   * de Penedo e de Palmeira prontos, as cidades de um dos dois sumiam da
+   * sugestão sem aviso nenhum. Agora há o seletor no agrupamento; e, sem
+   * seleção, se só UM CD tem pedido pronto, é ele — não há o que perguntar.
+   */
+  useEffect(() => {
+    const comProntos = Object.keys(prontosPorCd);
+    if (selecionados.size === 0 && comProntos.length === 1 && comProntos[0] !== cdId) {
+      setCdId(comProntos[0]!);
+    }
+  }, [prontosPorCd, selecionados.size, cdId]);
+
+  // A sugestão na tela é de UM CD: mudou a partida (pelo seletor, ou marcando
+  // um pedido do outro galpão), as cidades mostradas seriam do CD errado.
+  useEffect(() => {
+    if (grupos !== null && cdDosGrupos !== (cdId || null)) void sugerirGrupos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cdId]);
+
+  /** Busca da montagem (lupa): filtra a lista de prontos por nº do pedido,
+   * nota ou cliente — e, para o que NÃO está pronto, diz onde está. */
+  const [buscaMontagem, setBuscaMontagem] = useState('');
+  const prontosVisiveis = useMemo(
+    () => prontos.filter((p) => casaBusca(p, clientes[p.clienteId]?.nome ?? '', buscaMontagem)),
+    [prontos, clientes, buscaMontagem],
+  );
+  const encontradosForaDosProntos = useMemo(
+    () =>
+      buscaMontagem.trim()
+        ? pedidos.filter(
+            (p) => p.status !== 'pronto_para_rota' && casaBusca(p, clientes[p.clienteId]?.nome ?? '', buscaMontagem),
+          )
+        : [],
+    [pedidos, clientes, buscaMontagem],
+  );
+  // Selecionado que a busca esconde continua na rota — dizer, senão ele vai
+  // junto sem ninguém lembrar dele.
+  const selecionadosEscondidos = prontos.filter(
+    (p) => selecionados.has(p.id) && !prontosVisiveis.includes(p),
+  ).length;
+
+  // O "marcar todos" vale para o que está NA TELA: com a busca ativa, marcar
+  // os escondidos montaria uma rota com pedidos que o operador nem viu.
+  const todosProntosMarcados =
+    prontosVisiveis.length > 0 && prontosVisiveis.every((p) => selecionados.has(p.id));
+  const algumVisivelMarcado = prontosVisiveis.some((p) => selecionados.has(p.id));
   const algumProntoMarcado = prontos.some((p) => selecionados.has(p.id));
 
   // CD que os pedidos selecionados dizem ser a origem (seção 8.5) — vem do
@@ -431,7 +507,12 @@ export function Rotas() {
 
   // Marca/desmarca todos os pedidos prontos de uma vez.
   function alternarTodos() {
-    setSelecionados(todosProntosMarcados ? new Set() : new Set(prontos.map((p) => p.id)));
+    const proximo = new Set(selecionados);
+    for (const p of prontosVisiveis) {
+      if (todosProntosMarcados) proximo.delete(p.id);
+      else proximo.add(p.id);
+    }
+    setSelecionados(proximo);
     setPrevia(null);
   }
 
@@ -510,7 +591,7 @@ export function Rotas() {
       !window.confirm(
         `Apagar a nota ${p.numeroNota}/${p.serie}${nome ? ` — ${nome}` : ''}?\n\n` +
           'A importação dela é desfeita e ela sai da montagem. Para trazê-la de volta, ' +
-          'reimporte o XML.',
+          'reimporte a planilha (ou o XML) em que ela veio.',
       )
     ) {
       return;
@@ -533,7 +614,7 @@ export function Rotas() {
       !window.confirm(
         `Apagar ${alvos.length} pedido(s) selecionado(s)?\n\n` +
           'A importação deles é desfeita e eles saem da montagem. Para trazê-los de volta, ' +
-          'reimporte os XMLs.',
+          'reimporte a planilha (ou os XMLs) em que vieram.',
       )
     ) {
       return;
@@ -665,10 +746,8 @@ export function Rotas() {
     );
     if (abertas.length > 0) {
       const iniciada = abertas.some((r) => r.status === 'em_execucao');
-      const paradasAbertas = abertas.reduce(
-        (n, r) => n + r.paradas.filter((p) => p.status === 'em_rota').length,
-        0,
-      );
+      // Exceções contam: numa rota rural elas são a maior parte do que falta.
+      const paradasAbertas = abertas.reduce((n, r) => n + paradasEmAberto(r), 0);
       const consequencia = iniciada
         ? 'Como ele JÁ COMEÇOU aquela rota, o app continua mostrando a atual — esta nova só aparece quando a primeira for concluída.'
         : 'Como ele ainda NÃO COMEÇOU aquela rota, o app vai passar a mostrar esta nova, e a anterior some da tela dele (os pedidos seguem reservados nela).';
@@ -886,7 +965,7 @@ export function Rotas() {
                                 return (
                                   <Fragment key={p.pedidoId}>
                                     <tr>
-                                      <td className="mono">{String(i + 1).padStart(2, '0')}</td>
+                                      <td className="mono">{String(p.numero ?? i + 1).padStart(2, '0')}</td>
                                       <td>{p.nome}</td>
                                       <td>
                                         <ChipParada status={p.status} painel={Boolean(p.baixaNoPainel)} />
@@ -977,7 +1056,7 @@ export function Rotas() {
                                   baixa das paradas — também saíram no caminhão. */}
                               {(r.excecoes ?? []).map((e, i) => (
                                 <tr key={e.pedidoId}>
-                                  <td className="mono">E{i + 1}</td>
+                                  <td className="mono">E{e.numero ?? i + 1}</td>
                                   <td>
                                     {e.nome}
                                     <div className="excecao-endereco">{e.endereco} · sem ponto no mapa</div>
@@ -1081,7 +1160,8 @@ export function Rotas() {
 
         {prontos.length === 0 && (
           <div className="vazio">
-            Nenhum pedido pronto para rota — importe notas ou resolva os mapeamentos pendentes.
+            Nenhum pedido pronto para rota — importe notas, resolva os mapeamentos pendentes ou
+            libere pedidos em "Fora da montagem", abaixo.
           </div>
         )}
 
@@ -1094,9 +1174,37 @@ export function Rotas() {
           <div className="agrupamento">
             <div className="cabecalho-secao">
               <strong>Cidades</strong>
-              <button disabled={carregandoGrupos} onClick={() => void sugerirGrupos()}>
-                {carregandoGrupos ? 'agrupando…' : '🗺 agrupar por cidade'}
-              </button>
+              <div className="acoes-agrupamento">
+                {/* Uma rota sai de um galpão só: as cidades são as do CD
+                    escolhido aqui, e o número diz onde há pedido pronto. */}
+                {Object.keys(cds).length > 1 && (
+                  <label className="opcao">
+                    CD
+                    <select
+                      value={cdId}
+                      // Com pedidos marcados, a partida é a das notas deles —
+                      // trocar aqui mudaria o CD da rota em silêncio, com a tela
+                      // ainda dizendo "Partida: <o das notas>". Para isso existe
+                      // o "trocar" da partida.
+                      disabled={carregandoGrupos || Boolean(cdDasNotas)}
+                      title={cdDasNotas ? 'A partida vem das notas marcadas — limpe a seleção para ver outro CD' : undefined}
+                      onChange={(e) => {
+                        setCdId(e.target.value);
+                        setPrevia(null);
+                      }}
+                    >
+                      {Object.entries(cds).map(([id, cd]) => (
+                        <option key={id} value={id}>
+                          {cd.nome} ({prontosPorCd[id] ?? 0} prontos)
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <button disabled={carregandoGrupos} onClick={() => void sugerirGrupos()}>
+                  {carregandoGrupos ? 'agrupando…' : '🗺 agrupar por cidade'}
+                </button>
+              </div>
             </div>
             {erroGrupos && <div className="erro">{erroGrupos}</div>}
             {grupos !== null && grupos.length === 0 && (
@@ -1121,36 +1229,27 @@ export function Rotas() {
                     // Cidade que já saiu inteira numa rota publicada some da sugestão.
                     if (vivos.length === 0) return null;
                     const semPonto = excecoesDaSelecao(
-                      [{ municipio: g.municipio, cdId: cdId || null }],
+                      [{ municipio: g.municipio, cdId: cdDosGrupos }],
                       pendentesPorLugar,
                     ).length;
-                    const nome = g.parte ? `${g.municipio} (${g.parte.indice}/${g.parte.total})` : g.municipio;
                     return (
                       <button
-                        key={`${g.municipio}-${g.parte?.indice ?? 0}`}
+                        key={g.municipio}
                         className="grupo"
                         aria-pressed={marcado}
                         onClick={() => alternarCidade(g.ids)}
-                        title={marcado === true ? `Tirar ${nome} da rota` : `Pôr ${nome} na rota`}
+                        title={marcado === true ? `Tirar ${g.municipio} da rota` : `Pôr ${g.municipio} na rota`}
                       >
                         <strong>
                           {marcado === true ? '✓ ' : ''}
-                          {nome}
+                          {g.municipio}
                         </strong>
                         <div className="grupo-numeros">
                           {vivos.length} parada(s)
-                          {/* Cidade dividida: as exceções são da cidade, não do
-                              pedaço — sem o "na cidade", duas partes com "+ 17"
-                              pareceriam 34. */}
-                          {semPonto > 0 && ` + ${semPonto} sem ponto${g.parte ? ' na cidade' : ''}`}
+                          {semPonto > 0 && ` + ${semPonto} sem ponto`}
                           {g.distanciaDoCdKm != null && ` · ${g.distanciaDoCdKm} km do CD`}
                           {` · ${g.extensaoKm} km de ponta a ponta`}
                         </div>
-                        {g.parte && (
-                          <div className="grupo-numeros">
-                            cidade grande para um dia — dividida em {g.parte.total}
-                          </div>
-                        )}
                       </button>
                     );
                   })}
@@ -1176,17 +1275,47 @@ export function Rotas() {
           </div>
         )}
 
-        {prontos.length > 0 && (
+        {pedidos.length > 0 && (
+          <CampoBusca
+            valor={buscaMontagem}
+            aoMudar={setBuscaMontagem}
+            rotulo="Buscar pedido na montagem"
+            placeholder="Buscar pelo nº do pedido, nota ou cliente…"
+          />
+        )}
+        {buscaMontagem.trim() && (
+          <div className="resultado-busca">
+            {prontosVisiveis.length} de {prontos.length} pedido(s) pronto(s) com “{buscaMontagem.trim()}”.
+            {selecionadosEscondidos > 0 &&
+              ` ${selecionadosEscondidos} selecionado(s) não aparecem com a busca e continuam na rota.`}
+            {encontradosForaDosProntos.length > 0 && (
+              <ul>
+                {encontradosForaDosProntos.slice(0, 5).map((p) => (
+                  <li key={p.id}>
+                    Nota <span className="mono">{p.numeroNota}</span> · pedido{' '}
+                    <span className="mono">{p.numeroPedido ?? p.id}</span> ·{' '}
+                    {clientes[p.clienteId]?.nome ?? p.clienteId} — {ondeEstaOPedido(p)}
+                  </li>
+                ))}
+                {encontradosForaDosProntos.length > 5 && (
+                  <li>e mais {encontradosForaDosProntos.length - 5} fora da lista de prontos</li>
+                )}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {prontosVisiveis.length > 0 && (
           <table>
             <thead>
               <tr>
                 <th>
                   <input
                     type="checkbox"
-                    aria-label="Selecionar todos os pedidos"
+                    aria-label="Selecionar todos os pedidos mostrados"
                     checked={todosProntosMarcados}
                     ref={(el) => {
-                      if (el) el.indeterminate = algumProntoMarcado && !todosProntosMarcados;
+                      if (el) el.indeterminate = algumVisivelMarcado && !todosProntosMarcados;
                     }}
                     onChange={alternarTodos}
                   />
@@ -1202,7 +1331,7 @@ export function Rotas() {
               </tr>
             </thead>
             <tbody>
-              {prontos.map((p) => (
+              {prontosVisiveis.map((p) => (
                 <tr key={p.id}>
                   <td>
                     <input
@@ -1230,6 +1359,12 @@ export function Rotas() {
                         title={`Saiu na rota ${p.voltouDeRota.rotaId} e voltou sem ser entregue`}
                       >
                         voltou da rota de {formatarDia(p.voltouDeRota.data)}
+                      </span>
+                    )}
+                    {/* Veio da lista "Fora da montagem": o ERP dizia outra coisa. */}
+                    {p.liberadoParaRota && (
+                      <span className="chip" style={{ marginLeft: 8 }} title="Liberado em Fora da montagem">
+                        liberado · {p.liberadoParaRota.de === 'retirada' ? 'era retirada' : 'ERP dizia entregue'}
                       </span>
                     )}
                   </td>
@@ -1306,6 +1441,8 @@ export function Rotas() {
                     {c?.nome ?? `${p.clienteId.slice(0, 8)}…`} · nota{' '}
                     <span className="mono">{p.numeroNota}</span> · {municipioDoPedido(p, c) ?? '—'}
                     {p.voltouDeRota && ` · voltou da rota de ${formatarDia(p.voltouDeRota.data)}`}
+                    {p.liberadoParaRota &&
+                      ` · liberado (${p.liberadoParaRota.de === 'retirada' ? 'era retirada' : 'ERP dizia entregue'})`}
                   </span>
                 </label>
               );
@@ -1357,6 +1494,8 @@ export function Rotas() {
           </div>
         )}
       </section>
+
+      <ForaDaMontagem pedidos={pedidos} clientes={clientes} aoAlterar={carregar} />
 
       {previa && (
         <section className="cartao">

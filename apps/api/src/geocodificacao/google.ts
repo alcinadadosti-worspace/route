@@ -1,4 +1,4 @@
-import { normalizar, type EnderecoFiscal, type GeoPonto } from '@rota/shared';
+import { chaveDeMunicipio, type EnderecoFiscal, type GeoPonto } from '@rota/shared';
 
 /**
  * Geocodificação automática (seção 9, passo 3) — Google Geocoding API.
@@ -57,12 +57,15 @@ export function criarGeocodificadorGoogle(
 
       // Dentro do município esperado? (resultado fora do município é ponto errado
       // com cara de certo — vira pendente de mapeamento.)
-      const municipioEsperado = normalizar(endereco.municipio);
+      // Chave sem pontuação: o Google escreve "Olho d'Água Grande" e a planilha
+      // "OLHO DÁGUA GRANDE" — comparar só sem acento descartava o ponto certo
+      // como cidade errada, e o pedido ficava sem ponto para sempre.
+      const municipioEsperado = chaveDeMunicipio(endereco.municipio);
       const componentes: any[] = resultado.address_components ?? [];
       const municipioBate = componentes.some(
         (c) =>
           (c.types?.includes('administrative_area_level_2') || c.types?.includes('locality')) &&
-          normalizar(String(c.long_name ?? '')) === municipioEsperado,
+          chaveDeMunicipio(String(c.long_name ?? '')) === municipioEsperado,
       );
 
       return {

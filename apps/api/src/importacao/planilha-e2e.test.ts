@@ -59,7 +59,8 @@ const PEDIDO_DE_ROTA = {
   QtdeMateriais: '7',
   ValorPraticado: '662.82',
   'Tipo de Entrega': 'No endereço de entrega',
-  'SituaçãoComercial': 'Entregue',
+  // "Transporte" é o pedido de rota por entregar; "Entregue" não entra na montagem.
+  'SituaçãoComercial': 'Transporte',
   LogradouroEntrega: 'RUA DA PROVIDENCIA',
   ComplementoEntregaRetirada: '149',
   BairroEntregaRetirada: 'CENTRO',

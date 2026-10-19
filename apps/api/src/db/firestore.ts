@@ -16,6 +16,7 @@ import type {
   ConflitoPublicacao,
   EscritaTransacao,
   LeituraTransacao,
+  PedidoCancelado,
   Repositorio,
 } from './repositorio.js';
 import { appFirebase } from '../firebase.js';
@@ -115,6 +116,51 @@ class RepositorioFirestore implements Repositorio {
     return docs
       .filter((d) => d.exists)
       .map((d) => ({ ...(d.data() as Cliente), id: d.id }));
+  }
+
+  async atualizarPedidosSeStatus(
+    alteracoes: Array<{ id: string; statusEsperado: StatusPedido; dados: Pedido }>,
+  ): Promise<string[]> {
+    const conflitos: string[] = [];
+    // Em fatias: a lista de liberação marca centenas de uma vez, e uma
+    // transação só seguraria tudo — e repetiria tudo — a cada disputa.
+    for (let i = 0; i < alteracoes.length; i += 200) {
+      const fatia = alteracoes.slice(i, i + 200);
+      const desta = await this.db.runTransaction(async (t) => {
+        const docs = await t.getAll(...fatia.map((a) => this.pedidos.doc(a.id)));
+        const pulados: string[] = [];
+        docs.forEach((doc, j) => {
+          const a = fatia[j]!;
+          if (!doc.exists || (doc.data() as Pedido).status !== a.statusEsperado) pulados.push(a.id);
+          else t.set(doc.ref, a.dados);
+        });
+        return pulados;
+      });
+      conflitos.push(...desta);
+    }
+    return conflitos;
+  }
+
+  async idsDeCancelados(): Promise<Set<string>> {
+    const resposta = await this.db.collection('pedidosCancelados').select().get();
+    return new Set(resposta.docs.map((d) => d.id));
+  }
+
+  async registrarCancelados(registros: Array<{ id: string; dados: PedidoCancelado }>): Promise<void> {
+    if (registros.length === 0) return;
+    const escritor = this.db.bulkWriter();
+    for (const r of registros) {
+      void escritor.set(this.db.collection('pedidosCancelados').doc(r.id), { ...r.dados });
+    }
+    await escritor.close();
+  }
+
+  async pedidosPorIds(ids: string[]): Promise<Array<{ id: string } & Pedido>> {
+    if (ids.length === 0) return [];
+    const docs = await this.db.getAll(...ids.map((id) => this.pedidos.doc(id)));
+    return docs
+      .filter((d) => d.exists)
+      .map((d) => ({ ...(d.data() as Pedido), id: d.id }));
   }
 
   async clientesComEntregaPendente(): Promise<Set<string>> {
@@ -225,10 +271,12 @@ class RepositorioFirestore implements Repositorio {
         },
       });
       if (escrita.gravar) {
-        t.set(ref, escrita.rota);
+        if (escrita.rota) t.set(ref, escrita.rota);
+        else t.delete(ref);
         for (const [id, campos] of Object.entries(escrita.pedidos)) {
           t.update(this.pedidos.doc(id), campos);
         }
+        for (const id of escrita.apagarPedidos ?? []) t.delete(this.pedidos.doc(id));
       }
       return { resultado: escrita.resultado };
     });

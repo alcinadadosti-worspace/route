@@ -1,4 +1,4 @@
-import { normalizar } from './endereco.js';
+import { chaveDeMunicipio } from './endereco.js';
 import type { Cliente, Pedido } from './tipos.js';
 
 /**
@@ -22,8 +22,9 @@ export function municipioDoPedido(
  * município de algum pedido marcado e do mesmo CD. É SUGESTÃO — a tela mostra
  * marcado e o operador desmarca o que não vai.
  *
- * O casamento é por município normalizado ("TEOTÔNIO VILELA" = "Teotonio
- * Vilela"): a planilha e a NF-e escrevem o mesmo lugar de jeitos diferentes. O
+ * O casamento é por `chaveDeMunicipio` ("TEOTÔNIO VILELA" = "Teotonio
+ * Vilela", "OLHO D'ÁGUA GRANDE" = "OLHO DÁGUA GRANDE"): a planilha e a NF-e
+ * escrevem o mesmo lugar de jeitos diferentes. O
  * CD conta porque a mercadoria de outro galpão não está no caminhão; pedido sem
  * CD reconhecido não é barrado (a montagem também não barra).
  */
@@ -32,14 +33,14 @@ export function excecoesDaSelecao(
   pendentes: Array<{ id: string; municipio: string | null; cdId: string | null | undefined }>,
 ): string[] {
   const municipios = new Set(
-    selecionados.map((s) => (s.municipio ? normalizar(s.municipio) : '')).filter(Boolean),
+    selecionados.map((s) => (s.municipio ? chaveDeMunicipio(s.municipio) : '')).filter(Boolean),
   );
   const cds = new Set(selecionados.map((s) => s.cdId).filter(Boolean));
   return pendentes
     .filter(
       (p) =>
         p.municipio !== null &&
-        municipios.has(normalizar(p.municipio)) &&
+        municipios.has(chaveDeMunicipio(p.municipio)) &&
         (!p.cdId || cds.size === 0 || cds.has(p.cdId)),
     )
     .map((p) => p.id);

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { formatarCarga, quantidadeDeItens, type Cliente, type Pedido } from '@rota/shared';
 import { apagarPedido, listarClientes, listarPedidos } from '../api';
 import { FotoReferencia } from '../FotoReferencia';
+import { CampoBusca } from '../CampoBusca';
 
 /**
  * Só o que ainda não foi executado em campo pode ser apagado (a API confere
@@ -13,6 +14,7 @@ const APAGAVEIS = new Set([
   'pendente_de_decisao',
   'pronto_para_rota',
   'retirada',
+  'entregue_no_erp',
   'em_rota',
 ]);
 
@@ -21,6 +23,8 @@ const ROTULO_STATUS: Record<string, { texto: string; classe: string }> = {
   pendente_de_decisao: { texto: 'Aguardando decisão', classe: 'pendente' },
   pronto_para_rota: { texto: 'Pronto para rota', classe: 'pronto' },
   retirada: { texto: 'Retirada no balcão', classe: '' },
+  // O ERP afirma, não confirmado aqui: libera-se na aba Rotas (Fora da montagem).
+  entregue_no_erp: { texto: 'Entregue no ERP (fora da rota)', classe: '' },
   importado: { texto: 'Importado', classe: '' },
   em_rota: { texto: 'Em rota', classe: '' },
   entregue: { texto: 'Entregue', classe: 'pronto' },
@@ -79,12 +83,11 @@ export function Pedidos() {
     <section className="cartao">
       <h2>Pedidos</h2>
       {pedidos.length > 0 && (
-        <input
-          type="search"
-          className="filtro"
-          placeholder="Filtrar por nº da nota, pedido ou lote…"
-          value={filtro}
-          onChange={(e) => setFiltro(e.target.value)}
+        <CampoBusca
+          valor={filtro}
+          aoMudar={setFiltro}
+          rotulo="Filtrar pedidos"
+          placeholder="Nº da nota, pedido ou lote…"
         />
       )}
       {erro && <div className="erro">{erro}</div>}

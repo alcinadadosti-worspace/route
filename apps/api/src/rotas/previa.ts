@@ -128,11 +128,12 @@ export async function coletarParadas(
     // Retirada no balcão: o Admin Estoque já respondeu que esta nota não sai no
     // caminhão. Não é erro de quem montou a rota — é um pedido que foi
     // deliberadamente tirado da fila e pode voltar pela aba Decisões.
-    if (pedido.status === 'retirada') {
+    if (pedido.status === 'retirada' || pedido.status === 'entregue_no_erp') {
+      const oQue = pedido.status === 'retirada' ? 'é retirada na central' : 'o ERP dá como entregue';
       return {
         ok: false,
         status: 422,
-        erro: `Pedido ${pedido.numeroNota} está marcado como retirada no balcão (aba Decisões para devolver à rota)`,
+        erro: `Pedido ${pedido.numeroNota} está fora da montagem (${oQue}) — libere em Rotas > Fora da montagem`,
       };
     }
 

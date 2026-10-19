@@ -47,6 +47,11 @@ export interface LinhaPlanilha {
   tipoEntrega: 'rota' | 'retirada' | null;
   tipoEntregaBruto: string;
   cancelada: boolean;
+  /** `SituaçãoComercial = Entregue`: o ERP já registrou a entrega (sempre com
+   * `DataEntrega` preenchida nas planilhas reais). */
+  entregueNoErp: boolean;
+  /** `DataEntrega` do ERP em AAAA-MM-DD, quando vem. */
+  dataEntrega: string | null;
   enderecoCadastro: BlocoEndereco;
   enderecoEntrega: BlocoEndereco;
   telefone: string | null;
@@ -160,6 +165,8 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
       tipoEntrega: tipoDe(v('tipodeentrega')),
       tipoEntregaBruto: v('tipodeentrega'),
       cancelada: normalizar(v('situacaocomercial')) === 'cancelado',
+      entregueNoErp: normalizar(v('situacaocomercial')) === 'entregue',
+      dataEntrega: dataIso(v('dataentrega'))?.slice(0, 10) ?? null,
       enderecoCadastro: {
         logradouro: v('logradouro'),
         complemento: v('complemento'),
