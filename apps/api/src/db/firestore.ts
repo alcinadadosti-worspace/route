@@ -1,4 +1,4 @@
-import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { getFirestore, type BulkWriter, type Firestore } from 'firebase-admin/firestore';
 import type {
   CentroDistribuicao,
   Cliente,
@@ -7,6 +7,7 @@ import type {
   Pedido,
   PosicaoMotorista,
   Rota,
+  StatusMapeamento,
   StatusPedido,
   Trilha,
   TrilhaBruta,
@@ -19,6 +20,7 @@ import type {
   PedidoCancelado,
   Repositorio,
 } from './repositorio.js';
+import { clientesDaRota } from './repositorio.js';
 import { appFirebase } from '../firebase.js';
 
 /**
@@ -35,6 +37,29 @@ export function criarRepositorioFirestore(): Repositorio | null {
   // no modelo; o Firestore rejeitaria o documento sem esta opção.
   db.settings({ ignoreUndefinedProperties: true });
   return new RepositorioFirestore(db);
+}
+
+/**
+ * BulkWriter com a falha DITA. Com `void escritor.set(...)`, uma escrita
+ * recusada (id reservado como `__1__`, doc > 1 MiB, cota esgotada depois das
+ * retentativas) rejeitava uma promessa que ninguém esperava: o Node encerrava
+ * o processo por `unhandledRejection` — a API caía para todos, motorista
+ * incluído — e, antes disso, a importação já tinha respondido "importado".
+ * Agora cada promessa é esperada, e a primeira falha vira erro de quem chamou.
+ */
+async function gravarTudoOuFalhar(
+  db: Firestore,
+  montar: (escritor: BulkWriter) => Array<Promise<unknown>>,
+): Promise<void> {
+  const escritor = db.bulkWriter();
+  const falhas: unknown[] = [];
+  const promessas = montar(escritor).map((p) => p.catch((e: unknown) => void falhas.push(e)));
+  await escritor.close();
+  await Promise.all(promessas);
+  if (falhas.length > 0) {
+    const primeira = falhas[0] instanceof Error ? falhas[0].message : String(falhas[0]);
+    throw new Error(`${falhas.length} gravação(ões) recusada(s) pelo banco — a última remessa NÃO foi gravada inteira (${primeira})`);
+  }
 }
 
 class RepositorioFirestore implements Repositorio {
@@ -88,16 +113,14 @@ class RepositorioFirestore implements Repositorio {
     >,
   ): Promise<void> {
     if (escritas.length === 0) return;
-    const escritor = this.db.bulkWriter();
-    for (const e of escritas) {
-      const ref = this.db.collection(e.colecao).doc(e.id);
-      if (e.colecao === 'clientes' && e.merge) {
-        void escritor.set(ref, e.dados as Record<string, unknown>, { merge: true });
-      } else {
-        void escritor.set(ref, e.dados as Record<string, unknown>);
-      }
-    }
-    await escritor.close();
+    await gravarTudoOuFalhar(this.db, (escritor) =>
+      escritas.map((e) => {
+        const ref = this.db.collection(e.colecao).doc(e.id);
+        return e.colecao === 'clientes' && e.merge
+          ? escritor.set(ref, e.dados as Record<string, unknown>, { merge: true })
+          : escritor.set(ref, e.dados as Record<string, unknown>);
+      }),
+    );
   }
 
   /** `select()` sem campos traz só os IDs: o dedupe de uma remessa não precisa
@@ -110,6 +133,55 @@ class RepositorioFirestore implements Repositorio {
   /** `getAll` busca os N documentos numa ida só (a cota conta por documento,
    * mas a latência é de uma viagem). Vazio devolve vazio — `getAll()` sem
    * referências rejeita no Admin SDK. */
+  async chavesDePedidos(): Promise<{ ids: Set<string>; idPorNumero: Map<string, string> }> {
+    // `select` de um campo só: o mesmo custo de leitura do `idsDePedidos`.
+    const resposta = await this.pedidos.select('numeroPedido').get();
+    const idPorNumero = new Map<string, string>();
+    for (const d of resposta.docs) {
+      const numero = (d.data() as { numeroPedido?: string | null }).numeroPedido;
+      if (numero) idPorNumero.set(numero, d.id);
+    }
+    return { ids: new Set(resposta.docs.map((d) => d.id)), idPorNumero };
+  }
+
+  async pedidosComStatus(status: StatusPedido): Promise<Array<{ id: string } & Pedido>> {
+    const r = await this.pedidos.where('status', '==', status).get();
+    return r.docs.map((d) => ({ ...(d.data() as Pedido), id: d.id }));
+  }
+
+  async clientesNasLatitudes(lats: number[]): Promise<Array<{ id: string } & Cliente>> {
+    const unicas = [...new Set(lats)];
+    const saida: Array<{ id: string } & Cliente> = [];
+    // `in` aceita até 30 valores por consulta.
+    for (let i = 0; i < unicas.length; i += 30) {
+      const r = await this.clientes.where('coordenada.lat', 'in', unicas.slice(i, i + 30)).get();
+      for (const d of r.docs) saida.push({ ...(d.data() as Cliente), id: d.id });
+    }
+    return saida;
+  }
+
+  async atualizarClientesSe(
+    alteracoes: Array<{ id: string; seStatus: StatusMapeamento[]; dados: Partial<Cliente> }>,
+  ): Promise<string[]> {
+    const pulados: string[] = [];
+    for (let i = 0; i < alteracoes.length; i += 200) {
+      const fatia = alteracoes.slice(i, i + 200);
+      const desta = await this.db.runTransaction(async (t) => {
+        const docs = await t.getAll(...fatia.map((a) => this.clientes.doc(a.id)));
+        const fora: string[] = [];
+        docs.forEach((doc, j) => {
+          const a = fatia[j]!;
+          const status = doc.exists ? (doc.data() as Cliente).statusMapeamento : null;
+          if (!status || !a.seStatus.includes(status)) fora.push(a.id);
+          else t.set(doc.ref, a.dados as Record<string, unknown>, { merge: true });
+        });
+        return fora;
+      });
+      pulados.push(...desta);
+    }
+    return pulados;
+  }
+
   async clientesPorIds(ids: string[]): Promise<Array<{ id: string } & Cliente>> {
     if (ids.length === 0) return [];
     const docs = await this.db.getAll(...ids.map((id) => this.clientes.doc(id)));
@@ -148,11 +220,9 @@ class RepositorioFirestore implements Repositorio {
 
   async registrarCancelados(registros: Array<{ id: string; dados: PedidoCancelado }>): Promise<void> {
     if (registros.length === 0) return;
-    const escritor = this.db.bulkWriter();
-    for (const r of registros) {
-      void escritor.set(this.db.collection('pedidosCancelados').doc(r.id), { ...r.dados });
-    }
-    await escritor.close();
+    await gravarTudoOuFalhar(this.db, (escritor) =>
+      registros.map((r) => escritor.set(this.db.collection('pedidosCancelados').doc(r.id), { ...r.dados })),
+    );
   }
 
   async pedidosPorIds(ids: string[]): Promise<Array<{ id: string } & Pedido>> {
@@ -246,6 +316,12 @@ class RepositorioFirestore implements Repositorio {
       }
       t.set(this.db.collection('rotas').doc(rotaId), rota);
       for (const id of ids) t.update(this.pedidos.doc(id), { status: 'em_rota', rotaId });
+      // Junto da rota, não depois: sem isto o app do motorista não lê os
+      // clientes da rota (rules), e uma falha entre as duas escritas deixaria a
+      // rota no ar sem endereço nem dossiê no celular.
+      for (const clienteId of clientesDaRota(rota)) {
+        t.set(this.clientes.doc(clienteId), { visivelPara: { [rota.motoristaId]: true } }, { merge: true });
+      }
       return null;
     });
   }
@@ -349,6 +425,11 @@ class RepositorioFirestore implements Repositorio {
   async listarEntregasDaRota(rotaId: string): Promise<Entrega[]> {
     const resposta = await this.db.collection('entregas').where('rotaId', '==', rotaId).get();
     return resposta.docs.map((d) => d.data() as Entrega);
+  }
+
+  async contarEntregasDaRota(rotaId: string): Promise<number> {
+    const r = await this.db.collection('entregas').where('rotaId', '==', rotaId).count().get();
+    return r.data().count;
   }
 
   async aplicarProcessamentoDeTrilha(dados: {

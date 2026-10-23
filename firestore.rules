@@ -28,6 +28,15 @@ service cloud.firestore {
     function papelConhecido() {
       return papel() in ['admin', 'operador', 'motorista'];
     }
+    // O motorista vê um cliente se ele já esteve numa rota publicada PARA ELE
+    // (a API grava `visivelPara` na publicação). O id é o código Pessoa,
+    // numérico e enumerável: com `get` a qualquer papel, um motorista baixava
+    // a base inteira de PII tentando ids em série. Doc inexistente nega (sem
+    // `resource`), então nem a existência do id vaza.
+    function motoristaVe(dadosCliente) {
+      return papel() == 'motorista'
+        && request.auth.uid in dadosCliente.get('visivelPara', {});
+    }
     // A escrita de campo (entrega, status do pedido) tem que pertencer a uma
     // rota do próprio motorista — senão qualquer logado adultera pedido/rota
     // alheia só sabendo o id. Um get() prova posse.
@@ -71,9 +80,11 @@ service cloud.firestore {
       // paradas da rota dele; `list` (enumerar a coleção) é só Admin Estoque,
       // senão qualquer motorista baixa a base inteira de clientes (PII) e,
       // com o id = SHA-256 do CPF, recupera CPFs por força bruta.
-      allow get: if papelConhecido();
+      allow get: if escritorio() || motoristaVe(resource.data);
       allow list: if escritorio();
-      allow update: if logado() && (
+      // Papel atribuído E cliente visível: a conta de autocadastro (papel
+      // vazio) sobrescrevia às cegas o pin de qualquer cliente como "mapeado".
+      allow update: if (escritorio() || motoristaVe(resource.data)) && (
         // Pin (RF-07): coordenada tem que ser lat/lng numéricos plausíveis —
         // os limites de faixa também barram NaN (toda comparação com NaN é
         // falsa). Coordenada corrompida quebraria a publicação de rotas.
@@ -121,7 +132,11 @@ service cloud.firestore {
         && request.resource.data.pontos.size() >= 2
         && request.resource.data.pontos.size() <= 50000
         && request.resource.data.clienteId is string
-        && exists(/databases/$(database)/documents/clientes/$(request.resource.data.clienteId));
+        && exists(/databases/$(database)/documents/clientes/$(request.resource.data.clienteId))
+        // Só de cliente que ele atende: a bruta processada troca a trilha ATIVA
+        // do cliente — de qualquer cliente, sem esta guarda.
+        && (escritorio()
+            || motoristaVe(get(/databases/$(database)/documents/clientes/$(request.resource.data.clienteId)).data));
       allow update, delete: if false;
     }
 
@@ -154,8 +169,11 @@ service cloud.firestore {
     match /trilhas/{trilhaId} {
       // Como clientes: `get` por id ao motorista (segue a trilha ativa da
       // parada), `list` só Admin Estoque — senão vaza a coordenada do caminho de
-      // acesso de todo cliente.
-      allow get: if papelConhecido();
+      // acesso de todo cliente. E, como no cliente, só de quem ele atende.
+      allow get: if escritorio()
+        || (papel() == 'motorista'
+            && resource.data.clienteId is string
+            && motoristaVe(get(/databases/$(database)/documents/clientes/$(resource.data.clienteId)).data));
       allow list: if escritorio();
       allow write: if false;
     }
@@ -198,7 +216,7 @@ service cloud.firestore {
     // — senão vira forja de auditoria (registro falso, sem atribuição).
     match /entregas/{entregaId} {
       allow read: if escritorio();
-      allow create: if logado()
+      allow create: if papelConhecido()
         && request.resource.data.keys().hasOnly(
              ['pedidoId', 'rotaId', 'clienteId', 'resultado', 'confirmadaEm',
               'posicaoConfirmacao', 'gravadaPor', 'recebidoPor', 'comprovantePath'])
@@ -228,7 +246,14 @@ service cloud.firestore {
             || request.resource.data.comprovantePath == null
             || request.resource.data.comprovantePath
                  == 'entregas/' + entregaId + '/comprovante.jpg')
-        && donoDaRota(request.resource.data.rotaId);
+        && donoDaRota(request.resource.data.rotaId)
+        // E de um pedido DESTA rota: registros de pedido inventado inflavam a
+        // produtividade e punham uma revendedora que nunca esteve na rota no
+        // topo do ranking de ausências — e o registro é imutável.
+        && request.resource.data.pedidoId is string
+        && exists(/databases/$(database)/documents/pedidos/$(request.resource.data.pedidoId))
+        && get(/databases/$(database)/documents/pedidos/$(request.resource.data.pedidoId)).data.rotaId
+             == request.resource.data.rotaId;
       allow update, delete: if false;
     }
   }

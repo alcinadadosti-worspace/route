@@ -6,6 +6,7 @@ import type {
   Pedido,
   PosicaoMotorista,
   Rota,
+  StatusMapeamento,
   StatusPedido,
   Trilha,
   TrilhaBruta,
@@ -95,6 +96,28 @@ export interface Repositorio {
    * pode ser 2000 `get` individuais. */
   idsDePedidos(): Promise<Set<string>>;
   /**
+   * IDs e nº do pedido de cada documento, numa consulta só. O pedido do XML
+   * tem por id a chave de 44 dígitos; o da planilha, o `CodigoPedido` — que é
+   * o `numeroPedido` do XML (297 de 297 pares). Sem cruzar os dois, soltar o
+   * XML e a planilha do mesmo ciclo duplicava tudo: os "entregues no ERP" e os
+   * cancelados voltavam prontos para a rota.
+   */
+  chavesDePedidos(): Promise<{ ids: Set<string>; idPorNumero: Map<string, string> }>;
+  /** Pedidos num status — consulta filtrada, para não ler a coleção inteira a
+   * cada lote da busca de endereço (eram ~600 leituras por lote). */
+  pedidosComStatus(status: StatusPedido): Promise<Array<{ id: string } & Pedido>>;
+  /** Clientes com estas latitudes exatas — para achar ponto repetido sem ler
+   * a coleção inteira a cada lote da busca. */
+  clientesNasLatitudes(lats: number[]): Promise<Array<{ id: string } & Cliente>>;
+  /**
+   * Grava campos do cliente SÓ se o `statusMapeamento` dele ainda é um dos
+   * esperados; devolve os ids pulados. A busca de endereço leva 10–20 s por
+   * lote, e um pin confirmado em campo nesse meio era sobrescrito pelo palpite.
+   */
+  atualizarClientesSe(
+    alteracoes: Array<{ id: string; seStatus: StatusMapeamento[]; dados: Partial<Cliente> }>,
+  ): Promise<string[]>;
+  /**
    * Busca vários clientes por id numa ida só. A localização em lotes precisa
    * exatamente de N clientes — reler a coleção inteira a cada lote gastaria a
    * cota diária do Firestore num ciclo só (~1400 clientes × 10 lotes).
@@ -137,6 +160,9 @@ export interface Repositorio {
    * abre uma rota por vez e não tem por que ler o histórico inteiro.
    */
   listarEntregasDaRota(rotaId: string): Promise<Entrega[]>;
+  /** Só a CONTAGEM (agregação: 1 leitura por mil registros) — o acompanhamento
+   * pergunta a cada 20 s se há registro que a rota não refletiu. */
+  contarEntregasDaRota(rotaId: string): Promise<number>;
   /**
    * Resultado do pós-processamento numa escrita só (atômica no Firestore):
    * desativa a trilha anterior, grava a nova, aponta o cliente para ela e
@@ -188,6 +214,11 @@ export interface PedidoCancelado {
   notaFiscal: number;
   clienteId: string;
   registradoEm: string;
+}
+
+/** Clientes que o motorista da rota precisa ler (paradas e exceções). */
+export function clientesDaRota(rota: Pick<Rota, 'paradas' | 'excecoes'>): string[] {
+  return [...new Set([...rota.paradas, ...(rota.excecoes ?? [])].map((p) => p.clienteId))];
 }
 
 export class RepositorioMemoria implements Repositorio {
@@ -271,6 +302,10 @@ export class RepositorioMemoria implements Repositorio {
       for (const id of Object.keys(statusLido)) {
         this.pedidos.set(id, { ...this.pedidos.get(id)!, status: 'em_rota', rotaId });
       }
+      for (const clienteId of clientesDaRota(rota)) {
+        const c = this.clientes.get(clienteId);
+        if (c) this.clientes.set(clienteId, { ...c, visivelPara: { ...c.visivelPara, [rota.motoristaId]: true } });
+      }
       return null;
     });
   }
@@ -343,6 +378,37 @@ export class RepositorioMemoria implements Repositorio {
 
   async idsDePedidos(): Promise<Set<string>> {
     return new Set(this.pedidos.keys());
+  }
+
+  async chavesDePedidos(): Promise<{ ids: Set<string>; idPorNumero: Map<string, string> }> {
+    const idPorNumero = new Map<string, string>();
+    for (const [id, p] of this.pedidos) if (p.numeroPedido) idPorNumero.set(p.numeroPedido, id);
+    return { ids: new Set(this.pedidos.keys()), idPorNumero };
+  }
+
+  async pedidosComStatus(status: StatusPedido): Promise<Array<{ id: string } & Pedido>> {
+    return [...this.pedidos].filter(([, p]) => p.status === status).map(([id, p]) => ({ ...p, id }));
+  }
+
+  async clientesNasLatitudes(lats: number[]): Promise<Array<{ id: string } & Cliente>> {
+    const procuradas = new Set(lats);
+    return [...this.clientes]
+      .filter(([, c]) => c.coordenada && procuradas.has(c.coordenada.lat))
+      .map(([id, c]) => ({ ...c, id }));
+  }
+
+  async atualizarClientesSe(
+    alteracoes: Array<{ id: string; seStatus: StatusMapeamento[]; dados: Partial<Cliente> }>,
+  ): Promise<string[]> {
+    return this.exclusivo(async () => {
+      const pulados: string[] = [];
+      for (const a of alteracoes) {
+        const atual = this.clientes.get(a.id);
+        if (!atual || !a.seStatus.includes(atual.statusMapeamento)) pulados.push(a.id);
+        else this.clientes.set(a.id, { ...atual, ...a.dados });
+      }
+      return pulados;
+    });
   }
 
   private posicoes = new Map<string, PosicaoMotorista>();
@@ -472,6 +538,10 @@ export class RepositorioMemoria implements Repositorio {
 
   async listarEntregasDaRota(rotaId: string): Promise<Entrega[]> {
     return this.entregas.filter((e) => e.rotaId === rotaId);
+  }
+
+  async contarEntregasDaRota(rotaId: string): Promise<number> {
+    return new Set(this.entregas.filter((e) => e.rotaId === rotaId).map((e) => e.pedidoId)).size;
   }
 
   async aplicarProcessamentoDeTrilha(dados: {

@@ -1,8 +1,10 @@
 import {
+  chaveDePonto,
   ehEnderecoRural,
   enderecosDivergem,
   formatarDia,
   normalizarTelefone,
+  pontosRepetidos,
   type Cliente,
   type Pedido,
   type RelatorioImportacao,
@@ -49,6 +51,14 @@ const CD_POR_ESTRUTURA: Record<string, { cdId: string; serie: number }> = {
   '1048': { cdId: 'penedo', serie: 1 },
   '1515': { cdId: 'palmeira', serie: 0 },
 };
+/** `CodCD` → CD. Conferido no ciclo 11: 542 acompanha a estrutura 1.048 em
+ * 1337/1337 linhas e 684 a 1.515 em 664/664. É o que identifica o CD do
+ * "Consumidor Final" (18 por ciclo), que vem sem estrutura — e entrava sem
+ * CD, com série 0, aparecendo nas cidades do outro galpão. */
+const CD_POR_CODCD: Record<string, { cdId: string; serie: number }> = {
+  '542': { cdId: 'penedo', serie: 1 },
+  '684': { cdId: 'palmeira', serie: 0 },
+};
 
 export async function importarPlanilha(
   nomeArquivo: string,
@@ -80,11 +90,15 @@ export async function importarPlanilha(
   }
 
   // Três consultas para a remessa inteira, em vez de duas por linha.
-  const [idsExistentes, clientesExistentes, cancelados] = await Promise.all([
-    repo.idsDePedidos(),
+  const [chaves, clientesExistentes, cancelados] = await Promise.all([
+    repo.chavesDePedidos(),
     repo.listarClientes(),
     repo.idsDeCancelados(),
   ]);
+  /** Id do pedido que já existe para este código: o da própria planilha, ou o
+   * do XML do mesmo pedido (id = chave de 44 dígitos, `numeroPedido` = código). */
+  const idExistente = (codigo: string): string | undefined =>
+    chaves.ids.has(codigo) ? codigo : chaves.idPorNumero.get(codigo);
   const clientes = new Map<string, Cliente>(
     clientesExistentes.map(({ id, ...c }) => [id, c as Cliente]),
   );
@@ -108,9 +122,13 @@ export async function importarPlanilha(
    * várias notas no ciclo, e repetir o aviso a cada uma afogaria os alertas
    * raros — a mesma inundação já consertada no aviso de retirada. */
   const revisaoAlertada = new Set<string>();
-  const canceladosJaImportados: LinhaPlanilha[] = [];
+  const canceladosJaImportados: Array<{ linha: LinhaPlanilha; id: string }> = [];
   /** Cancelados vistos pela PRIMEIRA vez nesta remessa — viram marca no banco. */
   const canceladosNovos: LinhaPlanilha[] = [];
+  /** Cancelados desta planilha: a linha ativa do MESMO código mais abaixo não
+   * pode entrar — ela entraria e ficaria marcada como cancelada, e nunca mais
+   * seria apagada. */
+  const canceladosAqui = new Set<string>();
   let pinsDoCadastro = 0;
   let aGeocodificar = 0;
 
@@ -128,6 +146,17 @@ export async function importarPlanilha(
       continue;
     }
 
+    // Código do pedido e da pessoa viram ID de documento: no ERP são só dígitos
+    // (9 no pedido, em 100% das linhas reais). Qualquer outra coisa ("__1__" é
+    // id reservado do banco) era recusada na gravação — e derrubava a remessa.
+    if (!/^\d{1,20}$/.test(linha.codigoPedido) || !/^\d{1,20}$/.test(linha.pessoa)) {
+      relatorio.rejeitados.push({
+        arquivo: rotulo,
+        motivo: 'CodigoPedido ou Pessoa fora do formato do ERP (só dígitos)',
+      });
+      continue;
+    }
+
     // `Tipo de Entrega` desconhecido: rejeitar, nunca chutar. Um rótulo novo do
     // ERP classificado no palpite mandaria caminhão para quem retira (ou o
     // contrário) sem ninguém perceber.
@@ -141,10 +170,8 @@ export async function importarPlanilha(
 
     // Já cancelado numa importação anterior: uma planilha mais velha, de quando
     // ele ainda estava ativo, conta como repetida — não o traz de volta.
-    const jaExiste =
-      idsExistentes.has(linha.codigoPedido) ||
-      vistos.has(linha.codigoPedido) ||
-      cancelados.has(linha.codigoPedido);
+    const idJa = idExistente(linha.codigoPedido);
+    const jaExiste = idJa !== undefined || vistos.has(linha.codigoPedido) || cancelados.has(linha.codigoPedido);
 
     // Cancelado no ERP: não entra, e o que JÁ tinha entrado numa importação
     // anterior é apagado depois das gravações (ver `apagarCancelado`).
@@ -153,10 +180,12 @@ export async function importarPlanilha(
       // Já tratado antes (apagado, ou alertado): repetir o alerta a cada
       // planilha que o traz afogaria os novos.
       if (cancelados.has(linha.codigoPedido)) continue;
-      if (idsExistentes.has(linha.codigoPedido)) {
-        canceladosJaImportados.push(linha);
+      if (idJa !== undefined) {
+        canceladosAqui.add(linha.codigoPedido);
+        canceladosJaImportados.push({ linha, id: idJa });
         canceladosNovos.push(linha);
       } else if (!vistos.has(linha.codigoPedido)) {
+        canceladosAqui.add(linha.codigoPedido);
         canceladosNovos.push(linha);
       } else {
         // Ativo numa linha e cancelado noutra da MESMA planilha: não dá para
@@ -170,6 +199,15 @@ export async function importarPlanilha(
       continue;
     }
 
+    if (canceladosAqui.has(linha.codigoPedido)) {
+      relatorio.alertas.push({
+        clienteId: linha.pessoa,
+        nome: linha.nome,
+        mensagem: `Pedido ${linha.codigoPedido} aparece cancelado E ativo na mesma planilha — ficou como cancelado. Confira no ERP.`,
+      });
+      continue;
+    }
+
     if (jaExiste) {
       // Nem o "Entregue" do ERP mexe no que já está aqui: ele marca sozinho
       // depois de 6 dias, e um pedido esperando rota sairia da montagem sem
@@ -179,7 +217,9 @@ export async function importarPlanilha(
     }
     vistos.add(linha.codigoPedido);
 
-    const cd = linha.estrutura ? CD_POR_ESTRUTURA[linha.estrutura] : undefined;
+    const cd =
+      (linha.estrutura ? CD_POR_ESTRUTURA[linha.estrutura] : undefined) ??
+      (linha.codCd ? CD_POR_CODCD[linha.codCd] : undefined);
     relatorio.porCd[cd?.cdId ?? '—'] = (relatorio.porCd[cd?.cdId ?? '—'] ?? 0) + 1;
 
     // Retirada usa o endereço do CADASTRO: o bloco de entrega dessas linhas
@@ -242,6 +282,9 @@ export async function importarPlanilha(
         observacoes: referencia,
         enderecoEmRevisao: null,
         papel: linha.papel,
+        // Só linha de rota estabelece o endereço de ENTREGA (a de retirada traz
+        // o do cadastro): a primeira de rota que vier depois ainda o grava.
+        enderecoDe: linhaDeRota ? linha.emitidoEm || null : null,
       };
       if (pinDoCadastro) pinsDoCadastro += 1;
       escritasDeCliente.set(linha.pessoa, { dados: cliente, merge: false });
@@ -256,8 +299,17 @@ export async function importarPlanilha(
       // rota/retirada trocar de endereço a cada remessa — e, tendo pin, cada
       // troca abria uma revisão falsa que TRAVAVA o pedido seguinte na aba
       // Decisões por uma mudança que nunca existiu.
+      //
+      // Nem a linha "Entregue" do ERP: ela não vai para o caminhão por padrão,
+      // e abria uma revisão CALADA (sem alerta, sem cartão), deixando o pedido
+      // pronto anterior com o pin velho e o texto do endereço novo.
+      //
+      // E só o endereço MAIS NOVO: com planilhas soltas fora de ordem, a mais
+      // velha processada por último fazia o endereço regredir.
+      const maisNova = !existente.enderecoDe || (linha.emitidoEm ?? '') >= existente.enderecoDe;
+      const atualizaEndereco = linhaDeRota && !linha.entregueNoErp && maisNova;
       const mudouDeLugar =
-        linhaDeRota &&
+        atualizaEndereco &&
         existente.coordenada !== null &&
         enderecosDivergem(existente.enderecoFiscal, endereco);
       const revisao = existente.enderecoEmRevisao ?? (mudouDeLugar ? existente.enderecoFiscal : null);
@@ -270,14 +322,22 @@ export async function importarPlanilha(
         // número (ele vai na NF-e) — a coluna é que fica em branco.
         telefone: telefone ?? existente.telefone,
       };
-      if (linhaDeRota) {
+      if (atualizaEndereco) {
         campos.enderecoFiscal = endereco;
         campos.enderecoEmRevisao = revisao;
+        if (linha.emitidoEm) campos.enderecoDe = linha.emitidoEm;
       }
       if (linha.papel && linha.papel !== existente.papel) campos.papel = linha.papel;
       // Pin do cadastro só entra em quem AINDA não tem ponto: nunca por cima do
       // pin que o motorista confirmou em campo.
-      if (!existente.coordenada && pinDoCadastro) {
+      //
+      // Nem o ponto que o Admin Estoque DESCARTOU ("refazer ponto"/"remapear"):
+      // o mesmo GPS errado do cadastro voltava na planilha do dia seguinte.
+      const descartado =
+        pinDoCadastro !== null &&
+        existente.pontoDescartado != null &&
+        chaveDePonto(existente.pontoDescartado) === chaveDePonto(pinDoCadastro);
+      if (!existente.coordenada && pinDoCadastro && !descartado) {
         campos.coordenada = pinDoCadastro;
         campos.statusMapeamento = 'geocodificado';
         pinsDoCadastro += 1;
@@ -364,6 +424,32 @@ export async function importarPlanilha(
     }
   }
 
+  // Ponto "exato" dividido com outro cliente de endereço diferente é o centro
+  // da cidade/rua, não a porta (ver `pontoRepetido.ts`): vira aproximado, e o
+  // PDF passa a pedir "confirme o local". Roda sobre TODOS os clientes, os de
+  // importações anteriores também — é assim que os que já estão no banco se
+  // corrigem. Pin confirmado em campo (`mapeado`) nunca é tocado.
+  const repetidos = pontosRepetidos([...clientes].map(([id, c]) => ({ ...c, id })));
+  let rebaixados = 0;
+  for (const id of repetidos) {
+    const c = clientes.get(id)!;
+    if (c.statusMapeamento !== 'geocodificado') continue;
+    clientes.set(id, { ...c, statusMapeamento: 'aproximado' });
+    const anterior = escritasDeCliente.get(id);
+    escritasDeCliente.set(id, {
+      dados: { ...(anterior?.dados ?? {}), statusMapeamento: 'aproximado' },
+      merge: anterior ? anterior.merge : true,
+    });
+    rebaixados += 1;
+  }
+  if (rebaixados > 0) {
+    relatorio.alertas.push({
+      clienteId: '',
+      nome: 'Ponto repetido',
+      mensagem: `${rebaixados} cliente(s) estavam com o MESMO ponto de outro endereço (é o centro da cidade ou da rua, não a porta) — passaram a "aproximado", e o PDF pede para confirmar o local.`,
+    });
+  }
+
   await repo.gravarEmLote([
     ...[...escritasDeCliente].map(([id, e]) => ({
       colecao: 'clientes' as const,
@@ -376,8 +462,8 @@ export async function importarPlanilha(
 
   // Um a um e depois das gravações: são poucos por remessa (9 no ciclo 11
   // inteiro), e cada um pode mexer numa rota — o mesmo caminho do botão Apagar.
-  for (const linha of canceladosJaImportados) {
-    const resultado = await apagarCancelado(repo, linha);
+  for (const { linha, id } of canceladosJaImportados) {
+    const resultado = await apagarCancelado(repo, linha, id);
     if (resultado.apagado) {
       relatorio.canceladasApagadas = (relatorio.canceladasApagadas ?? 0) + 1;
     }
@@ -426,13 +512,16 @@ export async function importarPlanilha(
 async function apagarCancelado(
   repo: Repositorio,
   linha: LinhaPlanilha,
+  id: string,
 ): Promise<{ apagado: boolean; mensagem: string }> {
   const quem = `Pedido ${linha.codigoPedido} (nota ${linha.notaFiscal}) foi CANCELADO no ERP`;
-  const pedido = await repo.obterPedido(linha.codigoPedido);
+  const pedido = await repo.obterPedido(id);
   if (!pedido) return { apagado: false, mensagem: `${quem} — já não estava no sistema.` };
 
   const rota = pedido.status === 'em_rota' && pedido.rotaId ? await repo.obterRota(pedido.rotaId) : null;
-  const r = await removerPedido(repo, linha.codigoPedido);
+  // O motivo fica gravado na ROTA que sobra: o alerta da importação aparece uma
+  // vez só, e com o motorista no papel o cancelado podia ser entregue.
+  const r = await removerPedido(repo, id, { motivo: 'cancelado no ERP' });
   if (!r.ok) {
     return { apagado: false, mensagem: `${quem}, mas NÃO foi apagado: ${r.erro}. Confira com o ERP.` };
   }

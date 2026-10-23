@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CentroDistribuicao, RelatorioImportacao } from '@rota/shared';
-import { importarArquivos, listarCds, localizarEnderecos } from '../api';
+import { contarEnderecosALocalizar, importarArquivos, listarCds, localizarEnderecos } from '../api';
 
 /** Fluxo 1 — o operador solta a planilha do ERP (ou XMLs de NF-e) do dia (RF-01, RF-04). */
 export function Importacao() {
@@ -11,13 +11,43 @@ export function Importacao() {
   const [erro, setErro] = useState<string | null>(null);
   /** Progresso da localização de endereços (passo separado, pago e em lotes). */
   const [localizando, setLocalizando] = useState<{ feitos: number; restantes: number } | null>(null);
+  /** Resultado da última localização — fica na tela (sumia em 4 s, e o número
+   * dos que a busca não achou nunca aparecia). */
+  const [ultimaLocalizacao, setUltimaLocalizacao] = useState<{
+    feitos: number;
+    semResultado: number;
+    restantes: number;
+  } | null>(null);
+  /** Fila da busca — o botão existe SEMPRE que há fila. Antes ele só aparecia
+   * logo depois de uma importação, e as telas que mandam "use Localizar
+   * endereços na Importação" levavam a uma aba sem botão nenhum. */
+  const [naFila, setNaFila] = useState<number | null>(null);
   // Só para dar nome ao CD no relatório — a importação devolve o id.
   const [cds, setCds] = useState<Record<string, CentroDistribuicao>>({});
+  /** Sair da aba PARA o laço: ele seguia invisível, e voltar e clicar de novo
+   * punha dois laços pagos em paralelo sobre a mesma fila. */
+  const montado = useRef(true);
+  useEffect(() => {
+    // Religa na (re)montagem: o React monta, desmonta e remonta em
+    // desenvolvimento, e só desligar deixava a tela "desmontada" para sempre —
+    // a contagem da fila nunca aparecia.
+    montado.current = true;
+    return () => {
+      montado.current = false;
+    };
+  }, []);
+
+  function contarFila() {
+    contarEnderecosALocalizar()
+      .then((r) => montado.current && setNaFila(r.restantes))
+      .catch(() => montado.current && setNaFila(null));
+  }
 
   useEffect(() => {
     listarCds()
       .then(setCds)
       .catch(() => setCds({}));
+    contarFila();
   }, []);
 
   async function enviar(lista: FileList | null) {
@@ -36,12 +66,16 @@ export function Importacao() {
     }
     setEnviando(true);
     setErro(null);
+    // O relatório anterior sai da tela: ficando debaixo do erro de uma
+    // importação nova que falhou, parecia ser o resultado dela.
+    setRelatorio(null);
     try {
       setRelatorio(await importarArquivos(aceitos));
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha na importação');
     } finally {
       setEnviando(false);
+      contarFila();
     }
   }
 
@@ -51,25 +85,34 @@ export function Importacao() {
    * limite de taxa da Google — cujo estouro derruba o lote inteiro.
    */
   async function localizar() {
+    if (localizando) return;
     setErro(null);
-    setLocalizando({ feitos: 0, restantes: 0 });
+    setUltimaLocalizacao(null);
+    setLocalizando({ feitos: 0, restantes: naFila ?? 0 });
     let feitos = 0;
     // `pular` acumula os endereços que a Google NÃO localizou: eles continuam
     // sem coordenada e voltariam ao começo da fila. Sem saltá-los, este laço
     // repetiria o mesmo lote para sempre — e cada volta é dinheiro gasto.
     let pular = 0;
+    let restantes = 0;
     try {
       for (;;) {
+        if (!montado.current) return;
         const r = await localizarEnderecos(pular);
         feitos += r.geocodificados + r.aproximados;
         pular += r.semResultado;
-        setLocalizando({ feitos, restantes: r.restantes });
+        restantes = r.restantes;
+        if (montado.current) setLocalizando({ feitos, restantes: r.restantes });
         if (r.restantes === 0 || r.processados === 0) break;
       }
+      if (montado.current) setUltimaLocalizacao({ feitos, semResultado: pular, restantes });
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha ao localizar endereços');
+      if (montado.current) setErro(e instanceof Error ? e.message : 'Falha ao localizar endereços');
     } finally {
-      setTimeout(() => setLocalizando(null), 4000);
+      if (montado.current) {
+        setLocalizando(null);
+        contarFila();
+      }
     }
   }
 
@@ -81,18 +124,23 @@ export function Importacao() {
         mesmo arquivo é inócuo — a chave de acesso deduplica.
       </p>
 
+      {/* Durante o envio a zona não aceita outro: uma segunda importação em
+          paralelo dobrava as leituras, e a que terminasse por último trocava o
+          relatório — e os alertas — da outra. */}
       <div
         className={`zona-upload${arrastando ? ' ativa' : ''}`}
-        onClick={() => inputRef.current?.click()}
+        aria-disabled={enviando}
+        style={enviando ? { cursor: 'progress', opacity: 0.7 } : undefined}
+        onClick={() => !enviando && inputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
-          setArrastando(true);
+          if (!enviando) setArrastando(true);
         }}
         onDragLeave={() => setArrastando(false)}
         onDrop={(e) => {
           e.preventDefault();
           setArrastando(false);
-          void enviar(e.dataTransfer.files);
+          if (!enviando) void enviar(e.dataTransfer.files);
         }}
       >
         {enviando ? 'PROCESSANDO…' : 'SOLTE A PLANILHA (OU XMLs) AQUI'}
@@ -107,6 +155,30 @@ export function Importacao() {
       </div>
 
       {erro && <div className="erro">{erro}</div>}
+
+      {/* Localizar no mapa: passo próprio (é PAGO), disponível sempre que há
+          entrega sem ponto — inclusive a liberada em "Fora da montagem". */}
+      {(localizando || (naFila ?? 0) > 0 || ultimaLocalizacao) && (
+        <div className="acoes-rota">
+          <button
+            className="primaria"
+            disabled={localizando !== null || (naFila ?? 0) === 0}
+            onClick={() => void localizar()}
+          >
+            {localizando
+              ? `Localizando… ${localizando.feitos} feito(s), ${localizando.restantes} na fila`
+              : `📍 Localizar endereços no mapa${naFila ? ` (${naFila} sem ponto)` : ''}`}
+          </button>
+          {ultimaLocalizacao && !localizando && (
+            <div className="sucesso" style={{ marginTop: 8 }}>
+              Localização concluída: {ultimaLocalizacao.feitos} endereço(s) ganharam ponto
+              {ultimaLocalizacao.semResultado > 0 &&
+                ` · ${ultimaLocalizacao.semResultado} a busca não achou (vão como exceção da cidade, ou se mapeiam em campo)`}
+              .
+            </div>
+          )}
+        </div>
+      )}
 
       {relatorio && (
         <>
@@ -151,18 +223,6 @@ export function Importacao() {
             />
             <Metrica valor={relatorio.rejeitados.length} rotulo="Rejeitados" />
             <Metrica valor={relatorio.semCarga ?? 0} rotulo="Rota sem peso" />
-          </div>
-
-          <div className="acoes-rota">
-            <button
-              className="primaria"
-              disabled={localizando !== null}
-              onClick={() => void localizar()}
-            >
-              {localizando
-                ? `Localizando… ${localizando.feitos} feito(s), ${localizando.restantes} na fila`
-                : '📍 Localizar endereços no mapa'}
-            </button>
           </div>
 
           {(relatorio.semCarga ?? 0) > 0 && (

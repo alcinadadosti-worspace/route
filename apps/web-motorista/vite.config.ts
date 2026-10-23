@@ -26,12 +26,28 @@ export default defineConfig({
         // Só o caminho clientes/: o PMTiles (dezenas de MB) também vem do
         // Storage e tem armazenamento próprio no OPFS — cacheá-lo aqui
         // duplicaria o arquivo inteiro no Cache Storage.
+        //
+        // A IMAGEM (`alt=media`) e os METADADOS (o que o `getDownloadURL` pede)
+        // são cacheados de jeitos diferentes. Num `CacheFirst` só, a regex pegava
+        // os dois, e a foto trocada não aparecia por até 60 dias — nem para quem
+        // acabou de trocá-la. Metadados: rede primeiro (o cache só vale sem
+        // sinal). Imagem: mostra a guardada e renova por trás.
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/clientes%2F.*/,
-            handler: 'CacheFirst',
+            urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/clientes%2F[^?]*\?(?:.*&)?alt=media/,
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'fotos-referencia',
+              expiration: { maxEntries: 300, maxAgeSeconds: 60 * 24 * 60 * 60 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/clientes%2F.*/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'fotos-referencia-meta',
+              networkTimeoutSeconds: 4,
               expiration: { maxEntries: 300, maxAgeSeconds: 60 * 24 * 60 * 60 },
               cacheableResponse: { statuses: [0, 200] },
             },

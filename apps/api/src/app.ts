@@ -14,6 +14,7 @@ import { importarPlanilha } from './importacao/servico-planilha.js';
 import { localizarEnderecos } from './importacao/geocodificacao-lote.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
 import { alterarLiberacao } from './rotas/liberacao.js';
+import { reconciliarComEntregas } from './rotas/reconciliar.js';
 import { darBaixa } from './rotas/baixa.js';
 import { agruparPorRegiao, type BaixaPedida } from '@rota/shared';
 import { FORMATO_ROTA_ID } from './rotas/comum.js';
@@ -86,7 +87,9 @@ export async function criarApp({
     // `parts` TAMBÉM, e maior que files: o default do plugin é 1000 partes e
     // ele conta arquivos + campos — sem isto, um ciclo de 2046 arquivos parava
     // em 1000 mesmo com `files` folgado (pego por teste, não por sorte).
-    limits: { fileSize: 5 * 1024 * 1024, files: 4000, parts: 4200 },
+    // Campos de texto não existem neste upload: sem teto, 300 campos de 1 MB
+    // ficavam em memória (+477 MB medidos) antes de qualquer validação.
+    limits: { fileSize: 5 * 1024 * 1024, files: 4000, parts: 4200, fieldSize: 64 * 1024, fields: 20 },
   });
 
   // Autenticação (seção 13): verifica o ID token do Firebase. Deny-by-default
@@ -132,11 +135,21 @@ export async function criarApp({
     // solta o que tiver. Os XMLs seguem em streaming; a planilha e bufferizada
     // (e UM arquivo de poucos MB) e processada depois que o stream termina.
     const planilhas: Array<{ nome: string; conteudo: Buffer }> = [];
+    // As planilhas ficam em memória até o fim do stream (os XMLs não): sem
+    // teto, 80 partes .xlsx de 5 MB subiam +428 MB na instância de 512 MB.
+    // Uma planilha real do ciclo inteiro tem ~1 MB.
+    const TETO_PLANILHAS = 20 * 1024 * 1024;
+    let bytesDePlanilha = 0;
     async function* lerArquivos(): AsyncIterable<ArquivoXml> {
       try {
         for await (const parte of req.files()) {
           const buffer = await parte.toBuffer();
           if (parte.filename.toLowerCase().endsWith('.xlsx')) {
+            bytesDePlanilha += buffer.length;
+            if (bytesDePlanilha > TETO_PLANILHAS) {
+              erroDeStream = 'planilhas somando mais de 20 MB numa remessa — envie uma de cada vez';
+              return;
+            }
             planilhas.push({ nome: parte.filename, conteudo: buffer });
             continue;
           }
@@ -172,13 +185,26 @@ export async function criarApp({
   // ciclo, fazer isso dentro da importação estourava o tempo da requisição (o
   // navegador reportava como erro de CORS). O painel chama em lotes e mostra
   // progresso; `restantes` diz quando parar.
+  // Quantos clientes esperam a busca — para o painel mostrar o botão de
+  // localizar com o tamanho da fila sem precisar reimportar nada. Não busca.
+  app.get('/api/geocodificacoes', { config: { papeis: ESCRITORIO } }, async () => ({
+    restantes: geocodificador ? (await repo.clientesComEntregaPendente()).size : 0,
+  }));
+
+  // Um lote de cada vez, para TODOS: dois laços em paralelo (duas abas, dois
+  // operadores) pegavam a mesma fila e pagavam a busca do mesmo endereço duas
+  // vezes — 800 chamadas para 400 endereços, medido. Em fila, o segundo lote
+  // já encontra com ponto o que o primeiro achou.
+  let filaDeLocalizacao: Promise<unknown> = Promise.resolve();
   app.post('/api/geocodificacoes', { config: { papeis: ESCRITORIO } }, async (req) => {
     // `pular` acumula as FALHAS das chamadas anteriores: endereço que a Google
     // não localiza continua sem coordenada e voltaria à frente da fila. Sem
     // saltar, o painel repetiria o mesmo lote para sempre — pagando por ele.
     const corpo = (req.body ?? {}) as { pular?: number };
-    const pular = Number.isFinite(corpo.pular) ? Number(corpo.pular) : 0;
-    return localizarEnderecos(repo, geocodificador, { pular });
+    const pular = Number.isFinite(corpo.pular) ? Math.max(0, Number(corpo.pular)) : 0;
+    const vez = filaDeLocalizacao.then(() => localizarEnderecos(repo, geocodificador, { pular }));
+    filaDeLocalizacao = vez.catch(() => undefined);
+    return vez;
   });
 
   app.get('/api/pedidos', { config: { papeis: ESCRITORIO } }, async () => repo.listarPedidos());
@@ -343,7 +369,22 @@ export async function criarApp({
    * parada e a posição), sem o traçado, que é o campo pesado e não muda nunca.
    */
   app.get('/api/acompanhamento', { config: { papeis: ESCRITORIO } }, async () => {
-    const abertas = await repo.rotasAbertas();
+    let abertas = await repo.rotasAbertas();
+    // Confirmação do app recusada em bloco (ver rotas/reconciliar.ts): mais
+    // registros de entrega do que paradas resolvidas é o sinal. A contagem é
+    // agregação (barata); só a rota com sinal é relida e corrigida.
+    const comFalta = (
+      await Promise.all(
+        abertas.map(async (r) => {
+          const resolvidas = r.paradas.filter((p) => p.status === 'entregue' || p.status === 'insucesso').length;
+          return (await repo.contarEntregasDaRota(r.id)) > resolvidas ? r.id : null;
+        }),
+      )
+    ).filter((id): id is string => id !== null);
+    if (comFalta.length > 0) {
+      for (const id of comFalta) await reconciliarComEntregas(repo, id);
+      abertas = await repo.rotasAbertas();
+    }
     const emExecucao = abertas.filter((r) => r.status === 'em_execucao').map((r) => r.id);
     return {
       rotas: abertas.map((r) => ({
@@ -406,6 +447,20 @@ export async function criarApp({
   // (o app usa como visão; a ordem publicada não muda — ver ordem-sugerida.ts).
   // Qualquer papel conhecido: quem chama é o motorista, e o handler confere que
   // a rota é dele.
+  // O app chama quando uma confirmação feita offline é recusada ao voltar a
+  // rede: o registro de entrega foi aceito, e daqui ele volta para a rota.
+  app.post('/api/rotas/:rotaId/reconciliar', { config: { papeis: TODOS } }, async (req, reply) => {
+    const { rotaId } = req.params as { rotaId: string };
+    if (req.usuario?.papel === 'motorista') {
+      const rota = FORMATO_ROTA_ID.test(rotaId) ? await repo.obterRota(rotaId) : null;
+      if (!rota) return reply.code(404).send({ erro: 'Rota não encontrada' });
+      if (rota.motoristaId !== req.usuario.uid) return reply.code(403).send({ erro: 'Rota de outro motorista' });
+    }
+    const r = await reconciliarComEntregas(repo, rotaId);
+    if (!r.ok) return reply.code(r.status).send({ erro: r.erro });
+    return { aplicadas: r.aplicadas };
+  });
+
   app.post('/api/rotas/:rotaId/ordem-sugerida', { config: { papeis: TODOS } }, async (req, reply) => {
     if (!osrm) {
       return reply.code(503).send({ erro: 'Roteirizador indisponível (OSRM_URL não configurada)' });
@@ -538,6 +593,22 @@ export async function criarApp({
         .send({ erro: resultado.erro, pendentes: resultado.pendentes });
     }
     return resultado.previa;
+  });
+
+  /**
+   * 500 sem detalhe interno: o tratador padrão do Fastify devolvia o `message`
+   * do erro, que no Firestore traz o caminho do documento. O detalhe vai para
+   * o log; quem chamou recebe só que deu errado. 4xx (validação do próprio
+   * Fastify, corpo malformado) seguem com a mensagem, que é útil e não vaza.
+   */
+  app.setErrorHandler((erro: { statusCode?: number; message?: string }, req, reply) => {
+    const codigo = erro.statusCode;
+    const status = codigo && codigo >= 400 && codigo < 500 ? codigo : 500;
+    if (status >= 500) {
+      req.log.error(erro);
+      return reply.code(500).send({ erro: 'Erro interno no servidor — tente de novo. Se repetir, avise o suporte.' });
+    }
+    return reply.code(status).send({ erro: erro.message ?? 'Requisição inválida' });
   });
 
   return app;

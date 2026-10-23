@@ -118,11 +118,33 @@ function desenharItem(doc: JsPDF, item: ItemRoteiro, linhas: Linha[], y: number)
   return fim;
 }
 
+/**
+ * A biblioteca desce sob demanda (não pesa em quem só importa notas), mas UMA
+ * vez, cedo — a tela de Rotas chama isto ao abrir. O nome do arquivo dela muda
+ * a cada build: pedida só no clique, num painel aberto desde antes de um
+ * deploy, o arquivo antigo já não existia no servidor, e o "Publicar e baixar
+ * PDF" falhava depois de publicar.
+ */
+let carregamento: Promise<typeof import('jspdf')> | null = null;
+function bibliotecaPdf(): Promise<typeof import('jspdf')> {
+  carregamento ??= import('jspdf').catch((e) => {
+    carregamento = null;
+    throw new Error(
+      'O painel foi atualizado enquanto estava aberto e não achou a parte que gera o PDF. ' +
+        'Recarregue a página (a rota já está salva) e baixe o PDF pelo Acompanhamento do dia.',
+      { cause: e },
+    );
+  });
+  return carregamento;
+}
+
+export function preCarregarPdf(): void {
+  void bibliotecaPdf().catch(() => undefined);
+}
+
 /** Monta o documento. Separado de `baixar` para poder ser gerado fora do navegador. */
 export async function gerarPdfRoteiro(roteiro: Roteiro): Promise<JsPDF> {
-  // Import dinâmico: a biblioteca só desce quando alguém pede um PDF, e não
-  // pesa no carregamento do painel para quem só importa notas.
-  const { jsPDF } = await import('jspdf');
+  const { jsPDF } = await bibliotecaPdf();
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   let y = TOPO;
 
@@ -170,7 +192,9 @@ export async function gerarPdfRoteiro(roteiro: Roteiro): Promise<JsPDF> {
   itens(roteiro.paradas);
 
   if (roteiro.excecoes.length > 0) {
-    caber(30);
+    // O cabeçalho (~23 mm) e a PRIMEIRA exceção juntos — `caber(30)` deixava o
+    // título órfão no pé da página e a E1 na folha seguinte.
+    caber(25 + alturaDoItem(linhasDoItem(doc, roteiro.excecoes[0]!)));
     y += 4;
     bloco(`EXCEÇÕES — sem ponto no mapa (${roteiro.excecoes.length})`, 12, 'bold');
     doc.setTextColor(90);

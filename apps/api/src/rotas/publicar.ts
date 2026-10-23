@@ -176,9 +176,13 @@ export async function publicarRota(
   }
 
   let etaAcumuladoSeg = 0;
+  let kmAcumulado = 0;
   const paradas: ParadaRota[] = candidatas.map((c, i) => {
-    const perna = tracado.pernas[i] ?? { distanciaKm: 0, duracaoSeg: 0 };
+    // Resposta do roteirizador sem os trechos não pode virar 500 com a rota
+    // pela metade: sem perna, a parada sai com zero e o total vale.
+    const perna = (tracado.pernas ?? [])[i] ?? { distanciaKm: 0, duracaoSeg: 0 };
     etaAcumuladoSeg += perna.duracaoSeg;
+    kmAcumulado += perna.distanciaKm;
     return {
       pedidoId: c.pedidoId,
       numero: i + 1,
@@ -198,6 +202,7 @@ export async function publicarRota(
       // ultrapassa a duração total da rota (que também é arredondada do total cru).
       etaMin: Math.round(etaAcumuladoSeg / 60),
       distanciaKm: perna.distanciaKm,
+      kmDoCd: Math.round(kmAcumulado * 10) / 10,
       status: 'em_rota',
       precisaMapear: c.precisaMapear,
     };

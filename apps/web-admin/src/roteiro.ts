@@ -135,7 +135,7 @@ export function montarRoteiro(
   const paradas: ItemRoteiro[] = rota.paradas.map((p, i) => {
     // Distância ACUMULADA: `distanciaKm` da parada é a perna, e o motorista
     // quer saber quanto já andou desde o CD — não o trecho isolado.
-    const km = rota.paradas.slice(0, i + 1).reduce((t, q) => t + q.distanciaKm, 0);
+    const km = p.kmDoCd ?? rota.paradas.slice(0, i + 1).reduce((t, q) => t + q.distanciaKm, 0);
     return {
       ...comum(p, clientes),
       marca: String(p.numero ?? i + 1).padStart(2, '0'),

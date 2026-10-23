@@ -25,12 +25,23 @@ const LADO_MAXIMO = 1280;
  * disparar o upload no meio de uma escrita ainda aberta (o OPFS só troca o
  * conteúdo no close) e subir um arquivo vazio — apagando a foto real da fila.
  */
-let cadeia: Promise<unknown> = Promise.resolve();
-function serializar<T>(operacao: () => Promise<T>): Promise<T> {
-  const proxima = cadeia.then(operacao, operacao);
-  cadeia = proxima.catch(() => {});
-  return proxima;
+/**
+ * DUAS filas: gravar no aparelho (rápido) e subir para o Storage (lento — o
+ * `uploadBytes` re-tenta por até 10 min com sinal "de mentira"). Numa fila só,
+ * a foto do comprovante esperava os uploads do dossiê terminarem, só na
+ * memória: o Android matava o PWA ao abrir o WhatsApp do recibo e a foto se
+ * perdia, com o registro de entrega apontando para um arquivo que não existiria.
+ */
+function fila() {
+  let cadeia: Promise<unknown> = Promise.resolve();
+  return function serializar<T>(operacao: () => Promise<T>): Promise<T> {
+    const proxima = cadeia.then(operacao, operacao);
+    cadeia = proxima.catch(() => {});
+    return proxima;
+  };
 }
+const gravarNoAparelho = fila();
+const serializar = fila();
 
 /** Reduz a foto da câmera (vários MB) para o tamanho de referência (~100 KB). */
 export async function redimensionarFoto(arquivo: Blob): Promise<Blob> {
@@ -51,7 +62,7 @@ export async function redimensionarFoto(arquivo: Blob): Promise<Blob> {
 }
 
 export function enfileirarFoto(clienteId: string, foto: Blob): Promise<void> {
-  return serializar(async () => {
+  return gravarNoAparelho(async () => {
     const pasta = await pastaFila();
     const arquivo = await pasta.getFileHandle(`${clienteId}.jpg`, { create: true });
     const escrita = await arquivo.createWritable();
@@ -87,7 +98,10 @@ export function processarFilaFotos(): Promise<void> {
         void updateDoc(doc(db, 'clientes', clienteId), { fotoReferenciaPath: caminho }).catch(
           (erro) => console.error('Falha ao apontar a foto no cliente', erro),
         );
-        await pasta.removeEntry(nome);
+        // Com as filas separadas, uma foto NOVA do mesmo cliente pode ter sido
+        // gravada durante o envio da anterior: só apaga se é a mesma que subiu.
+        const agora = await (await pasta.getFileHandle(nome)).getFile();
+        if (agora.lastModified === foto.lastModified) await pasta.removeEntry(nome);
       } catch {
         // Sem rede de verdade, Storage ainda não provisionado, etc.:
         // a foto continua na fila para a próxima tentativa.
@@ -98,7 +112,7 @@ export function processarFilaFotos(): Promise<void> {
 
 /** Enfileira o comprovante de UMA entrega. Nome do arquivo = entregaId. */
 export function enfileirarComprovante(entregaId: string, foto: Blob): Promise<void> {
-  return serializar(async () => {
+  return gravarNoAparelho(async () => {
     const dir = await pasta(PASTA_COMPROVANTES);
     const arquivo = await dir.getFileHandle(`${entregaId}.jpg`, { create: true });
     const escrita = await arquivo.createWritable();

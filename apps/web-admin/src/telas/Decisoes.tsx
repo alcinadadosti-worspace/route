@@ -29,6 +29,10 @@ export function Decisoes() {
   const [pedidos, setPedidos] = useState<Array<{ id: string } & Pedido>>([]);
   const [clientes, setClientes] = useState<Record<string, Cliente>>({});
   const [erro, setErro] = useState<string | null>(null);
+  // "Nenhuma decisão pendente" só depois de ler — antes aparecia durante o
+  // carregamento, e quem abria a aba com a API acordando ia embora achando
+  // que não havia nada.
+  const [carregando, setCarregando] = useState(true);
 
   function carregar() {
     Promise.all([listarPedidos(), listarClientes()])
@@ -37,7 +41,8 @@ export function Decisoes() {
         setClientes(Object.fromEntries(cs.map((c) => [c.id, c])));
         setErro(null);
       })
-      .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao carregar'));
+      .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao carregar'))
+      .finally(() => setCarregando(false));
   }
   useEffect(carregar, []);
 
@@ -79,7 +84,8 @@ export function Decisoes() {
       </p>
 
       {erro && <div className="erro">{erro} — a API está no ar?</div>}
-      {!erro && aguardando.length === 0 && (
+      {carregando && <div className="vazio">Carregando…</div>}
+      {!carregando && !erro && aguardando.length === 0 && (
         <div className="vazio">Nenhuma decisão pendente. 👍</div>
       )}
 
@@ -477,7 +483,7 @@ function CartaoDecisao({
             <div className="decisao-aviso">
               {coordEntrega
                 ? 'arraste o pin laranja (B) no mapa para ajustar'
-                : 'sem coordenada — arraste o pin B no mapa, ou irá para mapeamento'}
+                : 'sem coordenada — arraste o pin B no mapa até a casa para poder escolher este endereço'}
             </div>
           </div>
         </label>

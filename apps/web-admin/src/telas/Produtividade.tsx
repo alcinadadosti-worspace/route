@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type {
   ProdutividadeMotorista,
   ProdutividadeRota,
@@ -54,38 +54,55 @@ const ROTULO_MOTIVO: Record<string, string> = {
   ausente: 'ausente',
   nao_localizado: 'não localizado',
   recusa: 'recusa',
+  nao_entregue: 'não entregue (baixa no painel)',
 };
 
 export function Produtividade() {
+  // O que está nos campos é RASCUNHO; o relatório é do período APLICADO. Antes
+  // cada tecla do campo de data buscava de novo: digitar "2025" no ano passava
+  // por 0002, 0020 e 0202 — quatro leituras das coleções inteiras (~8 mil
+  // documentos da cota diária), e a resposta de "0202" podia chegar por último
+  // e ficar na tela com "2025" escrito no campo.
   const [desde, setDesde] = useState(diaRelativo(30));
   const [ate, setAte] = useState(diaRelativo(0));
+  const [periodo, setPeriodo] = useState({ desde, ate });
   const [relatorio, setRelatorio] = useState<RelatorioProdutividade | null>(null);
   const [nomes, setNomes] = useState<Record<string, string>>({});
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
+  /** Só a resposta do pedido mais novo vale. */
+  const ultimo = useRef(0);
 
-  const carregar = useCallback(() => {
+  const carregar = useCallback((p: { desde: string; ate: string }) => {
+    const vez = ++ultimo.current;
     setCarregando(true);
     setErro(null);
-    Promise.all([obterProdutividade(desde, ate), listarUsuarios()])
+    Promise.all([obterProdutividade(p.desde, p.ate), listarUsuarios()])
       .then(([r, us]) => {
+        if (vez !== ultimo.current) return;
         setRelatorio(r);
         setNomes(Object.fromEntries(us.map((u: { id: string } & Usuario) => [u.id, u.nome])));
       })
-      .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao carregar'))
-      .finally(() => setCarregando(false));
-  }, [desde, ate]);
+      .catch((e) => vez === ultimo.current && setErro(e instanceof Error ? e.message : 'Falha ao carregar'))
+      .finally(() => vez === ultimo.current && setCarregando(false));
+  }, []);
 
   useEffect(() => {
-    carregar();
-  }, [carregar]);
+    carregar(periodo);
+  }, [carregar, periodo]);
+
+  const mudouPeriodo = desde !== periodo.desde || ate !== periodo.ate;
 
   return (
     <section className="cartao">
       <div className="cabecalho-secao">
         <h2>Produtividade</h2>
-        <button onClick={carregar} disabled={carregando}>
-          {carregando ? 'CARREGANDO…' : 'Atualizar'}
+        <button
+          className={mudouPeriodo ? 'primaria' : undefined}
+          onClick={() => (mudouPeriodo ? setPeriodo({ desde, ate }) : carregar(periodo))}
+          disabled={carregando}
+        >
+          {carregando ? 'CARREGANDO…' : mudouPeriodo ? 'VER ESTE PERÍODO' : 'Atualizar'}
         </button>
       </div>
 

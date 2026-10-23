@@ -13,6 +13,14 @@ import { origemDoPepper } from './pepper.js';
  */
 const porta = Number(process.env.PORT ?? 3000);
 
+// Uma promessa rejeitada que ninguém esperou ENCERRA o Node — numa instância
+// só, isso é a API fora do ar para todos, motorista na estrada incluído, até o
+// Render subir de novo (~1 min). Registra e segue: o erro já é um bug a
+// corrigir, não um motivo para derrubar o resto.
+process.on('unhandledRejection', (erro) => {
+  console.error('Promessa rejeitada sem tratamento (a API segue no ar):', erro);
+});
+
 const firestore = criarRepositorioFirestore();
 const geocodificador = criarGeocodificadorGoogle();
 const osrm = criarClienteOsrm();

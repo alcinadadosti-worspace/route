@@ -1224,3 +1224,28 @@
   width: 100%;
   min-height: var(--alvo-toque);
 }
+
+/* Exceções da rota (sem ponto): lista simples, só leitura — a baixa é no escritório. */
+.excecoes-rota {
+  border: 1px dashed var(--borda, #555);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 12px 0;
+}
+.excecoes-rota h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+.excecoes-rota p {
+  margin: 0 0 8px;
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+.excecoes-rota ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.excecoes-rota li {
+  padding: 6px 0;
+  min-height: 24px;
+}

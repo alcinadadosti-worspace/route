@@ -55,3 +55,8 @@ export function separarRotas<T extends { id: string } & Rota>(
 export function paradasPorResolver(rota: Rota): number {
   return rota.paradas.filter((p) => p.status !== 'entregue' && p.status !== 'insucesso').length;
 }
+
+/** Exceções (sem ponto) ainda sem baixa — o app não as confirma; o escritório sim. */
+export function excecoesPorResolver(rota: Rota): number {
+  return (rota.excecoes ?? []).filter((e) => e.status !== 'entregue' && e.status !== 'insucesso').length;
+}

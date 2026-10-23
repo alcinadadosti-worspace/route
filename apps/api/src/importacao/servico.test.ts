@@ -283,11 +283,13 @@ test('mudança de endereço segura o pedido em decisão e NÃO descarta o pin', 
 });
 
 /** Mesma nota com outra chave de acesso: segunda nota do MESMO cliente. */
+/** Outra nota = outro pedido: nas 5471 notas reais, nenhum nº de pedido se
+ * repete entre chaves diferentes — e a importação deduplica por ele (é o id
+ * do pedido que veio pela planilha). */
 function xmlOutraChave(): string {
-  return xml.replaceAll(
-    '27260314750618000155550010002761651000070282',
-    '27260314750618000155550010002761661000070283',
-  );
+  return xml
+    .replaceAll('27260314750618000155550010002761651000070282', '27260314750618000155550010002761661000070283')
+    .replace('PEDIDO: 499450697', 'PEDIDO: 499450698');
 }
 
 test('segunda nota do mesmo cliente na mesma remessa também é segurada', async () => {
@@ -756,7 +758,9 @@ test('escolher a ENTREGA encerra a decisão mesmo com o cadastro mudado', async 
 /** Chave de acesso distinta por índice — cada nota é um pedido diferente. */
 function xmlComChave(i: number): string {
   const nova = '272603147506180001555500100027616' + String(51000070282 + i).padStart(11, '0');
-  return xml.replaceAll('27260314750618000155550010002761651000070282', nova);
+  return xml
+    .replaceAll('27260314750618000155550010002761651000070282', nova)
+    .replace('PEDIDO: 499450697', `PEDIDO: ${499450697 + i}`);
 }
 
 test('remessa concorrente: notas do mesmo cliente não duplicam cadastro nem geocodificação', () =>
@@ -878,7 +882,10 @@ test('retirada em volume gera UM alerta-resumo, não um por nota', async () => {
   const CHAVE = '27260314750618000155550010002761651000070282';
   const notas = ['11', '22', '33'].map((fim, i) => ({
     nome: `n${i}.xml`,
-    conteudo: comRetirada(xml).replaceAll(CHAVE, CHAVE.slice(0, 42) + fim),
+    // Nota diferente = pedido diferente (o nº do pedido também deduplica).
+    conteudo: comRetirada(xml)
+      .replaceAll(CHAVE, CHAVE.slice(0, 42) + fim)
+      .replace('PEDIDO: 499450697', `PEDIDO: 4994506${fim}`),
   }));
   const relatorio = await importarXmls(notas, repo);
 

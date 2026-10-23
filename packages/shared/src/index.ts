@@ -18,3 +18,4 @@ export * from './datahora.js';
 export * from './baixa.js';
 export * from './excecoes.js';
 export * from './liberacao.js';
+export * from './pontoRepetido.js';

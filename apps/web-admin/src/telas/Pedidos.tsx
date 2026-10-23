@@ -3,6 +3,7 @@ import { formatarCarga, quantidadeDeItens, type Cliente, type Pedido } from '@ro
 import { apagarPedido, listarClientes, listarPedidos } from '../api';
 import { FotoReferencia } from '../FotoReferencia';
 import { CampoBusca } from '../CampoBusca';
+import { casaBusca } from '../buscaPedido';
 
 /**
  * Só o que ainda não foi executado em campo pode ser apagado (a API confere
@@ -37,6 +38,7 @@ export function Pedidos() {
   const [filtro, setFiltro] = useState('');
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
     // O dossiê do local mora no CLIENTE, não no pedido — é o que faz foto e
@@ -47,7 +49,8 @@ export function Pedidos() {
         setPedidos(ps);
         setClientes(Object.fromEntries(cs.map((c) => [c.id, c])));
       })
-      .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao listar'));
+      .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao listar'))
+      .finally(() => setCarregando(false));
   }, []);
 
   async function apagar(p: { id: string } & Pedido) {
@@ -56,8 +59,8 @@ export function Pedidos() {
     // que a parada sai do celular do motorista — é a consequência que importa.
     const aviso =
       p.status === 'em_rota'
-        ? `Apagar a nota ${p.numeroNota}/${p.serie}?\n\nEla está numa rota publicada: a parada sai da rota e desaparece do app do motorista. O traçado e a quilometragem da rota continuam os antigos.`
-        : `Apagar a nota ${p.numeroNota}/${p.serie}? A importação dela é desfeita.`;
+        ? `Apagar a nota ${p.numeroNota}/${p.serie}?\n\nEla está numa rota publicada: a parada sai da rota e desaparece do app do motorista. Se o PDF da rota já foi impresso, avise o motorista para NÃO entregar — a folha dele ainda tem a parada.`
+        : `Apagar a nota ${p.numeroNota}/${p.serie}? A importação dela é desfeita — mas, se ela vier de novo numa planilha importada (as do ERP se repetem), ela volta.`;
     if (!window.confirm(aviso)) return;
     setErro(null);
     try {
@@ -69,13 +72,12 @@ export function Pedidos() {
     }
   }
 
+  // A busca das outras listas (aceita a nota como a coluna mostra, "302856/1",
+  // e o pedido colado com pontos) — mais o lote, que só esta aba mostra.
   const q = filtro.trim();
   const filtrados = q
     ? pedidos.filter(
-        (p) =>
-          String(p.numeroNota).includes(q) ||
-          (p.numeroPedido ?? '').includes(q) ||
-          (p.lote ?? '').includes(q),
+        (p) => casaBusca(p, clientes[p.clienteId]?.nome ?? '', q) || (p.lote ?? '').includes(q),
       )
     : pedidos;
 
@@ -87,12 +89,13 @@ export function Pedidos() {
           valor={filtro}
           aoMudar={setFiltro}
           rotulo="Filtrar pedidos"
-          placeholder="Nº da nota, pedido ou lote…"
+          placeholder="Nº da nota, pedido, lote ou cliente…"
         />
       )}
       {erro && <div className="erro">{erro}</div>}
       {aviso && <div className="alerta">{aviso}</div>}
-      {!erro && pedidos.length === 0 && (
+      {carregando && <div className="vazio">Carregando os pedidos…</div>}
+      {!carregando && !erro && pedidos.length === 0 && (
         <div className="vazio">Nenhum pedido importado ainda. Comece pela aba Importação.</div>
       )}
       {pedidos.length > 0 && filtrados.length === 0 && (

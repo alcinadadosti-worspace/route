@@ -54,6 +54,16 @@ export function salvarTrilhaBruta(dados: {
  * OSRM — por isso é um botão, não algo automático. A resposta é só uma
  * sugestão de exibição: nada na rota é alterado.
  */
+/** Pede ao servidor para aplicar à rota os registros de entrega que o lote do
+ * app não conseguiu gravar (ver `reconciliar.ts` na API). */
+export async function reconciliarRota(rotaId: string): Promise<number> {
+  const dados = await postApi<{ aplicadas?: number }>(
+    `/api/rotas/${encodeURIComponent(rotaId)}/reconciliar`,
+    {},
+  );
+  return dados.aplicadas ?? 0;
+}
+
 export async function ordemSugerida(rotaId: string, origem: GeoPonto): Promise<string[]> {
   const dados = await postApi<{ ordem?: string[] }>(
     `/api/rotas/${encodeURIComponent(rotaId)}/ordem-sugerida`,

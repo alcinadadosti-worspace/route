@@ -28,8 +28,13 @@ export function ehEnderecoRural(endereco: EnderecoFiscal): boolean {
  * para a decisão do Admin Estoque em vez de roteirizar no palpite (seção 8.4).
  */
 export function enderecosDivergem(a: EnderecoFiscal, b: EnderecoFiscal): boolean {
-  const campos = ['logradouro', 'numero', 'bairro', 'municipio', 'uf'] as const;
+  const campos = ['logradouro', 'bairro', 'municipio', 'uf'] as const;
   if (campos.some((c) => normalizar(a[c] ?? '') !== normalizar(b[c] ?? ''))) return true;
+  // O NÚMERO DA CASA, não o texto: na planilha o "número" é o complemento
+  // inteiro ("149 CASA", "149 PRÓXIMO AO MERCADINHO"), e o mesmo endereço
+  // escrito de dois jeitos abria uma revisão falsa que prendia o pedido na aba
+  // Decisões. "S/N", "SN" e "S\N" também são o mesmo (sem número).
+  if (numeroDaCasa(a.numero) !== numeroDaCasa(b.numero)) return true;
 
   // CEP só desempata quando os DOIS lados têm: um <entrega> que repete o endereço
   // mas omite o CEP (opcional) não deve virar divergência falsa; dois CEPs
@@ -37,6 +42,19 @@ export function enderecosDivergem(a: EnderecoFiscal, b: EnderecoFiscal): boolean
   const cepA = (a.cep ?? '').replace(/\D/g, '');
   const cepB = (b.cep ?? '').replace(/\D/g, '');
   return cepA !== '' && cepB !== '' && cepA !== cepB;
+}
+
+/** Primeiro número do campo, sem zeros à esquerda; '' quando não há número. */
+export function numeroDaCasa(numero: string | null | undefined): string {
+  const m = /\d+/.exec(numero ?? '');
+  return m ? m[0].replace(/^0+(?=\d)/, '') : '';
+}
+
+/** O endereço como a busca o vê — muda a chave, muda a busca. */
+export function chaveDeEndereco(e: EnderecoFiscal): string {
+  return [e.logradouro, e.numero, e.bairro, e.municipio, e.uf, (e.cep ?? '').replace(/\D/g, '')]
+    .map((c) => normalizar(c ?? ''))
+    .join('|');
 }
 
 /**

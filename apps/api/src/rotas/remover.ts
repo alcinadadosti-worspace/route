@@ -1,4 +1,4 @@
-import { statusForaDeRota, type Pedido, type Rota } from '@rota/shared';
+import { voltaParaAFila, type Pedido, type Rota } from '@rota/shared';
 import { FORMATO_ROTA_ID } from './comum.js';
 import type { Repositorio } from '../db/repositorio.js';
 
@@ -18,11 +18,13 @@ export type ResultadoRemocao =
   | { ok: true; rotaApagada?: string }
   | { ok: false; status: number; erro: string };
 
-/** Ponto do pedido fora de rota: o do cliente OU o override de entrega (8.4) —
- * a regra pura mora no shared (`statusForaDeRota`), aqui só se busca o cliente. */
-async function statusDeVolta(repo: Repositorio, pedido: Pedido): Promise<Pedido['status']> {
+/** Para onde volta o pedido que sai da rota — a regra pura mora no shared
+ * (`voltaParaAFila`: ponto do cliente ou override de entrega, e a revisão de
+ * endereço aberta); aqui só se busca o cliente. */
+async function voltaDoPedido(repo: Repositorio, pedido: Pedido): Promise<Partial<Pedido>> {
   const cliente = await repo.obterCliente(pedido.clienteId);
-  return statusForaDeRota(pedido, Boolean(cliente?.coordenada));
+  const volta = voltaParaAFila(pedido, cliente);
+  return { status: volta.status, ...(volta.enderecoAnterior ? { enderecoAnterior: volta.enderecoAnterior } : {}) };
 }
 
 /** Pedidos de uma rota que deixou de existir voltam ao estado de antes da
@@ -36,7 +38,7 @@ async function devolverAFila(repo: Repositorio, rotaId: string, pedidoIds: strin
   for (const id of pedidoIds) {
     const pedido = await repo.obterPedido(id);
     if (!pedido || pedido.status !== 'em_rota' || pedido.rotaId !== rotaId) continue;
-    await repo.salvarPedido(id, { ...pedido, status: await statusDeVolta(repo, pedido), rotaId: null });
+    await repo.salvarPedido(id, { ...pedido, ...(await voltaDoPedido(repo, pedido)), rotaId: null });
   }
 }
 
@@ -63,7 +65,11 @@ const executada = (p: { status: Pedido['status'] }) => p.status === 'entregue' |
  * isso deixavam a baixa recém-gravada ser sobrescrita pela rota lida antes
  * dela (parada de volta a "em rota" com o pedido já entregue).
  */
-export async function removerPedido(repo: Repositorio, pedidoId: string): Promise<ResultadoRemocao> {
+export async function removerPedido(
+  repo: Repositorio,
+  pedidoId: string,
+  registro: { motivo: string } = { motivo: 'apagado no painel' },
+): Promise<ResultadoRemocao> {
   const pedido = await repo.obterPedido(pedidoId);
   if (!pedido) return { ok: false, status: 404, erro: 'Pedido não encontrado' };
   if (executada(pedido)) return historico(pedido);
@@ -84,6 +90,8 @@ export async function removerPedido(repo: Repositorio, pedidoId: string): Promis
         return { gravar: true, rota: null, pedidos: {}, apagarPedidos: [pedidoId], resultado: { ok: true, rotaApagada: rotaId } };
       }
       const restantes = [...paradas, ...excecoes];
+      const saiu = [...rota.paradas, ...(rota.excecoes ?? [])].find((p) => p.pedidoId === pedidoId);
+      const ehExcecao = (rota.excecoes ?? []).some((e) => e.pedidoId === pedidoId);
       // O que sobrou já tem resultado: a rota acabou. Sem isto ela ficava "em
       // execução" para sempre, sem nada a baixar nem como desfazer.
       const acabou = rota.status !== 'rascunho' && restantes.every(executada);
@@ -91,6 +99,23 @@ export async function removerPedido(repo: Repositorio, pedidoId: string): Promis
         ...rota,
         paradas,
         ...(rota.excecoes ? { excecoes } : {}),
+        // Fica escrito NA ROTA quem saiu e por quê: o PDF impresso ainda tem a
+        // parada, e o aviso da importação some na próxima.
+        ...(saiu
+          ? {
+              removidos: [
+                ...(rota.removidos ?? []),
+                {
+                  pedidoId,
+                  ...(saiu.numero !== undefined ? { numero: `${ehExcecao ? 'E' : ''}${saiu.numero}` } : {}),
+                  nome: saiu.nome,
+                  ...(saiu.numeroNota !== undefined ? { numeroNota: saiu.numeroNota } : {}),
+                  motivo: registro.motivo,
+                  em: new Date().toISOString(),
+                },
+              ],
+            }
+          : {}),
         ...(acabou ? { status: 'concluida' as const, concluidaEm: rota.concluidaEm ?? new Date().toISOString() } : {}),
       };
       return { gravar: true, rota: nova, pedidos: {}, apagarPedidos: [pedidoId], resultado: { ok: true } };

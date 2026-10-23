@@ -22,6 +22,28 @@ import { enfileirarComprovante } from './servicoFotos';
  * primeira. Só o registro de entrega, que é um doc próprio e imutável,
  * espera a posição.
  */
+/**
+ * Escrita recusada pelo servidor ao voltar a rede. O caso real: o escritório
+ * tirou um pedido da rota (cancelado no ERP) enquanto o motorista estava sem
+ * sinal, e as rules recusam o array de paradas com o tamanho antigo — a
+ * confirmação voltava para "a entregar" com um `console.error` e mais nada.
+ * Quem ouve (o App) avisa o motorista e pede ao servidor para conferir pelos
+ * registros de entrega, que foram aceitos.
+ */
+export interface FalhaDeSincronizacao {
+  rotaId: string;
+  oQue: string;
+}
+const ouvintesDeFalha = new Set<(f: FalhaDeSincronizacao) => void>();
+export function aoFalharSincronizacao(ouvinte: (f: FalhaDeSincronizacao) => void): () => void {
+  ouvintesDeFalha.add(ouvinte);
+  return () => ouvintesDeFalha.delete(ouvinte);
+}
+function falhou(rotaId: string, oQue: string, erro: unknown): void {
+  console.error(`Falha na sincronização (${oQue})`, erro);
+  for (const ouvinte of ouvintesDeFalha) ouvinte({ rotaId, oQue });
+}
+
 export function registrarResultado(
   rota: { id: string } & Rota,
   parada: ParadaRota,
@@ -35,6 +57,7 @@ export function registrarResultado(
     rota.paradas,
     parada.pedidoId,
     statusPedido,
+    rota.excecoes ?? [],
   );
   const nomeRecebedor = (comprovante.recebidoPor ?? '').trim() || null;
   // O nome vai TAMBÉM para a parada: o registro de entrega é a fonte de
@@ -52,7 +75,7 @@ export function registrarResultado(
     concluidaEm: statusRota === 'concluida' ? confirmadaEm : null,
   });
   batch.update(doc(db, 'pedidos', parada.pedidoId), { status: statusPedido });
-  batch.commit().catch((erro) => console.error('Falha na sincronização', erro));
+  batch.commit().catch((erro) => falhou(rota.id, 'confirmação', erro));
   navigator.vibrate?.(120);
 
   // O id sai AQUI, antes de gravar: o Firestore o gera no cliente. Isso permite
@@ -93,9 +116,7 @@ export function registrarChegada(rota: { id: string } & Rota, pedidoId: string):
   const paradas = rota.paradas.map((p) =>
     p.pedidoId === pedidoId ? { ...p, chegouEm: new Date().toISOString() } : p,
   );
-  updateDoc(doc(db, 'rotas', rota.id), { paradas }).catch((erro) =>
-    console.error('Falha ao registrar a chegada', erro),
-  );
+  updateDoc(doc(db, 'rotas', rota.id), { paradas }).catch((erro) => falhou(rota.id, 'chegada', erro));
 }
 
 /**
@@ -107,9 +128,7 @@ export function registrarRecibo(rota: { id: string } & Rota, pedidoId: string): 
   const paradas = rota.paradas.map((p) =>
     p.pedidoId === pedidoId ? { ...p, reciboEnviadoEm: new Date().toISOString() } : p,
   );
-  updateDoc(doc(db, 'rotas', rota.id), { paradas }).catch((erro) =>
-    console.error('Falha ao registrar o recibo', erro),
-  );
+  updateDoc(doc(db, 'rotas', rota.id), { paradas }).catch((erro) => falhou(rota.id, 'recibo', erro));
 }
 
 /**
@@ -124,9 +143,7 @@ export function registrarAviso(rota: { id: string } & Rota, pedidoId: string): v
   const paradas = rota.paradas.map((p) =>
     p.pedidoId === pedidoId ? { ...p, avisadoEm: new Date().toISOString() } : p,
   );
-  updateDoc(doc(db, 'rotas', rota.id), { paradas }).catch((erro) =>
-    console.error('Falha ao registrar o aviso', erro),
-  );
+  updateDoc(doc(db, 'rotas', rota.id), { paradas }).catch((erro) => falhou(rota.id, 'aviso', erro));
 }
 
 /**
@@ -166,9 +183,21 @@ export function posicaoAtual(): Promise<GeoPonto | null> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
     navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      // Leitura imprecisa é "sem posição": ela gerava o falso "você está a
+      // 1,8 km do ponto" na guarda e ia para o registro de entrega, onde o
+      // painel a mostra como prova ("ausente a 3 km da porta"). As rules só
+      // guardam lat/lng — a precisão não teria onde ficar.
+      (p) =>
+        resolve(
+          p.coords.accuracy <= PRECISAO_MAXIMA_CONFIRMACAO_M
+            ? { lat: p.coords.latitude, lng: p.coords.longitude }
+            : null,
+        ),
       () => resolve(null),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 },
     );
   });
 }
+
+/** Acima disto a leitura é de rede, não de satélite: não serve de prova. */
+export const PRECISAO_MAXIMA_CONFIRMACAO_M = 100;

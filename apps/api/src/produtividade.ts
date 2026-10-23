@@ -1,5 +1,7 @@
 import { produtosDistintos, quantidadeDeItens, temCarga } from '@rota/shared';
 import type {
+  ExcecaoRota,
+  ParadaRota,
   Cliente,
   Entrega,
   ProdutividadeMotorista,
@@ -66,16 +68,12 @@ export function calcularProdutividade(
   // A janela é pela DATA DA ROTA, que é o dia operacional — e não pela hora da
   // confirmação, que atravessaria a meia-noite numa rota que terminou tarde.
   //
-  // Rota com baixa dada no PAINEL fica de fora: saiu em PDF, sem o app, e não
-  // tem registro de entrega, hora nem GPS. Contá-la somaria paradas planejadas
-  // com zero entregues — o motorista do papel apareceria com taxa de sucesso
-  // nula num dia em que entregou tudo.
-  const rotas = dados.rotas.filter(
-    (r) =>
-      r.data >= entrada.desde &&
-      r.data <= entrada.ate &&
-      ![...r.paradas, ...(r.excecoes ?? [])].some((p) => p.baixaNoPainel),
-  );
+  // Rota em PDF (baixa dada no painel) ENTRA, com o resultado da baixa — mas
+  // sem hora nem GPS, que só o app registra, ela não alimenta ritmo, jornada
+  // nem atendimento. Antes ela era excluída inteira: como hoje TODA rota é em
+  // papel, cada rota sumia do relatório assim que recebia a baixa, e o que
+  // sobrava eram só as ainda sem baixa — "0/N executadas, 0%".
+  const rotas = dados.rotas.filter((r) => r.data >= entrada.desde && r.data <= entrada.ate);
   const rotaPorId = new Map(rotas.map((r) => [r.id, r]));
   const entregas = dados.entregas.filter((e) => rotaPorId.has(e.rotaId));
 
@@ -113,7 +111,8 @@ export function calcularProdutividade(
   for (const rota of rotas) {
     const m = de(rota.motoristaId);
     m.rotas += 1;
-    m.paradasPlanejadas += rota.paradas.length;
+    // Exceções contam: na rota rural elas são a maior parte do que saiu.
+    m.paradasPlanejadas += rota.paradas.length + (rota.excecoes?.length ?? 0);
     m.kmPlanejados = Math.round((m.kmPlanejados + rota.distanciaTotalKm) * 10) / 10;
     m.avisados += rota.paradas.filter((p) => p.avisadoEm).length;
   }
@@ -126,21 +125,32 @@ export function calcularProdutividade(
   /** Ausências por CLIENTE — o ranking é sobre quem recebe, não sobre quem entrega. */
   const ausenciasPorClienteMapa = new Map<string, { ausencias: number; avisadas: number }>();
   for (const rota of rotas) {
+    const paradaPorPedido = new Map<string, ParadaRota | ExcecaoRota>(
+      [...rota.paradas, ...(rota.excecoes ?? [])].map((p) => [p.pedidoId, p]),
+    );
+    // Só o registro de um pedido que É desta rota: as rules amarram a entrega
+    // à rota do motorista, mas não ao pedido — registros de pedido inventado
+    // inflavam "entregues" e punham uma revendedora que nunca esteve na rota
+    // no topo do ranking de ausências.
     const daRota = umaPorParada(
       dados.entregas
-        .filter((e) => e.rotaId === rota.id)
+        .filter((e) => e.rotaId === rota.id && paradaPorPedido.has(e.pedidoId))
         .sort((a, b) => a.confirmadaEm.localeCompare(b.confirmadaEm)),
+    );
+    const comRegistro = new Set(daRota.map((e) => e.pedidoId));
+    /** Resultado dado no painel (rota em papel), sem registro do app. */
+    const doPainel = [...paradaPorPedido.values()].filter(
+      (p) => p.baixaNoPainel && !comRegistro.has(p.pedidoId),
     );
 
     const m = de(rota.motoristaId);
-    const paradaPorPedido = new Map(rota.paradas.map((p) => [p.pedidoId, p]));
     /** Alguma entrega sem lista de itens (pedido da planilha): a contagem de
      * produtos distintos da rota vira null, não um subtotal com cara de total. */
     let produtosDesconhecidos = false;
     const daqui: ProdutividadeRota = {
       rotaId: rota.id,
       data: rota.data,
-      paradas: rota.paradas.length,
+      paradas: paradaPorPedido.size,
       entregues: 0,
       insucessos: 0,
       itensEntregues: 0,
@@ -152,51 +162,16 @@ export function calcularProdutividade(
     };
     // Rota publicada e ainda não executada entra no detalhe com zero: sumir da
     // lista faria parecer que o dia não existiu.
-    if (daRota.length === 0) {
+    if (daRota.length === 0 && doPainel.length === 0) {
       m.rotas_detalhe.push(daqui);
       continue;
     }
 
-    for (const entrega of daRota) {
-      const parada = paradaPorPedido.get(entrega.pedidoId);
-
-      // Atendimento: chegada gravada → confirmação, para QUALQUER resultado —
-      // num "ausente", é o tempo até desistir, que também é atendimento. O
-      // guard de negativo cobre a fila offline sincronizando fora de ordem.
-      if (parada?.chegouEm) {
-        const atendimento = diferencaEmMinutos(parada.chegouEm, entrega.confirmadaEm);
-        if (atendimento >= 0) {
-          const lista = atendimentosPorMotorista.get(rota.motoristaId) ?? [];
-          lista.push(atendimento);
-          atendimentosPorMotorista.set(rota.motoristaId, lista);
-          m.chegadasRegistradas += 1;
-        }
-      }
-
-      if (entrega.resultado !== 'entregue') {
-        m.insucessos += 1;
-        daqui.insucessos += 1;
-        m.porMotivo[entrega.resultado] = (m.porMotivo[entrega.resultado] ?? 0) + 1;
-        if (entrega.resultado === 'ausente') {
-          if (parada?.avisadoEm) m.ausenciasAvisados += 1;
-          else m.ausenciasNaoAvisados += 1;
-          const doCliente = ausenciasPorClienteMapa.get(entrega.clienteId) ?? {
-            ausencias: 0,
-            avisadas: 0,
-          };
-          doCliente.ausencias += 1;
-          if (parada?.avisadoEm) doCliente.avisadas += 1;
-          ausenciasPorClienteMapa.set(entrega.clienteId, doCliente);
-        }
-        continue;
-      }
-
-      m.entregues += 1;
-      daqui.entregues += 1;
-      if (!parada) continue;
-      // Mercadoria que saiu do caminhão. ITEM é a soma das quantidades (`qCom`),
-      // que é o que a operação chama de item; a contagem de linhas vai separada,
-      // porque é três vezes menor nas notas reais.
+    /** Mercadoria que saiu do caminhão — a mesma conta para o app e o painel. */
+    const contarCarga = (parada: ParadaRota | ExcecaoRota) => {
+      // ITEM é a soma das quantidades (`qCom`), que é o que a operação chama de
+      // item; a contagem de linhas vai separada, porque é três vezes menor nas
+      // notas reais.
       //
       // Pela regra compartilhada, e não somando `itens` na mão: pedido vindo da
       // PLANILHA do ERP não tem lista nenhuma, só a quantidade — contar linhas
@@ -217,6 +192,60 @@ export function calcularProdutividade(
         // de peso passaria por carga total do dia quando é só a parte declarada.
         daqui.entregasSemCarga += 1;
       }
+    };
+
+    for (const parada of doPainel) {
+      if (parada.status === 'entregue') {
+        m.entregues += 1;
+        daqui.entregues += 1;
+        contarCarga(parada);
+      } else if (parada.status === 'insucesso') {
+        // A baixa do painel não diz o motivo (ausente? recusa?): conta como
+        // insucesso, num motivo próprio, e fica fora do ranking de ausências.
+        m.insucessos += 1;
+        daqui.insucessos += 1;
+        m.porMotivo.nao_entregue = (m.porMotivo.nao_entregue ?? 0) + 1;
+      }
+    }
+
+    for (const entrega of daRota) {
+      const parada = paradaPorPedido.get(entrega.pedidoId);
+
+      // Atendimento: chegada gravada → confirmação, para QUALQUER resultado —
+      // num "ausente", é o tempo até desistir, que também é atendimento. O
+      // guard de negativo cobre a fila offline sincronizando fora de ordem.
+      if (parada && 'chegouEm' in parada && parada.chegouEm) {
+        const atendimento = diferencaEmMinutos(parada.chegouEm, entrega.confirmadaEm);
+        if (atendimento >= 0) {
+          const lista = atendimentosPorMotorista.get(rota.motoristaId) ?? [];
+          lista.push(atendimento);
+          atendimentosPorMotorista.set(rota.motoristaId, lista);
+          m.chegadasRegistradas += 1;
+        }
+      }
+
+      if (entrega.resultado !== 'entregue') {
+        m.insucessos += 1;
+        daqui.insucessos += 1;
+        m.porMotivo[entrega.resultado] = (m.porMotivo[entrega.resultado] ?? 0) + 1;
+        if (entrega.resultado === 'ausente') {
+          const avisado = Boolean(parada && 'avisadoEm' in parada && parada.avisadoEm);
+          if (avisado) m.ausenciasAvisados += 1;
+          else m.ausenciasNaoAvisados += 1;
+          const doCliente = ausenciasPorClienteMapa.get(entrega.clienteId) ?? {
+            ausencias: 0,
+            avisadas: 0,
+          };
+          doCliente.ausencias += 1;
+          if (avisado) doCliente.avisadas += 1;
+          ausenciasPorClienteMapa.set(entrega.clienteId, doCliente);
+        }
+        continue;
+      }
+
+      m.entregues += 1;
+      daqui.entregues += 1;
+      if (parada) contarCarga(parada);
     }
 
     // `qCom` vem como '3.0000' e nunca fracionário nas 28.088 linhas reais; o
@@ -236,6 +265,8 @@ export function calcularProdutividade(
     m.entregasSemCarga += daqui.entregasSemCarga;
     m.rotas_detalhe.push(daqui);
 
+    // Ritmo e jornada só existem com a hora do app.
+    if (daRota.length === 0) continue;
     const intervalos = intervalosPorMotorista.get(rota.motoristaId) ?? [];
     for (let i = 1; i < daRota.length; i++) {
       const minutos = diferencaEmMinutos(daRota[i - 1]!.confirmadaEm, daRota[i]!.confirmadaEm);

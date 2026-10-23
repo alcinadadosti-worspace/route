@@ -28,7 +28,7 @@ import { useBussola } from './useBussola';
 import { GravadorTrilha } from './gravadorTrilha';
 import { confirmarPin, recalcularTracado, salvarTrilhaBruta } from './servicoMapeamento';
 import { registrarAviso, registrarChegada } from './servicoEntrega';
-import { criarDetectorChegada } from './chegada';
+import { criarDetectorChegada, PRECISAO_MAXIMA_CHEGADA_M } from './chegada';
 import { formatarDistancia } from './formato';
 import { indicesDasParadas, trechoDaParada } from './trechos';
 import type { DossieCliente } from './useClientesDaRota';
@@ -166,7 +166,10 @@ export function Navegacao({
   // Chegada (RF-18): raio de ~30 m ou toque manual em CHEGUEI.
   const [chegou, setChegou] = useState(false);
   useEffect(() => {
-    if (chegou || distanciaAoPin == null) return;
+    if (chegou || distanciaAoPin == null || !leitura) return;
+    // Leitura de rede (±1–3 km) "dentro" do raio de 30 m é coincidência, não
+    // chegada — a mesma régua do detector gravado (chegada.ts).
+    if (leitura.precisaoM > PRECISAO_MAXIMA_CHEGADA_M) return;
     if (distanciaAoPin <= parametros.raioChegadaM) {
       setChegou(true);
       navigator.vibrate?.([120, 60, 120]);
@@ -193,15 +196,31 @@ export function Navegacao({
 
   // Ajuste do pin (RF-07): marcador arrastável a partir da posição atual.
   const [pinAjustado, setPinAjustado] = useState<GeoPonto | null>(null);
+  /** Precisão da leitura que deu o pin sugerido; null = o motorista arrastou
+   * (o pin é dele, e não se mexe mais sozinho). */
+  const [precisaoDoPin, setPrecisaoDoPin] = useState<number | null>(null);
   const [pinConfirmado, setPinConfirmado] = useState(false);
   const ajustandoPin = chegou && precisaMapear && !pinConfirmado;
-  // Sugestão congelada na primeira leitura do ajuste — o marcador não pode
-  // ficar perseguindo o jitter do GPS enquanto o motorista mira o portão.
+  // A sugestão SEGUE a melhor leitura até ter uma boa (≤ `precisaoMaximaM`),
+  // e aí congela — não pode perseguir o jitter enquanto o motorista mira o
+  // portão. Congelava a PRIMEIRA leitura, qualquer que fosse: com GPS frio ela
+  // é a posição de rede (±1–3 km), o mapa rural quase vazio não mostra o erro,
+  // e o cliente ficava "mapeado" a quilômetros, para sempre.
   useEffect(() => {
-    if (ajustandoPin && !pinAjustado && leitura) {
+    if (!ajustandoPin || !leitura) return;
+    if (pinAjustado && precisaoDoPin === null) return; // arrastado à mão
+    const melhor = precisaoDoPin === null || leitura.precisaoM < precisaoDoPin;
+    const jaBoa = precisaoDoPin !== null && precisaoDoPin <= parametros.precisaoMaximaM;
+    if (!pinAjustado || (melhor && !jaBoa)) {
       setPinAjustado({ lat: leitura.lat, lng: leitura.lng });
+      setPrecisaoDoPin(leitura.precisaoM);
     }
-  }, [ajustandoPin, pinAjustado, leitura]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ajustandoPin, leitura]);
+  function arrastarPin(p: GeoPonto) {
+    setPinAjustado(p);
+    setPrecisaoDoPin(null);
+  }
   const pinNoMapa = ajustandoPin ? (pinAjustado ?? pinDoCliente) : pinDoCliente;
 
   // Desvio do traçado (seção 11.6). A DETECÇÃO é geometria pura e roda offline;
@@ -252,8 +271,17 @@ export function Navegacao({
   // Perto do destino o traçado acaba e a orientação passa a ser a seta (e a
   // trilha, quando existe): desvio ali é esperado, não é motivo de recálculo.
   const longeDoDestino = distanciaAoPin == null || distanciaAoPin > 400;
+  // Posição de rede (±km) "fora do traçado" não é desvio: recalcular a partir
+  // dela mandava o motorista por outro caminho e errava o "em uns N minutos"
+  // do aviso ao cliente.
+  const leituraConfiavel = leitura != null && leitura.precisaoM <= PRECISAO_MAXIMA_CHEGADA_M;
   const foraDoTracado =
-    desvioM != null && desvioM > parametros.desvioMinimoM && longeDoDestino && !chegou && !modoTrilha;
+    leituraConfiavel &&
+    desvioM != null &&
+    desvioM > parametros.desvioMinimoM &&
+    longeDoDestino &&
+    !chegou &&
+    !modoTrilha;
 
   const recalcularRef = useRef<() => void>(() => {});
   const [tentativaEm, setTentativaEm] = useState(0);
@@ -436,7 +464,7 @@ export function Navegacao({
           modoTrilha={modoTrilha}
           posicao={leitura}
           ajustandoPin={ajustandoPin}
-          aoAjustarPin={setPinAjustado}
+          aoAjustarPin={arrastarPin}
           outrasParadas={outrasParadas}
           aoTrocarParada={trocarPara}
         />
@@ -545,8 +573,16 @@ export function Navegacao({
               <>
                 <p className="nav-instrucao">
                   Arraste o pin no mapa até o ponto exato da entrega, se precisar.
-                  {leitura && ` (GPS ±${Math.round(leitura.precisaoM)} m)`}
+                  {/* A precisão do PIN, não a da leitura de agora: mostrar "±6 m"
+                      de um pin que veio de uma leitura de ±2 km escondia o erro. */}
+                  {precisaoDoPin !== null && ` (pin do GPS ±${Math.round(precisaoDoPin)} m)`}
                 </p>
+                {precisaoDoPin !== null && precisaoDoPin > PRECISAO_MAXIMA_CHEGADA_M && (
+                  <p className="nav-instrucao">
+                    ⚠ GPS ainda impreciso. Espere o sinal melhorar (o pin se ajusta sozinho) ou
+                    arraste o pin até o portão antes de confirmar.
+                  </p>
+                )}
                 <button className="confirmar" onClick={confirmarPinAqui}>
                   📍 Confirmar pin de entrega
                 </button>

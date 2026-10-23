@@ -1,4 +1,4 @@
-import type { Pedido, StatusPedido } from './tipos.js';
+import type { Cliente, EnderecoFiscal, Pedido, StatusPedido } from './tipos.js';
 
 /**
  * Para onde vai um pedido que acabou de ficar sem pergunta pendente e sem rota
@@ -26,3 +26,23 @@ export function statusForaDeRota(
     pedido.usarEnderecoEntrega === true && Boolean(pedido.coordenadaEntrega);
   return overrideComPonto || clienteTemPonto ? 'pronto_para_rota' : 'pendente_de_mapeamento';
 }
+
+/**
+ * Pedido que SAI de uma rota sem ser entregue (baixa "não entregue", rota
+ * desfeita, parada apagada) volta para onde? `statusForaDeRota`, mais a trava
+ * da revisão de endereço (seção 8.3): o cliente que mudou de endereço com o
+ * caminhão na rua voltava "pronto" — a rota seguinte era otimizada no ponto do
+ * endereço ANTIGO e imprimia o endereço NOVO. Com revisão aberta ele vai para
+ * a aba Decisões, levando o `enderecoAnterior` pelo qual a aba o mostra.
+ */
+export function voltaParaAFila(
+  pedido: Pick<Pedido, 'usarEnderecoEntrega' | 'coordenadaEntrega'>,
+  cliente: Pick<Cliente, 'coordenada' | 'enderecoEmRevisao'> | null | undefined,
+): { status: Extract<StatusPedido, 'pronto_para_rota' | 'pendente_de_mapeamento' | 'pendente_de_decisao'>; enderecoAnterior?: EnderecoFiscal } {
+  const overrideComPonto = pedido.usarEnderecoEntrega === true && Boolean(pedido.coordenadaEntrega);
+  if (!overrideComPonto && cliente?.enderecoEmRevisao) {
+    return { status: 'pendente_de_decisao', enderecoAnterior: cliente.enderecoEmRevisao };
+  }
+  return { status: statusForaDeRota(pedido, Boolean(cliente?.coordenada)) };
+}
+

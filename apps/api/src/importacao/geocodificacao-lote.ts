@@ -1,5 +1,5 @@
-import type { Cliente, Pedido } from '@rota/shared';
-import { statusForaDeRota } from '@rota/shared';
+import type { Cliente, EnderecoFiscal, GeoPonto, Pedido, StatusMapeamento } from '@rota/shared';
+import { chaveDeEndereco, pontosRepetidos, statusForaDeRota } from '@rota/shared';
 import type { Repositorio } from '../db/repositorio.js';
 import type { Geocodificador } from '../geocodificacao/google.js';
 
@@ -73,9 +73,10 @@ export async function localizarEnderecos(
   // erro para TODOS os endereços do lote — perder o lote inteiro é pior do que
   // demorar mais alguns segundos.
   const CONCORRENCIA = 10;
-  const escritas: Array<{ colecao: 'clientes'; id: string; dados: Partial<Cliente>; merge: true }> =
-    [];
+  const agora = new Date().toISOString();
   const comPonto = new Set<string>();
+  const achados: Array<{ id: string; coordenada: GeoPonto; precisa: boolean; endereco: EnderecoFiscal }> = [];
+  const falhas: Array<{ id: string; chave: string }> = [];
 
   for (let i = 0; i < lote.length; i += CONCORRENCIA) {
     const fatia = lote.slice(i, i + CONCORRENCIA);
@@ -88,28 +89,72 @@ export async function localizarEnderecos(
           comPonto.add(id);
           return;
         }
+        // Este MESMO endereço já foi buscado e não achou: não paga de novo. Cada
+        // clique em "Localizar" pagava outra vez por todos os rurais do ciclo.
+        // Endereço que muda (planilha nova) muda a chave, e aí tenta.
+        const chave = chaveDeEndereco(cliente.enderecoFiscal);
+        if (cliente.buscaSemResultado?.chave === chave) {
+          resultado.semResultado += 1;
+          return;
+        }
         const r = await geocodificador.geocodificar(cliente.enderecoFiscal).catch(() => null);
         // Ponto preciso, ou aproximado NO MUNICÍPIO CERTO (rural): os dois
         // servem de partida — o motorista entrega e o app aprende a trilha na
         // primeira viagem. Fora do município é ponto errado com cara de certo.
         if (r && (r.precisa || r.municipioConfere)) {
-          if (r.precisa) resultado.geocodificados += 1;
-          else resultado.aproximados += 1;
-          comPonto.add(id);
-          escritas.push({
-            colecao: 'clientes',
-            id,
-            dados: {
-              coordenada: r.coordenada,
-              statusMapeamento: r.precisa ? 'geocodificado' : 'aproximado',
-            },
-            merge: true,
-          });
+          achados.push({ id, coordenada: r.coordenada, precisa: r.precisa, endereco: cliente.enderecoFiscal });
         } else {
           resultado.semResultado += 1;
+          falhas.push({ id, chave });
         }
       }),
     );
+  }
+
+  // Ponto "exato" que cai em cima de outro cliente de endereço diferente é o
+  // centro da cidade ou da rua (ver `pontoRepetido.ts`): vai como aproximado,
+  // e o outro também, se era "exato".
+  const vizinhos =
+    achados.length > 0 ? await repo.clientesNasLatitudes(achados.map((a) => a.coordenada.lat)) : [];
+  const idsAchados = new Set(achados.map((a) => a.id));
+  const repetidos = pontosRepetidos([
+    ...achados.map((a) => ({ id: a.id, coordenada: a.coordenada, enderecoFiscal: a.endereco })),
+    ...vizinhos.filter((v) => !idsAchados.has(v.id)),
+  ]);
+  const exato = (a: (typeof achados)[number]) => a.precisa && !repetidos.has(a.id);
+
+  const alteracoes: Array<{ id: string; seStatus: StatusMapeamento[]; dados: Partial<Cliente> }> = [
+    // Só em quem AINDA está sem ponto: um pin confirmado em campo nos 10–20 s do
+    // lote era sobrescrito pelo palpite da busca.
+    ...achados.map((a) => ({
+      id: a.id,
+      seStatus: ['nao_mapeado'] as StatusMapeamento[],
+      dados: {
+        coordenada: a.coordenada,
+        statusMapeamento: exato(a) ? 'geocodificado' : 'aproximado',
+        buscaSemResultado: null,
+      } satisfies Partial<Cliente>,
+    })),
+    ...vizinhos
+      .filter((v) => repetidos.has(v.id) && v.statusMapeamento === 'geocodificado')
+      .map((v) => ({
+        id: v.id,
+        seStatus: ['geocodificado'] as StatusMapeamento[],
+        dados: { statusMapeamento: 'aproximado' } satisfies Partial<Cliente>,
+      })),
+    ...falhas.map((f) => ({
+      id: f.id,
+      seStatus: ['nao_mapeado'] as StatusMapeamento[],
+      dados: { buscaSemResultado: { chave: f.chave, em: agora } } satisfies Partial<Cliente>,
+    })),
+  ];
+  const pulados = new Set(await repo.atualizarClientesSe(alteracoes));
+  for (const a of achados) {
+    // Pulado = ganhou ponto por outro caminho no meio; o pedido segue esse.
+    comPonto.add(a.id);
+    if (pulados.has(a.id)) continue;
+    if (exato(a)) resultado.geocodificados += 1;
+    else resultado.aproximados += 1;
   }
 
   // Os pedidos que esperavam esse ponto saem de "pendente de mapeamento" na
@@ -117,8 +162,7 @@ export async function localizarEnderecos(
   // coordenada, e só a montagem da rota reclamaria.
   const promovidos: Array<{ id: string; statusEsperado: 'pendente_de_mapeamento'; dados: Pedido }> = [];
   if (comPonto.size > 0) {
-    for (const { id, ...pedido } of await repo.listarPedidos()) {
-      if (pedido.status !== 'pendente_de_mapeamento') continue;
+    for (const { id, ...pedido } of await repo.pedidosComStatus('pendente_de_mapeamento')) {
       if (!comPonto.has(pedido.clienteId)) continue;
       promovidos.push({
         id,
@@ -128,7 +172,6 @@ export async function localizarEnderecos(
     }
   }
 
-  await repo.gravarEmLote(escritas);
   // Condicional: entre a leitura e aqui o pedido pode ter saído como exceção
   // numa rota, ou sido apagado — um `set` cego o desfaria.
   await repo.atualizarPedidosSeStatus(promovidos);

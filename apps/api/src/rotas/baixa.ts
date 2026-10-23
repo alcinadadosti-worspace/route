@@ -1,4 +1,4 @@
-import { aplicarBaixas, statusForaDeRota, type BaixaPedida, type Pedido, type Rota } from '@rota/shared';
+import { aplicarBaixas, voltaParaAFila, type BaixaPedida, type Pedido, type Rota } from '@rota/shared';
 import { FORMATO_ROTA_ID } from './comum.js';
 import type { Repositorio } from '../db/repositorio.js';
 
@@ -63,8 +63,13 @@ export async function darBaixa(
         pedidos[id] = { status: 'entregue' };
       } else {
         const cliente = clientes[i - aplicada.entregues.length];
+        // Com o endereço em revisão (o cliente mudou com o caminhão na rua),
+        // volta para a aba Decisões — "pronto" otimizava a próxima rota no
+        // ponto do endereço ANTIGO e imprimia o NOVO.
+        const volta = voltaParaAFila(pedido, cliente);
         pedidos[id] = {
-          status: statusForaDeRota(pedido, Boolean(cliente?.coordenada)),
+          status: volta.status,
+          ...(volta.enderecoAnterior ? { enderecoAnterior: volta.enderecoAnterior } : {}),
           rotaId: null,
           voltouDeRota: { rotaId, data: rota.data },
         };

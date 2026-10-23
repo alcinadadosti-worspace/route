@@ -22,33 +22,65 @@ const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
  * /api/*). `getIdToken()` devolve um token válido, renovando sozinho quando
  * perto de expirar — não precisamos gerir validade aqui.
  */
+/**
+ * Sem resposta nenhuma (rede caiu, ou o proxy do Render cortou a conexão
+ * enquanto a API acordava). O navegador diz só "Failed to fetch", em inglês e
+ * sem dizer o que fazer.
+ */
+export const SEM_RESPOSTA =
+  'Sem resposta do servidor — a conexão caiu ou ele está acordando (leva até 1 min). Tente de novo.';
+
 async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const token = await auth.currentUser?.getIdToken();
   const headers = new Headers(init.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  return fetch(url, { ...init, headers });
+  try {
+    return await fetch(url, { ...init, headers });
+  } catch {
+    throw new Error(SEM_RESPOSTA);
+  }
+}
+
+/**
+ * Resposta de GET: o erro que a API escreveu no corpo vale mais que o status
+ * genérico — um 400 de validação virava "Falha na requisição (HTTP 400)".
+ */
+async function lerResposta<T>(resposta: Response): Promise<T> {
+  if (resposta.ok) return resposta.json() as Promise<T>;
+  let erro: string | undefined;
+  try {
+    erro = (JSON.parse(await resposta.text()) as { erro?: string })?.erro;
+  } catch {
+    erro = undefined;
+  }
+  throw new Error(erro ?? erroHttp(resposta.status));
 }
 
 export async function importarArquivos(arquivos: File[]): Promise<RelatorioImportacao> {
   const form = new FormData();
   for (const arquivo of arquivos) form.append('arquivos', arquivo, arquivo.name);
-  const resposta = await apiFetch(`${BASE}/api/importacoes`, { method: 'POST', body: form });
+  let resposta: Response;
+  try {
+    resposta = await apiFetch(`${BASE}/api/importacoes`, { method: 'POST', body: form });
+  } catch (e) {
+    // O servidor pode ter gravado tudo antes de a conexão cair: dizer que
+    // reenviar é seguro (o repetido é ignorado) evita o operador achar que
+    // perdeu a importação — ou ter medo de duplicar.
+    throw new Error(`${e instanceof Error ? e.message : SEM_RESPOSTA} A importação pode ter sido gravada: reenviar o mesmo arquivo é seguro — o que já entrou conta como repetido.`);
+  }
   // Era a ÚNICA chamada que não passava por `erroHttp`: um 403 aparecia como
   // "Importação falhou (HTTP 403)", que não diz que o problema é a conta.
-  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
-  return resposta.json();
+  return lerResposta(resposta);
 }
 
 export async function listarPedidos(): Promise<Array<{ id: string } & Pedido>> {
   const resposta = await apiFetch(`${BASE}/api/pedidos`);
-  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
-  return resposta.json();
+  return lerResposta(resposta);
 }
 
 export async function listarClientes(): Promise<Array<{ id: string } & Cliente>> {
   const resposta = await apiFetch(`${BASE}/api/clientes`);
-  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
-  return resposta.json();
+  return lerResposta(resposta);
 }
 
 /** RF-25: produtividade por motorista na janela pedida (calculada no servidor). */
@@ -74,8 +106,7 @@ export async function obterProdutividade(
 
 export async function listarCds(): Promise<Record<string, CentroDistribuicao>> {
   const resposta = await apiFetch(`${BASE}/api/cds`);
-  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
-  return resposta.json();
+  return lerResposta(resposta);
 }
 
 export async function previaDeRota(entrada: {
@@ -89,21 +120,18 @@ export async function previaDeRota(entrada: {
 
 export async function listarUsuarios(): Promise<Array<{ id: string } & Usuario>> {
   const resposta = await apiFetch(`${BASE}/api/usuarios`);
-  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
-  return resposta.json();
+  return lerResposta(resposta);
 }
 
 export async function listarRotas(): Promise<Array<{ id: string } & Rota>> {
   const resposta = await apiFetch(`${BASE}/api/rotas`);
-  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
-  return resposta.json();
+  return lerResposta(resposta);
 }
 
 /** Motivo, hora e posição de cada confirmação — o que a parada não guarda. */
 export async function listarEntregasDaRota(rotaId: string): Promise<Entrega[]> {
   const resposta = await apiFetch(`${BASE}/api/rotas/${encodeURIComponent(rotaId)}/entregas`);
-  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
-  return resposta.json();
+  return lerResposta(resposta);
 }
 
 export async function publicarRota(entrada: {
@@ -152,6 +180,11 @@ export async function decidirMudancaEndereco(
  * ~1300 endereços num ciclo — então roda fora da importação, em lotes, com o
  * painel repetindo enquanto `restantes` for maior que zero.
  */
+/** Quantos clientes esperam a busca de endereço — sem buscar nada. */
+export async function contarEnderecosALocalizar(): Promise<{ restantes: number }> {
+  return lerResposta(await apiFetch(`${BASE}/api/geocodificacoes`));
+}
+
 export async function localizarEnderecos(pular = 0): Promise<{
   restantes: number;
   processados: number;
@@ -265,8 +298,7 @@ export async function agruparPorRegiao(
 ): Promise<{ grupos: GrupoSugerido[]; totalProntos: number }> {
   const q = cdId ? `?cdId=${encodeURIComponent(cdId)}` : '';
   const resposta = await apiFetch(`${BASE}/api/rotas/agrupamento${q}`);
-  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
-  return resposta.json();
+  return lerResposta(resposta);
 }
 
 /**
@@ -292,8 +324,7 @@ export interface Acompanhamento {
 
 export async function obterAcompanhamento(): Promise<Acompanhamento> {
   const resposta = await apiFetch(`${BASE}/api/acompanhamento`);
-  if (!resposta.ok) throw new Error(erroHttp(resposta.status));
-  return resposta.json();
+  return lerResposta(resposta);
 }
 
 /** Última posição dos motoristas nas rotas em execução (seção 11.4). */

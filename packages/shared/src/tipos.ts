@@ -74,6 +74,32 @@ export interface Cliente {
    * validar aqui derrubaria importação por causa de rótulo novo.
    */
   papel?: string | null;
+  /**
+   * Data (emitidoEm da linha) do endereço que está no cadastro. Planilhas
+   * soltas fora de ordem — o nome é um UUID, não diz qual é a mais nova — não
+   * podem fazer o endereço REGREDIR: a mais velha processada por último
+   * trocava "RUA NOVA" por "RUA VELHA" e a busca paga ia para o lugar antigo.
+   */
+  enderecoDe?: string | null;
+  /**
+   * Ponto que o Admin Estoque DESCARTOU ("refazer ponto" ou "remapear"). O GPS
+   * digitado errado no cadastro do ERP voltava na planilha seguinte como pin
+   * exato — o descarte durava um dia.
+   */
+  pontoDescartado?: GeoPonto | null;
+  /**
+   * Endereço que a busca paga já tentou e não achou. Cada clique em
+   * "Localizar endereços" pagava de novo por todos eles; só se tenta outra
+   * vez quando o endereço muda (`chave` diferente).
+   */
+  buscaSemResultado?: { chave: string; em: string } | null;
+  /**
+   * Motoristas (uid → true) que já tiveram este cliente numa rota publicada.
+   * É o que as rules usam para o motorista LER o cliente: o id é o código
+   * Pessoa do ERP, numérico e enumerável — com `get` liberado a qualquer
+   * motorista, dava para baixar a base inteira (PII) tentando ids em série.
+   */
+  visivelPara?: Record<string, true>;
 }
 
 export interface ItemPedido {
@@ -227,6 +253,9 @@ export interface ParadaRota {
    * quilometragem da rota; comparar um com o outro não significa nada.
    */
   distanciaKm: number;
+  /** Km desde o CD até esta parada, somado na publicação. A soma das pernas
+   * na hora de imprimir perdia o trecho de uma parada apagada do meio. */
+  kmDoCd?: number;
   status: StatusPedido;
   /** Denormalizado da situação de mapeamento do cliente (seção 9): o app do
    * motorista liga o "navegar e mapear" por aqui, sem depender do doc do cliente
@@ -324,6 +353,20 @@ export interface Rota {
   paradas: ParadaRota[];
   /** Pedidos sem ponto que vão no caminhão; ausente em rotas antigas. */
   excecoes?: ExcecaoRota[];
+  /**
+   * Paradas/exceções TIRADAS depois da publicação (pedido cancelado no ERP,
+   * apagado no painel). Com o motorista no PDF impresso, a folha dele ainda
+   * tem a parada: o aviso precisa ficar na rota, não só no relatório da
+   * importação — que aparece uma vez e some.
+   */
+  removidos?: Array<{
+    pedidoId: string;
+    numero?: string;
+    nome: string;
+    numeroNota?: number;
+    motivo: string;
+    em: string;
+  }>;
   polylinePlanejada: string;
   distanciaTotalKm: number;
   duracaoTotalMin: number;

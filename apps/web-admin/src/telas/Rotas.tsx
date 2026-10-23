@@ -43,7 +43,7 @@ import { MapaAcompanhamento } from '../MapaAcompanhamento';
 import { LimiteDeErro } from '../LimiteDeErro';
 import { FotoReferencia } from '../FotoReferencia';
 import { montarRoteiro } from '../roteiro';
-import { baixarPdfRoteiro } from '../roteiroPdf';
+import { baixarPdfRoteiro, preCarregarPdf } from '../roteiroPdf';
 import { alternarGrupo, estadoDoGrupo } from '../selecaoCidades';
 import { ForaDaMontagem } from './ForaDaMontagem';
 import { CampoBusca } from '../CampoBusca';
@@ -181,6 +181,21 @@ export function Rotas() {
   }
 
   useEffect(carregar, []);
+  // A biblioteca do PDF desce AGORA, não no clique: depois de um deploy, o
+  // arquivo dela com o nome antigo some do servidor, e o painel que já estava
+  // aberto falhava no "Publicar e baixar PDF" — com a rota já publicada.
+  useEffect(preCarregarPdf, []);
+
+  /**
+   * Recarrega a tela E a sugestão de cidades. A sugestão é de quando foi
+   * pedida: depois de uma baixa com "não entregue", o pedido que voltou não
+   * contava no cartão da cidade — o clique não o selecionava e o cartão
+   * dizia ✓ completo. Vale para desfazer rota, apagar e liberar também.
+   */
+  function recarregarTudo() {
+    carregar();
+    if (gruposRef.current !== null) void sugerirGruposRef.current();
+  }
 
   const nomeDoUsuario = (id: string) => usuarios.find((u) => u.id === id)?.nome ?? id.slice(0, 8);
 
@@ -263,6 +278,9 @@ export function Rotas() {
   const temRotaAberta = rotas.some(
     (r) => r.status === 'publicada' || r.status === 'em_execucao',
   );
+  /** As rotas da tela, para a busca periódica comparar sem depender do efeito. */
+  const rotasNaTela = useRef(rotas);
+  rotasNaTela.current = rotas;
   useEffect(() => {
     if (!temRotaAberta) return;
     let vivo = true;
@@ -275,11 +293,44 @@ export function Rotas() {
           setPosicoes(a.posicoes);
           if (saiuEm < baixaGravadaEm.current) return;
           const porId = new Map(a.rotas.map((r) => [r.id, r]));
-          setRotas((atuais) =>
-            atuais.map((rota) => {
+          // Rota aberta que saiu da lista (fechou, foi desfeita) ou que perdeu
+          // parada (pedido cancelado/apagado) noutra aba ou por outro operador:
+          // a fusão abaixo só atualiza o que já está na tela, e ela ficava com
+          // os botões de baixa de uma rota que já não é assim — a API recusava.
+          const divergente = rotasNaTela.current.some((r) => {
+            if (r.status !== 'publicada' && r.status !== 'em_execucao') return false;
+            const novo = porId.get(r.id);
+            return (
+              !novo ||
+              novo.paradas.length !== r.paradas.length ||
+              (novo.excecoes?.length ?? 0) !== (r.excecoes?.length ?? 0)
+            );
+          });
+          if (divergente) {
+            carregar();
+            return;
+          }
+          setRotas((atuais) => {
+            let algumaMudou = false;
+            const fundidas = atuais.map((rota) => {
               const novo = porId.get(rota.id);
               if (!novo) return rota;
               const statusPorPedido = new Map(novo.paradas.map((p) => [p.pedidoId, p]));
+              const mudou =
+                novo.status !== rota.status ||
+                novo.concluidaEm !== rota.concluidaEm ||
+                rota.paradas.some((p) => {
+                  const n = statusPorPedido.get(p.pedidoId);
+                  return n && (n.status !== p.status || n.avisadoEm !== p.avisadoEm || n.chegouEm !== p.chegouEm);
+                }) ||
+                (rota.excecoes ?? []).some(
+                  (e) => novo.excecoes?.find((x) => x.pedidoId === e.pedidoId)?.status !== e.status,
+                );
+              // Sem mudança, o MESMO objeto: o mapa do acompanhamento é recriado
+              // quando a rota muda de identidade, e a fusão de cada 20 s o
+              // destruía — zoom, posição e popup perdidos a cada volta.
+              if (!mudou) return rota;
+              algumaMudou = true;
               return {
                 ...rota,
                 status: novo.status,
@@ -300,8 +351,9 @@ export function Rotas() {
                   return atualizada ? { ...e, status: atualizada.status } : e;
                 }),
               };
-            }),
-          );
+            });
+            return algumaMudou ? fundidas : atuais;
+          });
         })
         .catch(() => undefined);
       // O relógio anda junto: "há 3 min" precisa envelhecer na tela mesmo sem
@@ -318,6 +370,8 @@ export function Rotas() {
 
   /** Sugestão de regiões (null = ainda não pedida nesta sessão da tela). */
   const [grupos, setGrupos] = useState<GrupoSugerido[] | null>(null);
+  const gruposRef = useRef(grupos);
+  gruposRef.current = grupos;
   const [carregandoGrupos, setCarregandoGrupos] = useState(false);
   const [erroGrupos, setErroGrupos] = useState<string | null>(null);
   /** CD para o qual a sugestão foi feita — ela só traz os pedidos dele. */
@@ -334,6 +388,8 @@ export function Rotas() {
   const algumaCidadeAberta =
     grupos?.some((g) => estadoDoGrupo(g.ids, idsProntos, selecionados).vivos.length > 0) ?? false;
 
+  const sugerirGruposRef = useRef<() => Promise<void>>(async () => undefined);
+  sugerirGruposRef.current = sugerirGrupos;
   async function sugerirGrupos() {
     const vez = ++ultimoAgrupamento.current;
     setCarregandoGrupos(true);
@@ -487,10 +543,18 @@ export function Rotas() {
   useEffect(() => {
     if (!previa) return;
     const ids = previa.paradas.map((p) => p.pedidoId);
-    if (ids.length !== selecionados.size || ids.some((id) => !selecionados.has(id))) {
+    // E de ESTE CD e ESTE retorno: trocar o CD durante o "OTIMIZANDO…" (o
+    // OSRM acordando leva até 1 min) deixava entrar a resposta da configuração
+    // anterior — a tela mostrava Penedo com volta, e saía Palmeira sem volta.
+    if (
+      ids.length !== selecionados.size ||
+      ids.some((id) => !selecionados.has(id)) ||
+      previa.cd.id !== cdId ||
+      previa.retornaAoCd !== retornaAoCd
+    ) {
       setPrevia(null);
     }
-  }, [selecionados, previa]);
+  }, [selecionados, previa, cdId, retornaAoCd]);
 
   function alternar(id: string) {
     const proximo = new Set(selecionados);
@@ -516,16 +580,20 @@ export function Rotas() {
     setPrevia(null);
   }
 
+  /** Só a resposta da otimização mais nova entra na tela. */
+  const ultimaPrevia = useRef(0);
   async function otimizar() {
+    const vez = ++ultimaPrevia.current;
     setOtimizando(true);
     setErro(null);
     setPublicada(null);
     try {
-      setPrevia(await previaDeRota({ pedidoIds: [...selecionados], cdId, retornaAoCd }));
+      const nova = await previaDeRota({ pedidoIds: [...selecionados], cdId, retornaAoCd });
+      if (vez === ultimaPrevia.current) setPrevia(nova);
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha na otimização');
+      if (vez === ultimaPrevia.current) setErro(e instanceof Error ? e.message : 'Falha na otimização');
     } finally {
-      setOtimizando(false);
+      if (vez === ultimaPrevia.current) setOtimizando(false);
     }
   }
 
@@ -536,14 +604,16 @@ export function Rotas() {
     const destino = indice + delta;
     if (destino < 0 || destino >= ids.length) return;
     [ids[indice], ids[destino]] = [ids[destino]!, ids[indice]!];
+    const vez = ++ultimaPrevia.current;
     setOtimizando(true);
     setErro(null);
     try {
-      setPrevia(await previaDeRota({ pedidoIds: ids, cdId, retornaAoCd, ordemManual: true }));
+      const nova = await previaDeRota({ pedidoIds: ids, cdId, retornaAoCd, ordemManual: true });
+      if (vez === ultimaPrevia.current) setPrevia(nova);
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha ao reordenar');
+      if (vez === ultimaPrevia.current) setErro(e instanceof Error ? e.message : 'Falha ao reordenar');
     } finally {
-      setOtimizando(false);
+      if (vez === ultimaPrevia.current) setOtimizando(false);
     }
   }
 
@@ -573,7 +643,7 @@ export function Rotas() {
           `Rota ${r.id} desfeita. Os ${total} pedido(s) dela voltaram para a lista de ` +
           'Montagem de rota, disponíveis para montar outra.',
       });
-      carregar();
+      recarregarTudo();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao desfazer a rota');
     }
@@ -590,8 +660,9 @@ export function Rotas() {
     if (
       !window.confirm(
         `Apagar a nota ${p.numeroNota}/${p.serie}${nome ? ` — ${nome}` : ''}?\n\n` +
-          'A importação dela é desfeita e ela sai da montagem. Para trazê-la de volta, ' +
-          'reimporte a planilha (ou o XML) em que ela veio.',
+          'A importação dela é desfeita e ela sai da montagem. Atenção: as planilhas do ERP se ' +
+          'repetem — se ela vier de novo numa planilha importada, ela volta. Para tirá-la de vez ' +
+          'de uma rota, o caminho é o ERP (cancelado lá, ela sai sozinha).',
       )
     ) {
       return;
@@ -600,7 +671,7 @@ export function Rotas() {
     setAviso(null);
     try {
       await apagarPedido(p.id);
-      carregar();
+      recarregarTudo();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao apagar');
     }
@@ -613,8 +684,8 @@ export function Rotas() {
     if (
       !window.confirm(
         `Apagar ${alvos.length} pedido(s) selecionado(s)?\n\n` +
-          'A importação deles é desfeita e eles saem da montagem. Para trazê-los de volta, ' +
-          'reimporte a planilha (ou os XMLs) em que vieram.',
+          'A importação deles é desfeita e eles saem da montagem. Atenção: as planilhas do ERP se ' +
+          'repetem — os que vierem de novo numa planilha importada voltam.',
       )
     ) {
       return;
@@ -639,7 +710,7 @@ export function Rotas() {
     } else {
       setAviso({ onde: 'montagem', texto: `${alvos.length} pedido(s) apagado(s) da montagem.` });
     }
-    carregar();
+    recarregarTudo();
   }
 
   function alternarExcecao(id: string) {
@@ -724,7 +795,7 @@ export function Rotas() {
             : '.'),
       });
       // Os devolvidos reaparecem na montagem: recarregar a lista de pedidos.
-      carregar();
+      recarregarTudo();
     } catch (e) {
       setErroBaixa(e instanceof Error ? e.message : 'Falha ao registrar a baixa');
     } finally {
@@ -783,8 +854,9 @@ export function Rotas() {
       const resultado = await publicarRota({
         pedidoIds: previa.paradas.map((p) => p.pedidoId),
         excecaoIds: excecoesEscolhidas.map((p) => p.id),
-        cdId,
-        retornaAoCd,
+        // O que a prévia na tela MOSTRA, não o estado dos controles agora.
+        cdId: previa.cd.id,
+        retornaAoCd: previa.retornaAoCd,
         motoristaId,
       });
       setPublicada(resultado.rotaId);
@@ -897,6 +969,11 @@ export function Rotas() {
                       <td className="mono">{r.distanciaTotalKm}</td>
                       <td>
                         <span className={`chip ${s.classe}`}>{s.texto}</span>
+                        {(r.removidos?.length ?? 0) > 0 && (
+                          <span className="chip pendente" style={{ marginLeft: 6 }} title="Pedidos tirados depois da publicação">
+                            ⚠ {r.removidos!.length} saiu(ram)
+                          </span>
+                        )}
                       </td>
                       <td>
                         {/* Desfazer a publicação. Só faz sentido enquanto nada
@@ -935,6 +1012,18 @@ export function Rotas() {
                               agoraMs={agoraMs}
                             />
                           </LimiteDeErro>
+                          {/* O PDF impresso ainda tem estas paradas: o aviso fica
+                              na rota, não só no relatório da importação (que
+                              aparece uma vez e some). */}
+                          {(r.removidos ?? []).map((x) => (
+                            <div key={`${x.pedidoId}-${x.em}`} className="alerta">
+                              ⚠ {x.numero ? `Parada ${x.numero.startsWith('E') ? x.numero : x.numero.padStart(2, '0')} · ` : ''}
+                              <strong>{x.nome}</strong>
+                              {x.numeroNota ? ` (nota ${x.numeroNota})` : ''} saiu desta rota em{' '}
+                              {formatarDia(x.em.slice(0, 10))} — {x.motivo}. Se o PDF já foi impresso, avise o
+                              motorista para NÃO entregar.
+                            </div>
+                          ))}
                           <div className="barra-rota">
                             <button disabled={gerandoPdf === r.id} onClick={() => void baixarPdf(r)}>
                               {gerandoPdf === r.id ? 'GERANDO…' : '📄 Baixar PDF'}
@@ -1134,6 +1223,7 @@ export function Rotas() {
                   <input
                     type="radio"
                     name="cd"
+                    disabled={otimizando}
                     checked={cdId === id}
                     onChange={() => {
                       setCdId(id);
@@ -1149,6 +1239,7 @@ export function Rotas() {
             <input
               type="checkbox"
               checked={retornaAoCd}
+              disabled={otimizando}
               onChange={(e) => {
                 setRetornaAoCd(e.target.checked);
                 setPrevia(null);
@@ -1498,13 +1589,7 @@ export function Rotas() {
       <ForaDaMontagem
         pedidos={pedidos}
         clientes={clientes}
-        aoAlterar={() => {
-          carregar();
-          // A sugestão de cidades é de quando foi pedida: sem refazer, o
-          // pedido liberado não contava no cartão da cidade dele, e a cidade
-          // já marcada não ficava "em parte" para um clique completar.
-          if (grupos !== null) void sugerirGrupos();
-        }}
+        aoAlterar={recarregarTudo}
       />
 
       {previa && (

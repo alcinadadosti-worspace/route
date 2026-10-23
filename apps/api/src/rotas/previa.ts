@@ -200,8 +200,17 @@ export async function previaDeRota(
   repo: Repositorio,
   osrm: ClienteOsrm,
 ): Promise<ResultadoPrevia> {
-  if (!entrada.pedidoIds?.length) {
+  if (!entrada || !Array.isArray(entrada.pedidoIds) || entrada.pedidoIds.length === 0) {
     return { ok: false, status: 400, erro: 'Selecione ao menos um pedido' };
+  }
+  // O id vira caminho de documento (como na publicação): número estourava no
+  // SDK do Firestore (500 em vez de 400) e barra apontaria para outra coleção.
+  const idInvalido = entrada.pedidoIds.find((id) => typeof id !== 'string' || id === '' || id.includes('/'));
+  if (idInvalido !== undefined) {
+    return { ok: false, status: 400, erro: `Pedido inválido: ${JSON.stringify(idInvalido)}` };
+  }
+  if (typeof entrada.cdId !== 'string') {
+    return { ok: false, status: 400, erro: 'Informe o CD de partida' };
   }
 
   const cds = await repo.obterCds();

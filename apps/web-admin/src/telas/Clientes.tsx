@@ -18,6 +18,7 @@ const ROTULO_STATUS_PEDIDO: Record<string, string> = {
   pendente_de_decisao: 'Aguardando decisão',
   pronto_para_rota: 'Pronto para rota',
   retirada: 'Retirada no balcão',
+  entregue_no_erp: 'Entregue no ERP (fora da rota)',
   importado: 'Importado',
   em_rota: 'Em rota',
   entregue: 'Entregue',
@@ -30,6 +31,9 @@ export function Clientes() {
   const [filtro, setFiltro] = useState('');
   const [expandido, setExpandido] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  // "Nenhum cliente" só depois de ler: com a API acordando a leitura leva até
+  // 1 min, e o vazio na tela era lido como "não há nada".
+  const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
     Promise.all([listarClientes(), listarPedidos()])
@@ -37,7 +41,8 @@ export function Clientes() {
         setClientes(cs);
         setPedidos(ps);
       })
-      .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao listar'));
+      .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao listar'))
+      .finally(() => setCarregando(false));
   }, []);
 
   // Pedidos agrupados por cliente (mais recentes primeiro).
@@ -88,7 +93,8 @@ export function Clientes() {
         />
       )}
       {erro && <div className="erro">{erro}</div>}
-      {!erro && clientes.length === 0 && (
+      {carregando && <div className="vazio">Carregando os clientes…</div>}
+      {!carregando && !erro && clientes.length === 0 && (
         <div className="vazio">Nenhum cliente ainda — eles nascem da importação das notas.</div>
       )}
       {clientes.length > 0 && filtrados.length === 0 && (

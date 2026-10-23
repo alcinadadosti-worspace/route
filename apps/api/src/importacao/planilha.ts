@@ -57,6 +57,9 @@ export interface LinhaPlanilha {
   telefone: string | null;
   /** Cód Estrutura Pai só dígitos: 1048 = Penedo, 1515 = Palmeira. */
   estrutura: string | null;
+  /** `CodCD` só dígitos (542 = Penedo, 684 = Palmeira): preenchido em 100% das
+   * linhas, inclusive no "Consumidor Final", que vem sem estrutura. */
+  codCd: string | null;
   lote: string | null;
   volumes: number;
   pesoBrutoKg: number;
@@ -102,6 +105,15 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
       filter: (arquivo) => {
         if (arquivo.name !== 'xl/worksheets/sheet1.xml') return false;
         if (arquivo.originalSize > XML_MAXIMO_BYTES) {
+          estourou = true;
+          return false;
+        }
+        // Zip que MENTE o tamanho para baixo: a memória fica no declarado, mas
+        // a CPU descomprimia o real — 4 MB comprimidos "valendo" 1 KB seguraram
+        // o event loop por 63 s. Deflate de verdade nunca sai muito maior que o
+        // original (dado incompressível fica do mesmo tamanho), então
+        // comprimido bem maior que o declarado é mentira.
+        if (arquivo.size > arquivo.originalSize * 1.1 + 4096) {
           estourou = true;
           return false;
         }
@@ -151,7 +163,10 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
       const nome = colunas.get(letra);
       if (nome) valores.set(nome, valor);
     }
-    const v = (nome: string) => (valores.get(nome) ?? '').trim();
+    // Teto por célula: uma célula gigante (a aba aceita até 40 MB) virava um
+    // documento acima de 1 MiB, que o banco recusa — e a recusa derrubava a
+    // importação. Nenhum campo real passa de umas centenas de caracteres.
+    const v = (nome: string) => (valores.get(nome) ?? '').trim().slice(0, 1000);
     if (!v('codigopedido')) continue; // linha vazia de rodapé
 
     linhas.push({
@@ -187,6 +202,7 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
       },
       telefone: v('telefone') || null,
       estrutura: somenteDigitos(v('codestruturapai')) || null,
+      codCd: somenteDigitos(v('codcd')) || null,
       lote: v('lotedeseparacao') || null,
       volumes: Number(v('volume')) || 0,
       // `Peso Real` vem em GRAMAS (12047 = 12,047 kg) — conferido contra o
@@ -210,25 +226,52 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
  * sem erro nenhum. Mexer aqui é só com edição direta.
  */
 function* varrerLinhas(xml: string): Generator<string> {
-  const re = /<(?:\w+:)?row\b[^>]*>([\s\S]*?)<\/(?:\w+:)?row>/g;
-  for (const m of xml.matchAll(re)) yield m[1]!;
+  // Abertura por regex, fechamento por `indexOf` — LINEAR. O par não-guloso
+  // `<row>([\s\S]*?)</row>` reescaneava até o fim do texto a cada `<row>` sem
+  // `</row>`: um .xlsx forjado de 61 KB (40 MB inflado) segurava o event loop
+  // por horas, e com ele a API inteira.
+  const abre = /<(\w+:)?row\b[^>]{0,2000}>/g;
+  let m: RegExpExecArray | null;
+  while ((m = abre.exec(xml))) {
+    const fecha = `</${m[1] ?? ''}row>`;
+    const fim = xml.indexOf(fecha, abre.lastIndex);
+    if (fim < 0) return; // linha sem fechamento: o resto não é confiável
+    yield xml.slice(abre.lastIndex, fim);
+    abre.lastIndex = fim + fecha.length;
+  }
 }
 
 /** `[letra da coluna, valor]` de cada célula. Suporta `<v>` (o que o ERP usa) e
  * `<is><t>` (string inline), célula vazia auto-fechada, e desescapa entidades. */
 function* celulas(linha: string): Generator<[string, string]> {
-  const re = /<(?:\w+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?c>)/g;
-  for (const m of linha.matchAll(re)) {
-    const ref = /\br="([A-Z]+)\d+"/.exec(m[1] ?? '');
-    if (!ref) continue;
-    const interno = m[2];
-    if (interno === undefined) {
-      yield [ref[1]!, ''];
+  // Mesma razão de `varrerLinhas`: fechamento por `indexOf`, nunca um par
+  // não-guloso que reescaneia a linha inteira a cada `<c>` sem `</c>`.
+  const abre = /<(\w+:)?c\b([^>]{0,2000})>/g;
+  let m: RegExpExecArray | null;
+  while ((m = abre.exec(linha))) {
+    const atributos = m[2] ?? '';
+    const ref = /\br="([A-Z]+)\d+"/.exec(atributos);
+    if (atributos.endsWith('/')) {
+      if (ref) yield [ref[1]!, ''];
       continue;
     }
-    const valor = /<(?:\w+:)?(?:v|t)>([\s\S]*?)<\/(?:\w+:)?(?:v|t)>/.exec(interno);
-    yield [ref[1]!, valor ? desescapar(valor[1]!) : ''];
+    const fecha = `</${m[1] ?? ''}c>`;
+    const fim = linha.indexOf(fecha, abre.lastIndex);
+    if (fim < 0) return;
+    const interno = linha.slice(abre.lastIndex, fim);
+    abre.lastIndex = fim + fecha.length;
+    if (!ref) continue;
+    yield [ref[1]!, valorDaCelula(interno)];
   }
+}
+
+/** O texto de `<v>` ou `<is><t>`, também por `indexOf`. */
+function valorDaCelula(interno: string): string {
+  const abre = /<(\w+:)?(v|t)>/.exec(interno);
+  if (!abre) return '';
+  const inicio = abre.index + abre[0].length;
+  const fim = interno.indexOf(`</${abre[1] ?? ''}${abre[2]}>`, inicio);
+  return fim < 0 ? '' : desescapar(interno.slice(inicio, fim));
 }
 
 /** `&amp;` por último: desfazer antes reintroduziria entidades vindas do texto. */
@@ -279,7 +322,7 @@ export function enderecoDeBloco(b: BlocoEndereco): EnderecoFiscal {
 /** Tira a coordenada colada no número. Sobrando nada, vira "S/N". */
 function numeroLimpo(complemento: string): string {
   const semGps = complemento
-    .replace(/-?\d{1,2}[.,]\d{4,9}\s*[;,]?\s*-?\d{1,2}[.,]\d{4,9}/g, '')
+    .replace(/-?\d{1,2}[.,]\d{4,}\s*[;,]?\s*-?\d{1,2}[.,]\d{4,}/g, '')
     .replace(/\d{1,2}[°º][^,;]*[SN][^,;]*[°º][^,;]*[WOE]/gi, '')
     .replace(/[\s;,.-]+$/, '')
     .trim();
@@ -294,7 +337,10 @@ function numeroLimpo(complemento: string): string {
  * fora do estado é lixo de digitação, e um pin errado com cara de certo é o
  * pior dado que existe nesta base.
  */
-const DECIMAL = /(-\s?\d{1,2}[.,]\d{4,9})\s*[;,]?\s*(-\s?\d{1,2}[.,]\d{4,9})/;
+// Casas decimais SEM teto: colado do Google Maps vem com 15 ("-10.28076012345678"),
+// e o antigo {4,9} perdia esse pin exato — 2 das 53 revendedoras com GPS no
+// ciclo 11 caíam na busca paga.
+const DECIMAL = /(-\s?\d{1,2}[.,]\d{4,})\s*[;,]?\s*(-\s?\d{1,2}[.,]\d{4,})/;
 const DMS =
   /(\d{1,2})[°º]\s*(\d{1,2})'\s*([\d.]+)"?\s*([SN])\s*,?\s*(\d{1,3})[°º]\s*(\d{1,2})'\s*([\d.]+)"?\s*([WOE])/i;
 

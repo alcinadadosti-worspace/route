@@ -11,6 +11,7 @@ import {
   formatarCarga,
   mesclarParametrosTrilha,
   paradaPrecisaMapear,
+  quantidadeDeItens,
   type GeoPonto,
   type ItemPedido,
   type ResultadoEntrega,
@@ -30,6 +31,7 @@ import { useMapaOffline } from './useMapaOffline';
 import { estiloMapa, type Tema } from './estiloMapa';
 import { tipoDeRede } from './mapaOffline';
 import {
+  aoFalharSincronizacao,
   fecharRota,
   posicaoAtual,
   reabrirRota,
@@ -37,8 +39,8 @@ import {
   registrarRecibo,
   registrarResultado,
 } from './servicoEntrega';
-import { paradasPorResolver, separarRotas, type AbaRota } from './rotaAtiva';
-import { dispararProcessamento, ordemSugerida } from './servicoMapeamento';
+import { excecoesPorResolver, paradasPorResolver, separarRotas, type AbaRota } from './rotaAtiva';
+import { dispararProcessamento, ordemSugerida, reconciliarRota } from './servicoMapeamento';
 import { processarFilaComprovantes, processarFilaFotos } from './servicoFotos';
 import { usePosicao } from './usePosicao';
 import { useCompartilharPosicao } from './useCompartilharPosicao';
@@ -159,6 +161,42 @@ export function App() {
     return daAba[0] ?? null;
   }, [rotas, rotaEscolhidaId, rotaPadrao, listas, abaRota]);
   const rotaFechada = rota?.status === 'concluida';
+  /** A rota de AGORA, para quem grava depois de um `await` (o GPS da guarda de
+   * distância leva até 8 s): gravar com a cópia de antes desfazia a
+   * confirmação feita no meio — duas clientes no mesmo endereço. */
+  const rotaAtualRef = useRef(rota);
+  rotaAtualRef.current = rota;
+
+  // A rota que está na tela FICA na tela: a rota publicada mais nova (ainda não
+  // iniciada) tomava a tela sozinha, desmontando a navegação e o comprovante
+  // pela metade. Nada troca de rota sozinho no meio do trabalho — a outra
+  // aparece no seletor de rotas, para ele abrir quando quiser.
+  useEffect(() => {
+    if (abaRota === 'abertas' && !rotaEscolhidaId && rota) setRotaEscolhidaId(rota.id);
+  }, [abaRota, rotaEscolhidaId, rota]);
+  // E a que ele acabou de concluir continua na tela (aba Fechadas), com o botão
+  // de recibo da última cliente — antes ela sumia e a tela pulava de rota.
+  useEffect(() => {
+    if (abaRota !== 'abertas' || !rotaEscolhidaId) return;
+    if (rotas.find((r) => r.id === rotaEscolhidaId)?.status === 'concluida') setAbaRota('fechadas');
+  }, [rotas, rotaEscolhidaId, abaRota]);
+
+  /** Confirmação recusada pelo servidor (ver `aoFalharSincronizacao`). */
+  const [falhaSync, setFalhaSync] = useState<string | null>(null);
+  useEffect(
+    () =>
+      aoFalharSincronizacao(({ rotaId, oQue }) => {
+        setFalhaSync(oQue);
+        // O registro de entrega foi aceito; o servidor o devolve à rota.
+        const tentar = () =>
+          reconciliarRota(rotaId)
+            .then(() => setFalhaSync(null))
+            .catch(() => undefined);
+        if (navigator.onLine) void tentar();
+        else window.addEventListener('online', () => void tentar(), { once: true });
+      }),
+    [],
+  );
   const dossies = useClientesDaRota(rota);
   const config = useConfigGeral(usuario?.uid ?? null);
   const mapaOffline = useMapaOffline(config);
@@ -220,7 +258,9 @@ export function App() {
               // Pedido importado da planilha não tem a LISTA de itens — só a
               // quantidade física. Sem o fallback, a porta do cliente mostraria
               // "0 itens" com a caixa cheia.
-              itens: p.quantidadeMateriais ?? (p.itens ?? []).length,
+              // Unidades, pela regra comum (`quantidadeDeItens`): contar linhas
+              // da nota dava um número diferente do painel para a mesma entrega.
+              itens: quantidadeDeItens(p),
               itensNota: p.itens ?? [],
               numeroPedido: p.numeroPedido ?? null,
               numeroNota: p.numeroNota,
@@ -282,12 +322,16 @@ export function App() {
   function fechar() {
     if (!rota) return;
     const faltam = paradasPorResolver(rota);
+    const excecoes = excecoesPorResolver(rota);
     const texto =
       faltam > 0
         ? `Fechar a rota com ${faltam} parada(s) POR ENTREGAR?\n\n` +
           'Elas ficam sem registro de entrega e o Admin Estoque vai ter de resolver. ' +
           'A rota vai para o histórico — você pode reabrir depois, se foi engano.'
-        : 'Fechar a rota? Tudo foi resolvido. Ela vai para o histórico, na aba Fechadas.';
+        : excecoes > 0
+          ? `Fechar a rota? As paradas foram resolvidas; as ${excecoes} exceção(ões) sem ponto ` +
+            'recebem a baixa no escritório — diga lá o que foi entregue.'
+          : 'Fechar a rota? Tudo foi resolvido. Ela vai para o histórico, na aba Fechadas.';
     if (!window.confirm(texto)) return;
     fecharRota(rota.id);
     setAbaRota('fechadas');
@@ -358,7 +402,13 @@ export function App() {
           }
         }
       }
-      registrarResultado(rota, parada, resultado, usuario.uid, comprovante);
+      // Relida DEPOIS do GPS: confirmações dentro dessa janela partiam do mesmo
+      // array e a segunda desfazia a primeira.
+      const rotaAgora = rotaAtualRef.current;
+      const paradaAgora = rotaAgora?.paradas.find((p) => p.pedidoId === pedidoId);
+      if (!rotaAgora || rotaAgora.id !== rota.id || !paradaAgora) return false;
+      if (paradaAgora.status === 'entregue' || paradaAgora.status === 'insucesso') return true;
+      registrarResultado(rotaAgora, paradaAgora, resultado, usuario.uid, comprovante);
       setInsucessoAberto(null);
       setComprovanteDe(null);
       return true;
@@ -762,6 +812,13 @@ export function App() {
         </>
       )}
 
+      {falhaSync && (
+        <div className="aviso-outra-rota" role="alert">
+          ⚠ Uma {falhaSync} não entrou na rota: ela mudou no escritório enquanto você estava sem
+          sinal. O registro ficou guardado e o sistema confere sozinho quando houver rede — se a
+          parada continuar "a entregar", avise o escritório.
+        </div>
+      )}
       {rota && (
       <>
       {rotaFechada && (
@@ -865,12 +922,21 @@ export function App() {
             {/* Botão de verdade, com rótulo: antes o clique estava no texto
                 "PARADA 05", sem nada indicando que era tocável — a função
                 existia e ninguém achava. */}
-            <button
-              className={`ver-caminho${paradaFocada === p.ordem - 1 ? ' ativo' : ''}`}
-              onClick={() => setParadaFocada(paradaFocada === p.ordem - 1 ? null : p.ordem - 1)}
-            >
-              {paradaFocada === p.ordem - 1 ? '🔍 caminho em foco' : '🔍 ver caminho'}
-            </button>
+            {(() => {
+              // O ÍNDICE no array, não o número impresso: depois que um pedido
+              // sai do meio da rota, "PARADA 04" é o índice 2 — usar `ordem - 1`
+              // focava a parada seguinte.
+              const indice = paradas.findIndex((x) => x.pedidoId === p.pedidoId);
+              const ativo = indice >= 0 && paradaFocada === indice;
+              return (
+                <button
+                  className={`ver-caminho${ativo ? ' ativo' : ''}`}
+                  onClick={() => setParadaFocada(ativo || indice < 0 ? null : indice)}
+                >
+                  {ativo ? '🔍 caminho em foco' : '🔍 ver caminho'}
+                </button>
+              );
+            })()}
             {p.distanciaM != null && (
               <span className="parada-distancia">· {formatarDistancia(p.distanciaM)}</span>
             )}
@@ -1023,6 +1089,31 @@ export function App() {
             )}
         </article>
       ))}
+
+      {/* Exceções: sem ponto no mapa, fora da ordem — estão no caminhão e no PDF.
+          O app não as confirma (a baixa é no escritório), mas não pode fingir
+          que não existem: a rota com só exceções aparecia com "0 paradas". */}
+      {rota && (rota.excecoes ?? []).length > 0 && (
+        <section className="excecoes-rota">
+          <h3>Exceções — sem ponto no mapa ({(rota.excecoes ?? []).length})</h3>
+          <p>Fora da ordem: encaixe no caminho. A baixa destas é dada no escritório.</p>
+          <ul>
+            {(rota.excecoes ?? []).map((e, i) => (
+              <li key={e.pedidoId}>
+                <strong>E{e.numero ?? i + 1}</strong> · {e.nome} — {e.endereco}
+                {e.telefone && (
+                  <>
+                    {' '}
+                    · <a href={linkLigacao(e.telefone)}>ligar</a>
+                  </>
+                )}
+                {(e.status === 'entregue' || e.status === 'insucesso') &&
+                  ` · ${e.status === 'entregue' ? 'entregue' : 'não entregue'}`}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Fechar fica DEPOIS de tudo, no fim da rolagem: é o último ato do dia, e
           longe do polegar que está confirmando entregas. */}

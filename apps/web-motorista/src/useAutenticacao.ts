@@ -5,7 +5,42 @@ import {
   signOut,
   type User,
 } from 'firebase/auth';
-import { auth } from './firebase';
+import { clearIndexedDbPersistence, terminate, waitForPendingWrites } from 'firebase/firestore';
+import { auth, db } from './firebase';
+
+/**
+ * Sair LIMPA o que ficou no aparelho — rota, clientes (nome, telefone,
+ * endereço) e fotos de fachada. Num celular compartilhado, o próximo motorista
+ * via tudo isso no cache, onde as rules não alcançam. Mas só limpa com tudo
+ * ENVIADO: apagar a fila offline com confirmações pendentes perderia entregas.
+ */
+async function sairLimpando(): Promise<void> {
+  const enviado = navigator.onLine
+    ? await Promise.race([
+        waitForPendingWrites(db).then(() => true),
+        new Promise<boolean>((r) => setTimeout(() => r(false), 8000)),
+      ])
+    : false;
+  if (!enviado) {
+    const seguir = window.confirm(
+      'Há registros ainda NÃO enviados (sem internet agora). Saindo, eles ficam guardados ' +
+        'neste aparelho e sobem quando você entrar de novo com rede — mas os dados da rota ' +
+        'também ficam no aparelho. Sair assim mesmo?',
+    );
+    if (!seguir) return;
+    await signOut(auth);
+    return;
+  }
+  await signOut(auth);
+  await terminate(db);
+  await clearIndexedDbPersistence(db).catch(() => undefined);
+  if ('caches' in window) {
+    await Promise.all(['fotos-referencia', 'fotos-referencia-meta'].map((c) => caches.delete(c)));
+  }
+  // O SDK do Firestore foi encerrado: só uma página nova o recria. É o
+  // motorista que pediu para sair — nada recarrega no meio do trabalho.
+  location.reload();
+}
 
 /** Sessão do motorista — login por e-mail/senha, contas criadas pelo admin (seção 2). */
 export function useAutenticacao() {
@@ -25,7 +60,7 @@ export function useAutenticacao() {
     usuario,
     carregando,
     entrar: (email: string, senha: string) => signInWithEmailAndPassword(auth, email, senha),
-    sair: () => signOut(auth),
+    sair: sairLimpando,
   };
 }
 

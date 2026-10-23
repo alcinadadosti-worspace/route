@@ -100,6 +100,9 @@ export async function importarXmls(
     return proxima;
   }
   const chavesVistas = new Set<string>();
+  /** Nº do pedido das notas desta remessa — duas notas do mesmo pedido. */
+  const numerosVistos = new Set<string>();
+  const cancelados = await repo.idsDeCancelados();
 
   for await (const lote of emLotes(arquivos, CONCORRENCIA)) {
     const resultados = await Promise.all(
@@ -111,6 +114,8 @@ export async function importarXmls(
           cdPorCnpj,
           porCliente,
           chavesVistas,
+          numerosVistos,
+          cancelados,
         }),
       ),
     );
@@ -141,8 +146,12 @@ export async function importarXmls(
  * de ~43 s para poucos segundos. Nao e numero para maximizar - passar disso so
  * empilha requisicao numa instancia pequena e aproxima o limite de taxa da
  * geocodificacao.
+ *
+ * 8, e nao 20: cada arvore parseada vive ate o fim da nota, e 20 notas forjadas
+ * de 5 MB subiam ~1 GB numa instancia de 512 MB (medido). A planilha e o
+ * caminho do dia a dia; no XML, 8 em paralelo ainda tiram o grosso da espera.
  */
-const CONCORRENCIA = 20;
+const CONCORRENCIA = 8;
 
 /** Agrupa o iteravel de entrada (que pode ser stream) em lotes de `tamanho`. */
 export async function* emLotes<T>(
@@ -178,9 +187,11 @@ async function processarArquivo(
     cdPorCnpj: Map<string, string>;
     porCliente: <T>(clienteId: string, tarefa: () => Promise<T>) => Promise<T>;
     chavesVistas: Set<string>;
+    numerosVistos: Set<string>;
+    cancelados: Set<string>;
   },
 ): Promise<ResultadoArquivo> {
-  const { repo, geocodificador, relatorio, cdPorCnpj, porCliente, chavesVistas } = ctx;
+  const { repo, geocodificador, relatorio, cdPorCnpj, porCliente, chavesVistas, numerosVistos, cancelados } = ctx;
   const alertas: RelatorioImportacao['alertas'] = [];
   relatorio.total += 1;
   const resultado = await parseNfe(arquivo.conteudo);
@@ -197,6 +208,24 @@ async function processarArquivo(
     return { alertas };
   }
   chavesVistas.add(nota.chaveAcesso);
+
+  // O MESMO pedido já entrou pela planilha (id = CodigoPedido = `numeroPedido`
+  // do XML; 297 de 297 pares batem) ou foi cancelado no ERP. Soltar o XML e a
+  // planilha do mesmo ciclo duplicava tudo — e os "entregues no ERP" e os
+  // cancelados voltavam prontos para a rota, com 1372 buscas pagas de brinde.
+  // Só dígitos: o número vira caminho de documento no `obterPedido`.
+  const numero = nota.numeroPedido && /^\d{1,20}$/.test(nota.numeroPedido) ? nota.numeroPedido : null;
+  if (numero) {
+    if (cancelados.has(numero)) {
+      relatorio.canceladas = (relatorio.canceladas ?? 0) + 1;
+      return { alertas };
+    }
+    if (numerosVistos.has(numero) || (await repo.obterPedido(numero))) {
+      relatorio.duplicados += 1;
+      return { alertas };
+    }
+    numerosVistos.add(numero);
+  }
 
   // Tudo que toca o CLIENTE vai na fila dele: cadastro e classificação são
   // leitura → decisão → escrita, e duas notas do mesmo cliente em paralelo
@@ -589,6 +618,8 @@ export async function decidirMudancaEndereco(
     fotoReferenciaPath: null,
     observacoes: '',
     enderecoEmRevisao: null,
+    // O mesmo GPS do cadastro não pode voltar na próxima planilha.
+    pontoDescartado: cliente.coordenada,
   } satisfies Partial<Cliente>;
   const semPonto: Cliente = { ...cliente, ...limpeza };
   await repo.atualizarCliente(pedido.clienteId, limpeza);
@@ -600,6 +631,11 @@ export async function decidirMudancaEndereco(
 
   const status = await classificarDestino(pedido.clienteId, semPonto, repo, geocodificador, null);
   await liberarPedidosEmRevisao(repo, pedido.clienteId, status);
+  // O pedido anterior do cliente (pronto, com o ponto velho) segue o ponto
+  // novo — ou a falta dele. Sem isto, com a busca sem resultado, ele ficava
+  // "pronto" de um cliente sem coordenada: fora do agrupamento, recusado na
+  // prévia (sem ponto) e na exceção (já tem ponto) — preso em todas as telas.
+  await realinharPedidosDoCliente(repo, pedido.clienteId, status === 'pronto_para_rota');
   return { ok: true, status };
 }
 
@@ -695,6 +731,9 @@ export async function refazerPontoDoCliente(
     mapeadoPor: null,
     mapeadoEm: null,
     trilhaAtivaId: null,
+    // Descartado de propósito: o GPS errado do cadastro voltava como pin exato
+    // na planilha do dia seguinte, desfazendo o "refazer".
+    pontoDescartado: cliente.coordenada,
   } satisfies Partial<Cliente>;
   await repo.atualizarCliente(clienteId, limpeza);
   if (cliente.trilhaAtivaId) await repo.atualizarTrilha(cliente.trilhaAtivaId, { ativa: false });
@@ -712,14 +751,29 @@ export async function refazerPontoDoCliente(
   // acabou de ficar sem coordenada, e só a montagem da rota reclamaria.
   // Por pedido: o override de entrega (8.4) não veio do cliente e não morre
   // com o ponto dele.
+  await realinharPedidosDoCliente(repo, clienteId, status === 'pronto_para_rota');
+
+  return { ok: true, status };
+}
+
+/**
+ * Os pedidos do cliente que ainda esperam rota seguem o ponto dele (por
+ * pedido: o override de entrega, 8.4, não morre com o ponto do cliente).
+ * Gravação condicional: um pedido publicado no meio não é desfeito.
+ */
+async function realinharPedidosDoCliente(
+  repo: Repositorio,
+  clienteId: string,
+  clienteTemPonto: boolean,
+): Promise<void> {
+  const alteracoes: Array<{ id: string; statusEsperado: StatusPedido; dados: Pedido }> = [];
   for (const { id, ...pedido } of await repo.listarPedidos()) {
     if (pedido.clienteId !== clienteId) continue;
     if (pedido.status !== 'pronto_para_rota' && pedido.status !== 'pendente_de_mapeamento') continue;
-    const novo = statusForaDeRota(pedido, status === 'pronto_para_rota');
-    if (pedido.status !== novo) await repo.salvarPedido(id, { ...pedido, status: novo });
+    const novo = statusForaDeRota(pedido, clienteTemPonto);
+    if (pedido.status !== novo) alteracoes.push({ id, statusEsperado: pedido.status, dados: { ...pedido, status: novo } });
   }
-
-  return { ok: true, status };
+  await repo.atualizarPedidosSeStatus(alteracoes);
 }
 
 /**
