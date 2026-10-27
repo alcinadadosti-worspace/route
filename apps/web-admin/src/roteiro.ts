@@ -1,6 +1,8 @@
 import {
   chaveDeMunicipio,
   formatarDia,
+  telefoneDaParada,
+  telefoneLegivel,
   type Cliente,
   type ExcecaoRota,
   type ParadaRota,
@@ -46,13 +48,6 @@ export interface Roteiro {
 
 const numero = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 
-/** `+5582999990000` → `(82) 99999-0000`. O que não reconhece passa como veio. */
-export function telefoneLegivel(e164: string | null | undefined): string | null {
-  if (!e164) return null;
-  const m = /^\+55(\d{2})(\d{4,5})(\d{4})$/.exec(e164);
-  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
-}
-
 /** `200` → `3h20`; `45` → `45 min`. */
 export function duracaoLegivel(minutos: number): string {
   const m = Math.max(0, Math.round(minutos));
@@ -89,7 +84,9 @@ function comum(p: ParadaRota | ExcecaoRota, clientes: Record<string, Cliente>) {
     nome: p.nome,
     endereco: p.endereco,
     comoChegar: observacoes ? observacoes : null,
-    telefone: telefoneLegivel(p.telefone),
+    // O do cliente, como no app do motorista: o telefone completado DEPOIS
+    // de publicar não chegava ao papel, que é o canal de campo hoje.
+    telefone: telefoneLegivel(telefoneDaParada(p.telefone, clientes[p.clienteId]?.telefone)),
     documento: documento(p),
     carga: carga(p),
     resultado: resultado(p.status),

@@ -439,7 +439,8 @@ test('rota sem o campo itens não derruba a aba inteira', () => {
   const m = r.relatorio.motoristas[0]!;
   assert.equal(m.entregues, 1);
   assert.equal(m.itensEntregues, 0);
-  assert.equal(m.produtosDistintos, 0);
+  // Sem lista e sem quantidade: "não sei", não "nenhum".
+  assert.equal(m.produtosDistintos, null);
 });
 
 test('pedido da planilha (sem lista de itens): produtos distintos vira NULL, nunca zero', () => {

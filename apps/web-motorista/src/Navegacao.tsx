@@ -10,6 +10,7 @@ import {
   mensagemDeChegada,
   paradaPrecisaMapear,
   rumoEmGraus,
+  telefoneDaParada,
   type ParametrosAviso,
   type GeoPonto,
   type ParadaRota,
@@ -90,6 +91,7 @@ export function Navegacao({
 }) {
   const cliente = dossie?.cliente ?? null;
   const trilha = dossie?.trilha ?? null;
+  const telefone = telefoneDaParada(parada.telefone, cliente?.telefone);
   const pinDoCliente = cliente?.coordenada ?? parada.coordenada;
   // Destino sem ponto confiável (rural/aproximado) grava trilha e confirma pin em
   // campo. Geocodificado (preciso) e já mapeado: navega até o pin e entrega, sem
@@ -526,11 +528,11 @@ export function Navegacao({
             botão só aparece quando há um minuto de verdade para dizer, ou
             quando o destino já está perto o bastante para "em instantes" ser
             honesto. Para o resto do dia existe o aviso com janela, na lista. */}
-        {!chegou && parada.telefone && podeAvisarChegada && (
+        {!chegou && telefone && podeAvisarChegada && (
           <a
             className={`avisar${parada.avisadoEm ? ' feito' : ''}`}
             href={linkWhatsApp(
-              parada.telefone,
+              telefone,
               mensagemDeChegada(minutosDoAviso(), parametrosAviso),
             )}
             target="_blank"
@@ -539,7 +541,7 @@ export function Navegacao({
               // O minuto é refeito NO TOQUE: a tela fica aberta rodando e o
               // href do render envelhece junto com a estimativa.
               evento.currentTarget.href = linkWhatsApp(
-                parada.telefone!,
+                telefone,
                 mensagemDeChegada(minutosDoAviso(), parametrosAviso),
               );
               // E REGISTRA. Sem isto, o aviso mandado daqui — que é a tela onde

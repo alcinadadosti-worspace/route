@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clienteIdDeDocumento, mascararDocumento, notaDaChaveDeAcesso } from './documento.js';
-import { normalizarTelefone, linkWhatsApp } from './telefone.js';
+import { normalizarTelefone, linkWhatsApp, telefoneDaParada, telefoneLegivel } from './telefone.js';
 import {
   ehEnderecoRural,
   enderecosDivergem,
@@ -209,6 +209,25 @@ test('telefone normaliza para E.164 com +55', () => {
   assert.equal(normalizarTelefone('082999887766'), '+5582999887766');
   assert.equal(normalizarTelefone(''), null);
   assert.equal(normalizarTelefone('3322'), null);
+});
+
+test('telefone da parada: o do cliente (completado depois de publicar) vem antes do congelado na rota', () => {
+  // Cliente do romaneio sem telefone na publicação; o Admin completou depois.
+  assert.equal(telefoneDaParada(null, '+5582999887766'), '+5582999887766');
+  assert.equal(telefoneDaParada('+5582911110000', '+5582999887766'), '+5582999887766');
+  // Doc do cliente ainda não chegou (offline): vale o da parada.
+  assert.equal(telefoneDaParada('+5582911110000', undefined), '+5582911110000');
+  assert.equal(telefoneDaParada('', undefined), null);
+  // O Admin APAGOU o número (era da homônima errada): o motorista não pode
+  // voltar a ver o da parada, que é o da outra pessoa.
+  assert.equal(telefoneDaParada('+5582911110000', null), null);
+});
+
+test('telefone legível: +55 vira (DDD) número; o resto passa como veio', () => {
+  assert.equal(telefoneLegivel('+5582999887766'), '(82) 99988-7766');
+  assert.equal(telefoneLegivel('+558233334444'), '(82) 3333-4444');
+  assert.equal(telefoneLegivel(null), null);
+  assert.equal(telefoneLegivel('123'), '123');
 });
 
 test('link de WhatsApp usa apenas dígitos', () => {

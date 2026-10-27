@@ -11,13 +11,16 @@ import {
   type ArquivoXml,
 } from './importacao/servico.js';
 import { importarPlanilha } from './importacao/servico-planilha.js';
+import { importarCadastro } from './importacao/servico-cadastro.js';
+import { importarRomaneios } from './importacao/servico-romaneio.js';
+import { candidatasDoCliente, salvarDadosDoCliente } from './importacao/dados-cliente.js';
 import { localizarEnderecos } from './importacao/geocodificacao-lote.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
 import { alterarLiberacao } from './rotas/liberacao.js';
 import { reconciliarComEntregas } from './rotas/reconciliar.js';
 import { darBaixa } from './rotas/baixa.js';
 import { agruparPorRegiao, type BaixaPedida } from '@rota/shared';
-import { FORMATO_ROTA_ID } from './rotas/comum.js';
+import { FORMATO_PEDIDO_ID, FORMATO_ROTA_ID } from './rotas/comum.js';
 import { calcularProdutividade, validarJanela } from './produtividade.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
@@ -50,6 +53,14 @@ interface ConfigRota {
 }
 const ESCRITORIO = ['admin', 'operador'];
 const TODOS = ['admin', 'operador', 'motorista'];
+/**
+ * O clienteId vira caminho de documento: validar fecha a injeção de caminho,
+ * como no rotaId e na chave do pedido. DOIS formatos legítimos: hash hex de 64
+ * (cliente vindo de XML ou de romaneio fora da base) e código Pessoa do ERP,
+ * numérico. A guarda original só conhecia o hash — e rejeitava com 404 o
+ * refazer-ponto de TODO cliente importado da planilha, que hoje é a base inteira.
+ */
+const ID_DE_CLIENTE = /^([0-9a-f]{64}|\d{1,20})$/;
 /** Rotas públicas (sem token). O resto é deny-by-default. */
 const ROTAS_PUBLICAS = new Set(['/health']);
 
@@ -131,36 +142,65 @@ export async function criarApp({
     // metade entrou. O erro vira uma linha no relatório, e reenviar a remessa
     // inteira é seguro (dedupe pela chave de acesso).
     let erroDeStream: string | null = null;
-    // A planilha do ERP (xlsx) entra pela MESMA porta dos XMLs: o operador
-    // solta o que tiver. Os XMLs seguem em streaming; a planilha e bufferizada
-    // (e UM arquivo de poucos MB) e processada depois que o stream termina.
+    // A planilha do ERP (xlsx), o cadastro de revendedoras (xlsx) e os
+    // romaneios do Boticário (pdf) entram pela MESMA porta dos XMLs: o operador
+    // solta o que tiver. Os XMLs seguem em streaming; o resto é bufferizado
+    // (arquivos de poucos MB) e processado depois que o stream termina.
     const planilhas: Array<{ nome: string; conteudo: Buffer }> = [];
-    // As planilhas ficam em memória até o fim do stream (os XMLs não): sem
-    // teto, 80 partes .xlsx de 5 MB subiam +428 MB na instância de 512 MB.
-    // Uma planilha real do ciclo inteiro tem ~1 MB.
+    const romaneios: Array<{ nome: string; conteudo: Buffer }> = [];
+    // Esses ficam em memória até o fim do stream (os XMLs não): sem teto, 80
+    // partes .xlsx de 5 MB subiam +428 MB na instância de 512 MB. Uma planilha
+    // real do ciclo inteiro tem ~1 MB, o cadastro 1,4 MB, um romaneio 80 KB.
     const TETO_PLANILHAS = 20 * 1024 * 1024;
     let bytesDePlanilha = 0;
+    // Para a mensagem do teto por arquivo dizer QUAL arquivo passou.
+    let arquivoAtual = '';
     async function* lerArquivos(): AsyncIterable<ArquivoXml> {
       try {
         for await (const parte of req.files()) {
+          arquivoAtual = parte.filename;
           const buffer = await parte.toBuffer();
-          if (parte.filename.toLowerCase().endsWith('.xlsx')) {
+          const nome = parte.filename.toLowerCase();
+          if (nome.endsWith('.xlsx') || nome.endsWith('.pdf')) {
             bytesDePlanilha += buffer.length;
             if (bytesDePlanilha > TETO_PLANILHAS) {
-              erroDeStream = 'planilhas somando mais de 20 MB numa remessa — envie uma de cada vez';
+              erroDeStream = 'planilhas e PDFs somando mais de 20 MB numa remessa — envie em partes';
               return;
             }
-            planilhas.push({ nome: parte.filename, conteudo: buffer });
+            (nome.endsWith('.pdf') ? romaneios : planilhas).push({ nome: parte.filename, conteudo: buffer });
             continue;
           }
           yield { nome: parte.filename, conteudo: buffer.toString('utf8') };
         }
       } catch (e) {
-        erroDeStream = e instanceof Error ? e.message : 'falha na leitura do upload';
+        // O teto por arquivo (5 MB) é o que barra o cadastro COMPLETO de
+        // revendedoras (14,6 MB, 130 MB descomprimido — derrubaria a instância
+        // de 512 MB). A mensagem crua do plugin, "request file too large", não
+        // dizia ao operador qual arquivo nem o que fazer. A explicação do
+        // cadastro só cabe a .xlsx: num PDF ou XML grande ela despistava.
+        const grande = (e as { code?: string })?.code === 'FST_REQ_FILE_TOO_LARGE';
+        erroDeStream = grande
+          ? `"${arquivoAtual}" passa de 5 MB` +
+            (arquivoAtual.toLowerCase().endsWith('.xlsx')
+              ? '. O cadastro COMPLETO de revendedoras e as planilhas de pedidos do ano são grandes demais para o painel — são carregados direto no banco, uma vez; para atualizar pelo painel, exporte só as revendedoras ativas ou um período menor'
+              : '; os arquivos depois dele não foram lidos')
+          : e instanceof Error
+            ? e.message
+            : 'falha na leitura do upload';
       }
     }
     const relatorio = await importarXmls(lerArquivos(), repo, geocodificador);
+    // ORDEM: o cadastro de revendedoras antes dos romaneios — é nele que o
+    // romaneio acha o código e o telefone de cada destinatária. Soltos juntos
+    // na ordem inversa, todas entrariam como cliente novo, sem telefone.
+    const planilhasDePedidos: typeof planilhas = [];
     for (const planilha of planilhas) {
+      const doCadastro = await importarCadastro(planilha.nome, planilha.conteudo, repo);
+      if (doCadastro) mesclarRelatorios(relatorio, doCadastro);
+      else planilhasDePedidos.push(planilha);
+    }
+    if (romaneios.length > 0) mesclarRelatorios(relatorio, await importarRomaneios(romaneios, repo));
+    for (const planilha of planilhasDePedidos) {
       mesclarRelatorios(
         relatorio,
         await importarPlanilha(planilha.nome, planilha.conteudo, repo),
@@ -169,7 +209,7 @@ export async function criarApp({
     if (relatorio.total === 0) {
       return reply
         .code(400)
-        .send({ erro: erroDeStream ?? 'Nenhum arquivo XML enviado' });
+        .send({ erro: erroDeStream ?? 'Nenhum arquivo enviado' });
     }
     if (erroDeStream) {
       relatorio.rejeitados.push({
@@ -217,9 +257,9 @@ export async function criarApp({
     { config: { papeis: ESCRITORIO } },
     async (req, reply) => {
       const { chave } = req.params as { chave: string };
-      // Todo pedido tem por ID a chave de acesso (44 dígitos). Validar aqui evita
-      // que uma chave malformada vire caminho inválido no Firestore (500 cru).
-      if (!/^(\d{9}|\d{44})$/.test(chave)) {
+      // O id vira caminho de documento no Firestore: validar evita que um id
+      // malformado vire caminho inválido (500 cru) — ver FORMATO_PEDIDO_ID.
+      if (!FORMATO_PEDIDO_ID.test(chave)) {
         return reply.code(404).send({ erro: 'Pedido não encontrado' });
       }
       const corpo = (req.body ?? {}) as {
@@ -245,7 +285,7 @@ export async function criarApp({
     { config: { papeis: ESCRITORIO } },
     async (req, reply) => {
       const { chave } = req.params as { chave: string };
-      if (!/^(\d{9}|\d{44})$/.test(chave)) {
+      if (!FORMATO_PEDIDO_ID.test(chave)) {
         return reply.code(404).send({ erro: 'Pedido não encontrado' });
       }
       const corpo = (req.body ?? {}) as { escolha?: 'manter' | 'remapear' };
@@ -268,7 +308,7 @@ export async function criarApp({
     { config: { papeis: ESCRITORIO } },
     async (req, reply) => {
       const { chave } = req.params as { chave: string };
-      if (!/^(\d{9}|\d{44})$/.test(chave)) {
+      if (!FORMATO_PEDIDO_ID.test(chave)) {
         return reply.code(404).send({ erro: 'Pedido não encontrado' });
       }
       const corpo = (req.body ?? {}) as { escolha?: 'rota' | 'retirada' };
@@ -297,7 +337,7 @@ export async function criarApp({
   // junto; só o que já foi executado em campo é intocável (ver remover.ts).
   app.delete('/api/pedidos/:chave', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
     const { chave } = req.params as { chave: string };
-    if (!/^(\d{9}|\d{44})$/.test(chave)) {
+    if (!FORMATO_PEDIDO_ID.test(chave)) {
       return reply.code(404).send({ erro: 'Pedido não encontrado' });
     }
     const resultado = await removerPedido(repo, chave);
@@ -324,13 +364,7 @@ export async function criarApp({
     { config: { papeis: ESCRITORIO } },
     async (req, reply) => {
       const { clienteId } = req.params as { clienteId: string };
-      // O clienteId vira caminho de documento: validar fecha a injeção de
-      // caminho, como no rotaId e na chave do pedido. DOIS formatos legítimos:
-      // hash hex de 64 (cliente vindo de XML) e código Pessoa do ERP, numérico
-      // (cliente vindo da planilha). A guarda original só conhecia o hash — e
-      // rejeitava com 404 o refazer-ponto de TODO cliente importado da
-      // planilha, que hoje é a base inteira.
-      if (!/^([0-9a-f]{64}|\d{1,20})$/.test(clienteId)) {
+      if (!ID_DE_CLIENTE.test(clienteId)) {
         return reply.code(404).send({ erro: 'Cliente não encontrado' });
       }
       const resultado = await refazerPontoDoCliente(repo, clienteId, geocodificador);
@@ -338,6 +372,27 @@ export async function criarApp({
       return { status: resultado.status };
     },
   );
+
+  // Cliente do romaneio fora da base de revendedoras: a folha só traz nome e
+  // endereço, e o Admin Estoque completa o resto (telefone, referência).
+  // Corpo vazio = "não tenho mais dados" — tira o cliente da lista.
+  app.post('/api/clientes/:clienteId/dados', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
+    const { clienteId } = req.params as { clienteId: string };
+    if (!ID_DE_CLIENTE.test(clienteId)) return reply.code(404).send({ erro: 'Cliente não encontrado' });
+    const resultado = await salvarDadosDoCliente(repo, clienteId, req.body);
+    if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+    return resultado.cliente;
+  });
+
+  // Quem tem o mesmo nome na base de revendedoras — para o Admin reconhecer a
+  // pessoa e trazer o telefone dela, em vez de digitar.
+  app.get('/api/clientes/:clienteId/candidatas', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
+    const { clienteId } = req.params as { clienteId: string };
+    if (!ID_DE_CLIENTE.test(clienteId)) return reply.code(404).send({ erro: 'Cliente não encontrado' });
+    const resultado = await candidatasDoCliente(repo, clienteId);
+    if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+    return resultado.candidatas;
+  });
 
   app.get('/api/cds', { config: { papeis: ESCRITORIO } }, async () => repo.obterCds());
 

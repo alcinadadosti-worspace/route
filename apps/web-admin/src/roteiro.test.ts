@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Cliente, ExcecaoRota, ParadaRota, Rota } from '@rota/shared';
-import { duracaoLegivel, montarRoteiro, telefoneLegivel } from './roteiro.js';
+import { telefoneLegivel, type Cliente, type ExcecaoRota, type ParadaRota, type Rota } from '@rota/shared';
+import { duracaoLegivel, montarRoteiro } from './roteiro.js';
 import { textoParaPdf } from './roteiroPdf.js';
 
 test('texto do PDF: quebra de linha vira espaço, e o que o Latin-1 não tem é trocado ou some', () => {
@@ -10,11 +10,11 @@ test('texto do PDF: quebra de linha vira espaço, e o que o Latin-1 não tem é 
   assert.equal(textoParaPdf('Tel. 1  ·  NF 2'), 'Tel. 1  ·  NF 2');
 });
 
-function cliente(municipio: string, observacoes = ''): Cliente {
+function cliente(municipio: string, observacoes = '', telefone: string | null = '+5582999990000'): Cliente {
   return {
     nome: 'X',
     documentoMascarado: '***',
-    telefone: null,
+    telefone,
     email: null,
     enderecoFiscal: { logradouro: '', numero: '', bairro: '', municipio, uf: 'AL', cep: '' },
     coordenada: null,
@@ -81,7 +81,9 @@ function rota(): Rota {
 const CLIENTES = {
   'c-a': cliente('Teotônio Vilela', 'portão azul depois da igreja'),
   'c-b': cliente('Teotônio Vilela'),
-  'c-r1': cliente('Teotônio Vilela', 'entrar na estrada de barro do posto'),
+  // Exceção publicada SEM telefone (cliente do romaneio fora da base); o
+  // Admin completou depois — o papel baixado de novo tem que trazer.
+  'c-r1': cliente('Teotônio Vilela', 'entrar na estrada de barro do posto', '+5582988887777'),
 };
 const CONTEXTO = { motorista: 'José', clientes: CLIENTES, geradoEm: new Date('2026-10-16T10:12:00Z') };
 
@@ -117,7 +119,7 @@ test('roteiro: exceções separadas, marcadas E1…, sem estimativa (não têm l
   assert.equal(e.marca, 'E1');
   assert.equal(e.estimativa, null);
   assert.equal(e.comoChegar, 'entrar na estrada de barro do posto');
-  assert.equal(e.telefone, null);
+  assert.equal(e.telefone, '(82) 98888-7777', 'o telefone completado depois de publicar');
   assert.equal(e.carga, '1 vol');
 });
 

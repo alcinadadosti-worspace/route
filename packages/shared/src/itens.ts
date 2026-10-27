@@ -28,14 +28,26 @@ export function quantidadeDeItens(
 }
 
 /**
+ * A fonte disse QUANTOS itens o pedido leva? O romaneio do Boticário não diz:
+ * não traz lista nem quantidade, e o pedido dele chega com zero nos dois. Sem
+ * esta pergunta, `quantidadeDeItens` devolve 0 e a porta da cliente mostrava
+ * "0 itens · 1 vol", e a produtividade, "0 item(ns)" com o caminhão cheio.
+ */
+export function itensConhecidos(
+  origem: { itens?: ItemPedido[] | null; quantidadeMateriais?: number | null },
+): boolean {
+  return quantidadeDeItens(origem) > 0;
+}
+
+/**
  * Quantos produtos DISTINTOS — `null` quando a fonte não permite saber (a
- * planilha do ERP não manda a lista). Null e zero dizem coisas diferentes:
- * "não sei" não pode virar "nenhum" numa métrica que o Admin Estoque lê.
+ * planilha do ERP manda só a quantidade; o romaneio, nem isso). Null e zero
+ * dizem coisas diferentes: "não sei" não pode virar "nenhum" numa métrica que
+ * o Admin Estoque lê.
  */
 export function produtosDistintos(
   origem: { itens?: ItemPedido[] | null; quantidadeMateriais?: number | null },
 ): number | null {
   const lista = origem.itens ?? [];
-  if (lista.length > 0) return lista.length;
-  return origem.quantidadeMateriais ? null : 0;
+  return lista.length > 0 ? lista.length : null;
 }

@@ -1371,7 +1371,7 @@ export function Rotas() {
             valor={buscaMontagem}
             aoMudar={setBuscaMontagem}
             rotulo="Buscar pedido na montagem"
-            placeholder="Buscar pelo nº do pedido, nota ou cliente…"
+            placeholder="Buscar pelo nº do pedido, nota, romaneio ou cliente…"
           />
         )}
         {buscaMontagem.trim() && (

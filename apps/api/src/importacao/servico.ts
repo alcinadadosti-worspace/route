@@ -777,6 +777,22 @@ async function realinharPedidosDoCliente(
 }
 
 /**
+ * O mesmo para vários clientes que ACABARAM de ganhar ponto (o GPS da base de
+ * revendedoras): os pedidos deles que esperavam a localização paga saem prontos.
+ * Uma consulta filtrada para todos, não a coleção inteira por cliente.
+ */
+export async function realinharPedidosDosClientes(repo: Repositorio, comPonto: Set<string>): Promise<void> {
+  if (comPonto.size === 0) return;
+  const alteracoes: Array<{ id: string; statusEsperado: StatusPedido; dados: Pedido }> = [];
+  for (const { id, ...pedido } of await repo.pedidosComStatus('pendente_de_mapeamento')) {
+    if (!comPonto.has(pedido.clienteId)) continue;
+    const novo = statusForaDeRota(pedido, true);
+    if (pedido.status !== novo) alteracoes.push({ id, statusEsperado: pedido.status, dados: { ...pedido, status: novo } });
+  }
+  await repo.atualizarPedidosSeStatus(alteracoes);
+}
+
+/**
  * Solta os pedidos que estavam presos SÓ pela revisão do ponto (seção 8.3) —
  * inclusive o que motivou a decisão. Uma remessa com várias notas do mesmo
  * cliente faz a pergunta uma vez, não uma por nota. Quem ainda deve a decisão
@@ -833,6 +849,15 @@ export function mesclarRelatorios(
     destino.canceladasApagadas = (destino.canceladasApagadas ?? 0) + origem.canceladasApagadas;
   }
   if (origem.jaEntregues) destino.jaEntregues = (destino.jaEntregues ?? 0) + origem.jaEntregues;
+  // `!== undefined`, não "se tiver valor": o cadastro reimportado sem mudança
+  // devolve 0 novas / 0 atualizadas, e o zero precisa chegar à tela — senão o
+  // operador não sabe se o cadastro foi lido.
+  for (const campo of ['romaneios', 'semCadastro', 'revendedoras', 'clientesAtualizados'] as const) {
+    if (origem[campo] !== undefined) destino[campo] = (destino[campo] ?? 0) + origem[campo];
+  }
+  if (origem.clientesACompletar) {
+    destino.clientesACompletar = [...(destino.clientesACompletar ?? []), ...origem.clientesACompletar];
+  }
   destino.rejeitados.push(...origem.rejeitados);
   destino.alertas.push(...origem.alertas);
   for (const [cd, n] of Object.entries(origem.porCd)) {

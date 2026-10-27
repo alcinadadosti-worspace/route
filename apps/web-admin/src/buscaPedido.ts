@@ -3,12 +3,13 @@ import { formatarDia, normalizar, type Pedido } from '@rota/shared';
 /**
  * Busca de pedido no painel (montagem e "Fora da montagem").
  *
- * Termo que é NÚMERO procura nos números — pedido, nota e o id —, aceitando o
+ * Termo que é NÚMERO procura nos números — pedido, nota, o id e o número da
+ * rota do romaneio do Boticário —, aceitando o
  * que se cola de outro sistema ("536.361.204", "536 361 204"); termo com
  * letras procura no nome da cliente, sem acento nem caixa.
  */
 export function casaBusca(
-  pedido: Pick<Pedido, 'numeroPedido' | 'numeroNota'> & { id: string; serie?: number },
+  pedido: Pick<Pedido, 'numeroPedido' | 'numeroNota' | 'romaneio'> & { id: string; serie?: number },
   nomeCliente: string,
   termo: string,
 ): boolean {
@@ -26,10 +27,17 @@ export function casaBusca(
   if (/^[\d\s.\-/]+$/.test(t)) {
     const digitos = t.replace(/\D/g, '');
     if (!digitos) return true;
+    // O pedido do site, como a folha imprime ("160000001-1"): juntar os
+    // dígitos dava "1600000011", que não está dentro de "160000001-1".
+    const comHifen = /^\d+\s*-\s*\d{1,4}$/.test(t) && pedido.id.includes(t.replace(/\s/g, ''));
     return (
+      comHifen ||
       (pedido.numeroPedido ?? '').includes(digitos) ||
       pedido.id.includes(digitos) ||
-      String(pedido.numeroNota).includes(digitos)
+      String(pedido.numeroNota).includes(digitos) ||
+      // O número da rota do Boticário: inteiro, porque ele pega a folha toda —
+      // "167" casando por pedaço traria pedidos de folhas que não são esta.
+      pedido.romaneio === digitos
     );
   }
   return normalizar(nomeCliente).includes(normalizar(t));

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { produtosDistintos, quantidadeDeItens } from './itens.js';
+import { itensConhecidos, produtosDistintos, quantidadeDeItens } from './itens.js';
 
 test('com lista, item é a SOMA das quantidades — não a contagem de linhas', () => {
   // Nas notas reais são 8,3 linhas para 24,1 unidades: três vezes de diferença.
@@ -21,8 +21,14 @@ test('pedido da PLANILHA não tem lista: vale a quantidade do ERP', () => {
 
 test('produtos distintos é NULL na planilha — "não sei" não pode virar "nenhum"', () => {
   assert.equal(produtosDistintos({ itens: [], quantidadeMateriais: 7 }), null);
-  // Sem lista e sem quantidade, aí sim é zero de verdade.
-  assert.equal(produtosDistintos({ itens: [] }), 0);
+  // Sem lista e sem quantidade é o pedido do ROMANEIO: também "não sei".
+  assert.equal(produtosDistintos({ itens: [], quantidadeMateriais: 0 }), null);
+});
+
+test('pedido do romaneio (sem lista, quantidade 0): itens DESCONHECIDOS, não zero', () => {
+  assert.equal(itensConhecidos({ itens: [], quantidadeMateriais: 0 }), false);
+  assert.equal(itensConhecidos({ itens: [], quantidadeMateriais: 7 }), true);
+  assert.equal(itensConhecidos({ itens: [{ codigo: 'a', descricao: 'GEL', quantidade: 2 }] }), true);
 });
 
 test('a lista manda quando existe, mesmo com a quantidade do ERP junto', () => {

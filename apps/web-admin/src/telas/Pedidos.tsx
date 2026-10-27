@@ -89,7 +89,7 @@ export function Pedidos() {
           valor={filtro}
           aoMudar={setFiltro}
           rotulo="Filtrar pedidos"
-          placeholder="Nº da nota, pedido, lote ou cliente…"
+          placeholder="Nº da nota, pedido, lote, romaneio ou cliente…"
         />
       )}
       {erro && <div className="erro">{erro}</div>}
@@ -134,18 +134,22 @@ export function Pedidos() {
                     </div>
                   </td>
                   <td className="mono">
-                    {p.numeroPedido ?? '—'} · {p.lote ?? '—'}
+                    {p.numeroPedido ?? '—'} · {p.romaneio ? `romaneio ${p.romaneio}` : (p.lote ?? '—')}
                   </td>
                   <td>{p.emitidoEm.slice(0, 10)}</td>
-                  <td>{quantidadeDeItens(p)}</td>
+                  {/* O romaneio não traz itens nem valor: "0" e "R$ 0,00" pareceriam
+                      pedido vazio. */}
+                  <td>{p.romaneio ? '—' : quantidadeDeItens(p)}</td>
                   <td>
                     {formatarCarga(p.volumes, p.pesoBrutoKg)}
                   </td>
                   <td className="mono">
-                    {p.valorTotal.toLocaleString('pt-BR', {
-                      style: 'currency',
-                      currency: 'BRL',
-                    })}
+                    {p.romaneio
+                      ? '—'
+                      : p.valorTotal.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
                   </td>
                   <td>
                     <span className={`chip ${s.classe}`}>{s.texto}</span>

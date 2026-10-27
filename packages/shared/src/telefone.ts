@@ -18,6 +18,33 @@ export function normalizarTelefone(fone: string | null | undefined): string | nu
 }
 
 /**
+ * Telefone que o motorista vê numa parada. O da parada foi copiado do cliente
+ * na PUBLICAÇÃO e congela ali; o cliente que veio de um romaneio sem estar na
+ * base nasce sem telefone, e o Admin Estoque costuma completar depois — com a
+ * rota já no celular. Por isso o do cliente (lido ao vivo) manda, como o ponto
+ * confirmado em campo vem antes da coordenada da publicação.
+ *
+ * `doCliente` undefined = o doc do cliente não chegou (offline): vale o da
+ * parada. null = chegou SEM telefone — e aí fica sem: a importação nunca apaga
+ * telefone, então só o Admin chega a esse null, corrigindo um número errado
+ * (a homônima escolhida por engano). Cair no da parada devolvia ao motorista o
+ * telefone da outra pessoa.
+ */
+export function telefoneDaParada(
+  daParada: string | null | undefined,
+  doCliente: string | null | undefined,
+): string | null {
+  return doCliente !== undefined ? doCliente || null : daParada || null;
+}
+
+/** `+5582999990000` → `(82) 99999-0000`. O que não reconhece passa como veio. */
+export function telefoneLegivel(e164: string | null | undefined): string | null {
+  if (!e164) return null;
+  const m = /^\+55(\d{2})(\d{4,5})(\d{4})$/.exec(e164);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
+}
+
+/**
  * Link de contato em um toque (RF-19). `wa.me` exige dígitos sem `+`.
  *
  * Com `mensagem`, abre a conversa com o texto já escrito — o motorista revisa

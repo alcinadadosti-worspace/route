@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { criarApp } from '../app.js';
 import { RepositorioMemoria } from '../db/repositorio.js';
 import type { Autenticador } from './autenticador.js';
+import { importarRomaneiosLidos } from '../importacao/servico-romaneio.js';
+import { relatorioVazio } from '../importacao/servico-planilha.js';
 
 // Verificador falso: troca a verificação real do Firebase (rede) por tokens
 // fixos, para exercitar o hook — token → usuário/papel.
@@ -121,6 +123,115 @@ test('modo-entrega: escolha inválida → 400 com a mensagem do serviço', async
   await app.close();
 });
 
+test('pedido do SITE (código com hífen, vindo do romaneio) se apaga e se decide pela API', async () => {
+  const repo = new RepositorioMemoria();
+  await importarRomaneiosLidos(
+    [
+      {
+        romaneio: {
+          rota: '1673300',
+          motorista: 'Caique Santos',
+          quantidade: 1,
+          linhas: [
+            {
+              notaFiscal: 190001,
+              cep: '57750000',
+              nome: 'MARIA DO SITE',
+              pedido: '160000001-1',
+              bairro: 'CENTRO',
+              cidade: 'QUEBRANGULO',
+              uf: 'AL',
+              endereco: 'RUA A, 10, -',
+            },
+          ],
+        },
+        codCd: '684',
+      },
+    ],
+    repo,
+    relatorioVazio(),
+  );
+  assert.ok(await repo.obterPedido('160000001-1'));
+  const app = await criarApp({ repo, autenticador });
+  // Antes a guarda só conhecia `\d{9}|\d{44}`: 404 sem nem procurar o pedido.
+  const decisao = await app.inject({
+    method: 'POST',
+    url: '/api/pedidos/160000001-1/modo-entrega',
+    headers: bearer('tk-admin'),
+    payload: { escolha: 'balcao' },
+  });
+  assert.equal(decisao.statusCode, 400, 'passou da guarda e chegou ao serviço');
+  const apagar = await app.inject({ method: 'DELETE', url: '/api/pedidos/160000001-1', headers: bearer('tk-admin') });
+  assert.equal(apagar.statusCode, 200);
+  assert.equal(await repo.obterPedido('160000001-1'), null);
+  await app.close();
+});
+
+/* ---------- dados do cliente que o romaneio trouxe fora da base ---------- */
+
+test('completar dados do cliente é de ESCRITÓRIO: motorista → 403 nas duas rotas', async () => {
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const id = 'a'.repeat(64);
+  const salvar = await app.inject({
+    method: 'POST',
+    url: `/api/clientes/${id}/dados`,
+    headers: bearer('tk-motorista'),
+    payload: { telefone: '82999991234' },
+  });
+  assert.equal(salvar.statusCode, 403);
+  const candidatas = await app.inject({ method: 'GET', url: `/api/clientes/${id}/candidatas`, headers: bearer('tk-motorista') });
+  assert.equal(candidatas.statusCode, 403);
+  await app.close();
+});
+
+test('completar dados: id fora dos dois formatos → 404 antes de tocar o banco', async () => {
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  for (const url of ['/api/clientes/..%2Frotas%2Fx/dados', '/api/clientes/abc/candidatas']) {
+    const r = await app.inject({ method: url.endsWith('dados') ? 'POST' : 'GET', url, headers: bearer('tk-admin'), payload: url.endsWith('dados') ? {} : undefined });
+    assert.equal(r.statusCode, 404, url);
+  }
+  await app.close();
+});
+
+test('completar dados: admin grava; telefone sem DDD → 400 com a mensagem', async () => {
+  const repo = new RepositorioMemoria();
+  const id = 'b'.repeat(64);
+  await repo.salvarCliente(id, {
+    nome: 'MARIA DO SITE',
+    documentoMascarado: 'fora da base',
+    telefone: null,
+    email: null,
+    enderecoFiscal: { logradouro: 'RUA A', numero: '1', bairro: 'CENTRO', municipio: 'IGACI', uf: 'AL', cep: '' },
+    coordenada: null,
+    statusMapeamento: 'nao_mapeado',
+    trilhaAtivaId: null,
+    mapeadoPor: null,
+    mapeadoEm: null,
+    fotoReferenciaPath: null,
+    observacoes: '',
+    completarDados: true,
+  });
+  const app = await criarApp({ repo, autenticador });
+  const ruim = await app.inject({
+    method: 'POST',
+    url: `/api/clientes/${id}/dados`,
+    headers: bearer('tk-operador'),
+    payload: { telefone: '9999' },
+  });
+  assert.equal(ruim.statusCode, 400);
+  assert.match(JSON.parse(ruim.body).erro, /DDD/);
+  const bom = await app.inject({
+    method: 'POST',
+    url: `/api/clientes/${id}/dados`,
+    headers: bearer('tk-operador'),
+    payload: { telefone: '82999991234', observacoes: 'portão verde' },
+  });
+  assert.equal(bom.statusCode, 200);
+  assert.equal(JSON.parse(bom.body).telefone, '+5582999991234');
+  assert.equal((await repo.obterCliente(id))?.completarDados, false);
+  await app.close();
+});
+
 /* ---------- /api/importacoes: limites dimensionados pela remessa REAL ---------- */
 
 /** Monta um corpo multipart com N arquivos minúsculos (conteúdo inválido de
@@ -179,6 +290,43 @@ test('estourar o teto não vira 500: o relatório sai com o aviso de remessa int
   const aviso = rel.rejeitados.at(-1);
   assert.match(aviso.arquivo, /interrompida/);
   assert.match(aviso.motivo, /reenvie/);
+  await app.close();
+});
+
+test('arquivo acima de 5 MB (o cadastro completo de revendedoras) é recusado dizendo o que fazer', async () => {
+  // O cadastro completo tem 14,6 MB e infla para 130 MB: a instância de 512 MB
+  // cairia. A mensagem crua do plugin era "request file too large".
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const b = 'fronteira-teste';
+  const payload =
+    `--${b}\r\ncontent-disposition: form-data; name="arquivos"; filename="ConsultaRevendedores.xlsx"\r\n` +
+    `content-type: application/octet-stream\r\n\r\n${'x'.repeat(5 * 1024 * 1024 + 1)}\r\n--${b}--\r\n`;
+  const r = await app.inject({
+    method: 'POST',
+    url: '/api/importacoes',
+    headers: { 'content-type': `multipart/form-data; boundary=${b}`, ...bearer('tk-admin') },
+    payload,
+  });
+  assert.equal(r.statusCode, 400);
+  assert.match(JSON.parse(r.body).erro, /"ConsultaRevendedores\.xlsx" passa de 5 MB.*cadastro COMPLETO/);
+  await app.close();
+});
+
+test('PDF acima de 5 MB: a mensagem diz QUAL arquivo, sem culpar o cadastro', async () => {
+  const app = await criarApp({ repo: new RepositorioMemoria(), autenticador });
+  const b = 'fronteira-teste';
+  const payload =
+    `--${b}\r\ncontent-disposition: form-data; name="arquivos"; filename="romaneio-gigante.pdf"\r\n` +
+    `content-type: application/pdf\r\n\r\n${'x'.repeat(5 * 1024 * 1024 + 1)}\r\n--${b}--\r\n`;
+  const r = await app.inject({
+    method: 'POST',
+    url: '/api/importacoes',
+    headers: { 'content-type': `multipart/form-data; boundary=${b}`, ...bearer('tk-admin') },
+    payload,
+  });
+  const erro = JSON.parse(r.body).erro as string;
+  assert.match(erro, /"romaneio-gigante\.pdf" passa de 5 MB/);
+  assert.doesNotMatch(erro, /cadastro/);
   await app.close();
 });
 

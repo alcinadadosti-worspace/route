@@ -26,3 +26,6 @@ rota.xml
 *.xlsx
 *.xls
 *.csv
+# Romaneios do Boticário (PDF): nome, endereço e pedido de cada destinatária.
+# O teste do leitor monta um PDF sintético — nenhum romaneio real entra aqui.
+*.pdf

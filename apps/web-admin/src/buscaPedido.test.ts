@@ -27,6 +27,21 @@ test('texto procura no nome da cliente, sem acento nem caixa; vazio casa tudo', 
   assert.equal(casaBusca(P, 'MARIA 2', 'maria 2'), true);
 });
 
+test('o número da rota do romaneio do Boticário acha a folha inteira — só inteiro', () => {
+  const doRomaneio = { ...P, romaneio: '1673300' };
+  assert.equal(casaBusca(doRomaneio, 'X', '1673300'), true);
+  assert.equal(casaBusca(doRomaneio, 'X', '1.673.300'), true);
+  assert.equal(casaBusca(doRomaneio, 'X', '16733'), false, 'trecho traria pedidos de outras folhas');
+  assert.equal(casaBusca(P, 'X', '1673300'), false);
+});
+
+test('o código do pedido do SITE, colado como a folha imprime ("160000001-1"), acha o pedido', () => {
+  const doSite = { ...P, id: '160000001-1', numeroPedido: '160000001-1' };
+  assert.equal(casaBusca(doSite, 'X', '160000001-1'), true);
+  assert.equal(casaBusca(doSite, 'X', '160000001'), true);
+  assert.equal(casaBusca(doSite, 'X', '160000001-2'), false);
+});
+
 test('onde está: rota com o dia, e o que fazer quando está fora da montagem', () => {
   assert.match(
     ondeEstaOPedido({ status: 'em_rota', rotaId: '2026-10-20_abcdef01' }),

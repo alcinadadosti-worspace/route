@@ -8,6 +8,7 @@ import type {
   PosicaoMotorista,
   PreviaRota,
   RelatorioImportacao,
+  RevendedoraCandidata,
   GrupoSugerido,
   RelatorioProdutividade,
   Rota,
@@ -251,6 +252,29 @@ async function apagar<T>(url: string): Promise<T> {
  */
 export async function refazerPontoDoCliente(clienteId: string): Promise<{ status: string }> {
   return post(`${BASE}/api/clientes/${encodeURIComponent(clienteId)}/refazer-ponto`, {});
+}
+
+/** O que o Admin Estoque acrescenta ao cliente do romaneio fora da base. Corpo
+ * vazio = "não tenho mais dados" (só tira o cliente da lista). */
+export interface DadosDoCliente {
+  telefone?: string;
+  observacoes?: string;
+  /** Da revendedora da base que o Admin reconheceu como esta pessoa. */
+  papel?: string | null;
+  codigo?: string;
+}
+
+export async function salvarDadosDoCliente(
+  clienteId: string,
+  dados: DadosDoCliente,
+): Promise<{ id: string } & Cliente> {
+  return post(`${BASE}/api/clientes/${encodeURIComponent(clienteId)}/dados`, dados);
+}
+
+/** Revendedoras da base com o mesmo nome do cliente (a mesma cidade primeiro). */
+export async function candidatasDoCliente(clienteId: string): Promise<RevendedoraCandidata[]> {
+  const resposta = await apiFetch(`${BASE}/api/clientes/${encodeURIComponent(clienteId)}/candidatas`);
+  return lerResposta(resposta);
 }
 
 async function post<T>(url: string, corpo: unknown): Promise<T> {

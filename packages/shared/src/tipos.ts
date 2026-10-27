@@ -100,6 +100,19 @@ export interface Cliente {
    * motorista, dava para baixar a base inteira (PII) tentando ids em série.
    */
   visivelPara?: Record<string, true>;
+  /**
+   * Nasceu de um romaneio SEM estar na base de revendedoras — só tem o que a
+   * folha traz (nome e endereço). O painel pede ao Admin Estoque o resto
+   * (telefone, referência); sai da lista quando ele salva ou diz que não tem.
+   * Ausente = false: quem veio do ERP já chega completo.
+   */
+  completarDados?: boolean;
+  /**
+   * Código da revendedora no ERP que o Admin Estoque reconheceu como este
+   * cliente do romaneio ("É ela"). O casamento do romaneio seguinte manda os
+   * pedidos desse código para ESTE cliente, que tem o que foi aprendido em campo.
+   */
+  codigoErp?: string | null;
 }
 
 export interface ItemPedido {
@@ -179,6 +192,18 @@ export interface Pedido {
    * do motorista mostraria "0 itens" na porta do cliente com a caixa cheia.
    */
   quantidadeMateriais?: number;
+  /**
+   * Número da rota na Plataforma Logística do Boticário, quando o pedido entrou
+   * pelo ROMANEIO em PDF (26/10/2026). A montagem continua sendo feita aqui; o
+   * número só serve para achar o pedido pela folha que veio de lá.
+   */
+  romaneio?: string;
+  /**
+   * Pedido do SITE vindo da planilha do ERP: o código como o romaneio o
+   * imprime ("160000001-1"). É a ponte do dedupe entre as duas fontes — a
+   * planilha dá a ele outro `CodigoPedido`, e o pacote entrava duas vezes.
+   */
+  codigoExterno?: string;
   /**
    * Última rota de onde o pedido VOLTOU sem ser entregue (baixa "não entregue"
    * no painel). Existe para a montagem mostrar que ele já saiu uma vez: sem a
@@ -527,6 +552,12 @@ export interface ProdutividadeMotorista {
    * quando é só a parte declarada.
    */
   entregasSemCarga: number;
+  /**
+   * Entregas cujo pedido não disse QUANTOS itens levava (o romaneio do
+   * Boticário não traz lista nem quantidade). `itensEntregues` soma só as
+   * outras — sem este número, a soma pareceria o total do período.
+   */
+  entregasSemItens: number;
   /** Rota a rota, para ver o dia em vez da média do período. */
   rotas_detalhe: ProdutividadeRota[];
 }
@@ -546,6 +577,8 @@ export interface ProdutividadeRota {
   volumesEntregues: number;
   pesoEntregueKg: number;
   entregasSemCarga: number;
+  /** Ver `ProdutividadeMotorista.entregasSemItens`. */
+  entregasSemItens: number;
   kmPlanejados: number;
 }
 
@@ -665,6 +698,25 @@ export interface RelatorioImportacao {
    * dava como entregues — entram como `entregue_no_erp`, fora da montagem até
    * alguém liberar. */
   jaEntregues?: number;
+  /** Romaneios em PDF do Boticário lidos nesta remessa. */
+  romaneios?: number;
+  /**
+   * Linhas de romaneio cuja destinatária NÃO foi achada no cadastro (pedido
+   * do site, revendedora nova, nome repetido na cidade): entram com um cliente
+   * novo, sem telefone. Contadas à parte porque esse cliente não herda o ponto
+   * nem o telefone de ninguém.
+   */
+  semCadastro?: number;
+  /**
+   * Clientes do romaneio fora da base que ainda esperam dados do Admin
+   * Estoque (`Cliente.completarDados`): a tela da importação abre o
+   * formulário de cada um ali mesmo, sem caçar o nome na aba Clientes.
+   */
+  clientesACompletar?: ClienteACompletar[];
+  /** Cadastro de revendedoras: quantas ficaram guardadas para casar os
+   * romaneios, e quantos clientes que já existiam foram atualizados. */
+  revendedoras?: number;
+  clientesAtualizados?: number;
   /** Destinos urbanos resolvidos pela geocodificação automática (seção 9). */
   geocodificados: number;
   /** Destinos aproximados (rural/impreciso, mas no município certo): despacháveis
@@ -684,4 +736,34 @@ export interface RelatorioImportacao {
    * é no ERP, não aqui.
    */
   semCarga: number;
+}
+
+/** Cliente do romaneio fora da base, como a tela de completar dados precisa. */
+export interface ClienteACompletar {
+  id: string;
+  nome: string;
+  /** Endereço em uma linha, como veio da folha. */
+  endereco: string;
+  telefone: string | null;
+  observacoes: string;
+}
+
+/**
+ * Revendedora da base com o MESMO NOME de um cliente a completar — em
+ * qualquer cidade (a pessoa pode ter mudado, ou a folha escrever a cidade de
+ * outro jeito). O Admin Estoque confere o endereço e decide se é ela; o
+ * sistema não decide: com homônimos, casar no chute daria o telefone de outra
+ * pessoa.
+ */
+export interface RevendedoraCandidata {
+  /** Código da revendedora no ERP. */
+  codigo: string;
+  nome: string;
+  endereco: string;
+  telefone: string | null;
+  papel: string | null;
+  referencia: string;
+  situacao: string | null;
+  /** Data do pedido de onde veio o dado; null = cadastro de revendedoras. */
+  dadosDe: string | null;
 }

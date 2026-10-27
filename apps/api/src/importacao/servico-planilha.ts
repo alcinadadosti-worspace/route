@@ -18,6 +18,7 @@ import {
 } from './planilha.js';
 import type { Repositorio } from '../db/repositorio.js';
 import { removerPedido } from '../rotas/remover.js';
+import { FORMATO_CODIGO_PEDIDO } from '../rotas/comum.js';
 
 /**
  * Importação pela PLANILHA do ERP (`ConsultaPedidos_*.xlsx`) — o caminho que
@@ -60,12 +61,8 @@ const CD_POR_CODCD: Record<string, { cdId: string; serie: number }> = {
   '684': { cdId: 'palmeira', serie: 0 },
 };
 
-export async function importarPlanilha(
-  nomeArquivo: string,
-  conteudo: Uint8Array,
-  repo: Repositorio,
-): Promise<RelatorioImportacao> {
-  const relatorio: RelatorioImportacao = {
+export function relatorioVazio(): RelatorioImportacao {
+  return {
     total: 0,
     importados: 0,
     duplicados: 0,
@@ -81,18 +78,44 @@ export async function importarPlanilha(
     porCd: {},
     semCarga: 0,
   };
+}
 
+export async function importarPlanilha(
+  nomeArquivo: string,
+  conteudo: Uint8Array,
+  repo: Repositorio,
+): Promise<RelatorioImportacao> {
+  const relatorio = relatorioVazio();
   const leitura = lerPlanilha(conteudo);
   if (!leitura.ok) {
     relatorio.total = 1;
     relatorio.rejeitados.push({ arquivo: nomeArquivo, motivo: leitura.motivo });
     return relatorio;
   }
+  await importarLinhas(leitura.linhas, repo, relatorio);
+  return relatorio;
+}
 
+/**
+ * O miolo da importação, a partir de linhas JÁ LIDAS: é o mesmo para a
+ * planilha do ERP e para o romaneio do Boticário (que vira `LinhaPlanilha`
+ * depois de casar cada destinatária com o cadastro). Assim o romaneio herda,
+ * sem cópia, o dedupe, a revisão de endereço, o ponto repetido e a fila da
+ * localização paga.
+ *
+ * `clientesExistentes` evita reler a coleção quando quem chama já leu (o
+ * romaneio lê para casar os nomes).
+ */
+export async function importarLinhas(
+  linhas: LinhaPlanilha[],
+  repo: Repositorio,
+  relatorio: RelatorioImportacao,
+  opcoes: { clientesExistentes?: Array<{ id: string } & Cliente> } = {},
+): Promise<void> {
   // Três consultas para a remessa inteira, em vez de duas por linha.
   const [chaves, clientesExistentes, cancelados] = await Promise.all([
     repo.chavesDePedidos(),
-    repo.listarClientes(),
+    opcoes.clientesExistentes ?? repo.listarClientes(),
     repo.idsDeCancelados(),
   ]);
   /** Id do pedido que já existe para este código: o da própria planilha, ou o
@@ -132,7 +155,7 @@ export async function importarPlanilha(
   let pinsDoCadastro = 0;
   let aGeocodificar = 0;
 
-  for (const linha of leitura.linhas) {
+  for (const linha of linhas) {
     relatorio.total += 1;
     const rotulo = `pedido ${linha.codigoPedido}`;
 
@@ -149,7 +172,12 @@ export async function importarPlanilha(
     // Código do pedido e da pessoa viram ID de documento: no ERP são só dígitos
     // (9 no pedido, em 100% das linhas reais). Qualquer outra coisa ("__1__" é
     // id reservado do banco) era recusada na gravação — e derrubava a remessa.
-    if (!/^\d{1,20}$/.test(linha.codigoPedido) || !/^\d{1,20}$/.test(linha.pessoa)) {
+    // Duas exceções, ambas do ROMANEIO: pedido do site vem como "160000001-1",
+    // e a destinatária fora do cadastro ganha id de 64 hex (`idSemCadastro`).
+    if (
+      !FORMATO_CODIGO_PEDIDO.test(linha.codigoPedido) ||
+      !/^(\d{1,20}|[0-9a-f]{64})$/.test(linha.pessoa)
+    ) {
       relatorio.rejeitados.push({
         arquivo: rotulo,
         motivo: 'CodigoPedido ou Pessoa fora do formato do ERP (só dígitos)',
@@ -170,8 +198,14 @@ export async function importarPlanilha(
 
     // Já cancelado numa importação anterior: uma planilha mais velha, de quando
     // ele ainda estava ativo, conta como repetida — não o traz de volta.
-    const idJa = idExistente(linha.codigoPedido);
-    const jaExiste = idJa !== undefined || vistos.has(linha.codigoPedido) || cancelados.has(linha.codigoPedido);
+    // O pedido do site responde também pelo código da folha do romaneio
+    // (`codigoExterno`): soltado pelas duas fontes, entrava duas vezes.
+    const idJa = idExistente(linha.codigoPedido) ?? (linha.codigoExterno ? idExistente(linha.codigoExterno) : undefined);
+    const jaExiste =
+      idJa !== undefined ||
+      vistos.has(linha.codigoPedido) ||
+      (!!linha.codigoExterno && vistos.has(linha.codigoExterno)) ||
+      cancelados.has(linha.codigoPedido);
 
     // Cancelado no ERP: não entra, e o que JÁ tinha entrado numa importação
     // anterior é apagado depois das gravações (ver `apagarCancelado`).
@@ -216,6 +250,7 @@ export async function importarPlanilha(
       continue;
     }
     vistos.add(linha.codigoPedido);
+    if (linha.codigoExterno) vistos.add(linha.codigoExterno);
 
     const cd =
       (linha.estrutura ? CD_POR_ESTRUTURA[linha.estrutura] : undefined) ??
@@ -249,12 +284,13 @@ export async function importarPlanilha(
     // arquivo. O GPS não se perde: a primeira linha de rota lê a MESMA coluna
     // do cadastro.
     const pinDoCadastro = linhaDeRota
-      ? extrairCoordenada([
+      ? (linha.pin ??
+        extrairCoordenada([
           linha.enderecoCadastro.complemento,
           linha.enderecoCadastro.referencia,
           linha.enderecoEntrega.complemento,
           linha.enderecoEntrega.referencia,
-        ])
+        ]))
       : null;
     const gpsDoCadastroNaRetirada = linhaDeRota
       ? null
@@ -269,7 +305,9 @@ export async function importarPlanilha(
         nome: linha.nome,
         // Sem CPF na planilha (de propósito — LGPD agradece): o código do ERP
         // identifica a revendedora em qualquer conversa com o Admin Estoque.
-        documentoMascarado: `cód. ${linha.pessoa}`,
+        // Fora da base não há código: o id é um hash de 64 letras, que na
+        // coluna "Documento" só confundia.
+        documentoMascarado: linha.foraDoCadastro ? 'fora da base' : `cód. ${linha.pessoa}`,
         telefone,
         email: null,
         enderecoFiscal: endereco,
@@ -285,6 +323,9 @@ export async function importarPlanilha(
         // Só linha de rota estabelece o endereço de ENTREGA (a de retirada traz
         // o do cadastro): a primeira de rota que vier depois ainda o grava.
         enderecoDe: linhaDeRota ? linha.emitidoEm || null : null,
+        // Só na CRIAÇÃO: o cliente que o Admin Estoque já completou (ou
+        // dispensou) não volta para a lista no romaneio seguinte.
+        ...(linha.foraDoCadastro ? { completarDados: true } : {}),
       };
       if (pinDoCadastro) pinsDoCadastro += 1;
       escritasDeCliente.set(linha.pessoa, { dados: cliente, merge: false });
@@ -408,6 +449,8 @@ export async function importarPlanilha(
         ...(!linhaDeRota && gpsDoCadastroNaRetirada ? { pinDoCadastro: gpsDoCadastroNaRetirada } : {}),
         // Também na retirada: a lista de liberação mostra o que o ERP afirma.
         ...(linha.entregueNoErp ? { entregueNoErp: { data: linha.dataEntrega } } : {}),
+        ...(linha.romaneio ? { romaneio: linha.romaneio } : {}),
+        ...(linha.codigoExterno ? { codigoExterno: linha.codigoExterno } : {}),
       },
     });
     relatorio.importados += 1;
@@ -490,11 +533,9 @@ export async function importarPlanilha(
     relatorio.alertas.push({
       clienteId: '',
       nome: 'Endereços a localizar',
-      mensagem: `${aGeocodificar} entrega(s) ainda sem ponto no mapa. Use "Localizar endereços" abaixo — a busca é paga e roda em lotes, por isso não vai junto com a importação.`,
+      mensagem: `${aGeocodificar} entrega(s) ainda sem ponto no mapa. Use o botão "Localizar endereços", acima do relatório — a busca é paga e roda em lotes, por isso não vai junto com a importação.`,
     });
   }
-
-  return relatorio;
 }
 
 /**

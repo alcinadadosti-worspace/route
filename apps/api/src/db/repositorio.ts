@@ -2,7 +2,9 @@ import type {
   CentroDistribuicao,
   Cliente,
   ConfigGeral,
+  EnderecoFiscal,
   Entrega,
+  GeoPonto,
   Pedido,
   PosicaoMotorista,
   Rota,
@@ -140,6 +142,13 @@ export interface Repositorio {
   /** IDs dos pedidos que o ERP cancelou e a importação já viu. */
   idsDeCancelados(): Promise<Set<string>>;
   registrarCancelados(registros: Array<{ id: string; dados: PedidoCancelado }>): Promise<void>;
+  /** Cadastro de revendedoras (ver `Revendedora`): grava, e consulta só o necessário. */
+  gravarRevendedoras(registros: Array<{ id: string; dados: Revendedora }>): Promise<void>;
+  revendedorasPorChaves(chaves: string[]): Promise<Array<{ id: string } & Revendedora>>;
+  revendedorasPorIds(ids: string[]): Promise<Array<{ id: string } & Revendedora>>;
+  /** Revendedoras com este nome (`chaveDeNome`) em QUALQUER cidade — consulta
+   * por faixa da `chave` ("NOME|…"), até `limite`. */
+  revendedorasComNome(nome: string, limite: number): Promise<Array<{ id: string } & Revendedora>>;
   /** `clienteId` dos pedidos que esperam ponto. É exatamente a fila da
    * localização: pedido só fica `pendente_de_mapeamento` porque o cliente não
    * tem coordenada, e quem só faz retirada nunca entra (a operação não paga
@@ -214,6 +223,38 @@ export interface PedidoCancelado {
   notaFiscal: number;
   clienteId: string;
   registradoEm: string;
+}
+
+/**
+ * `revendedoras/{codigo}` — o cadastro de revendedoras do ERP, guardado À PARTE
+ * dos clientes. Existe só para casar o ROMANEIO (que não traz código nem
+ * telefone) com a pessoa certa. Não vira cliente de uma vez porque o cadastro
+ * completo tem ~40 mil pessoas, a maioria desativada, e as abas Rotas, Pedidos,
+ * Decisões e Clientes leem a coleção de clientes INTEIRA a cada abertura: 40 mil
+ * documentos por clique. O cliente nasce quando chega um pedido dele.
+ *
+ * Sem CPF, aniversário nem e-mail. Nenhuma regra libera esta coleção: só o
+ * servidor (Admin SDK) a lê.
+ */
+export interface Revendedora {
+  nome: string;
+  /** `chaveDeNome|chaveDeMunicipio` — o casamento consulta por igualdade aqui. */
+  chave: string;
+  telefone: string | null;
+  papel: string | null;
+  endereco: EnderecoFiscal;
+  referencia: string;
+  /** GPS digitado no complemento/referência do cadastro, quando houver. */
+  pin: GeoPonto | null;
+  /** "Ativo", "Cadastrado", "Desativado"… como o ERP escreve. */
+  situacao: string | null;
+  /**
+   * Data do dado: o `emitidoEm` do pedido de onde ele saiu. null = veio do
+   * cadastro, que não tem data (o enviado em 27/10/2026 é de 2025). Pedido de
+   * 2026 é mais novo que o cadastro — sem a data, carregar o cadastro DEPOIS
+   * trocaria o endereço novo pelo velho.
+   */
+  dadosDe: string | null;
 }
 
 /** Clientes que o motorista da rota precisa ler (paradas e exceções). */
@@ -382,7 +423,10 @@ export class RepositorioMemoria implements Repositorio {
 
   async chavesDePedidos(): Promise<{ ids: Set<string>; idPorNumero: Map<string, string> }> {
     const idPorNumero = new Map<string, string>();
-    for (const [id, p] of this.pedidos) if (p.numeroPedido) idPorNumero.set(p.numeroPedido, id);
+    for (const [id, p] of this.pedidos) {
+      if (p.numeroPedido) idPorNumero.set(p.numeroPedido, id);
+      if (p.codigoExterno) idPorNumero.set(p.codigoExterno, id);
+    }
     return { ids: new Set(this.pedidos.keys()), idPorNumero };
   }
 
@@ -475,6 +519,32 @@ export class RepositorioMemoria implements Repositorio {
 
   async registrarCancelados(registros: Array<{ id: string; dados: PedidoCancelado }>): Promise<void> {
     for (const r of registros) this.cancelados.set(r.id, r.dados);
+  }
+
+  private revendedoras = new Map<string, Revendedora>();
+
+  async gravarRevendedoras(registros: Array<{ id: string; dados: Revendedora }>): Promise<void> {
+    for (const r of registros) this.revendedoras.set(r.id, r.dados);
+  }
+
+  async revendedorasPorChaves(chaves: string[]): Promise<Array<{ id: string } & Revendedora>> {
+    const procuradas = new Set(chaves);
+    return [...this.revendedoras].filter(([, r]) => procuradas.has(r.chave)).map(([id, r]) => ({ ...r, id }));
+  }
+
+  async revendedorasPorIds(ids: string[]): Promise<Array<{ id: string } & Revendedora>> {
+    return ids.flatMap((id) => {
+      const r = this.revendedoras.get(id);
+      return r ? [{ ...r, id }] : [];
+    });
+  }
+
+  async revendedorasComNome(nome: string, limite: number): Promise<Array<{ id: string } & Revendedora>> {
+    return [...this.revendedoras]
+      .filter(([, r]) => r.chave.startsWith(`${nome}|`))
+      .sort(([, a], [, b]) => a.chave.localeCompare(b.chave))
+      .slice(0, limite)
+      .map(([id, r]) => ({ ...r, id }));
   }
 
   async pedidosPorIds(ids: string[]): Promise<Array<{ id: string } & Pedido>> {

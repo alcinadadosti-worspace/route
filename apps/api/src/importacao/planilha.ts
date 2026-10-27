@@ -64,6 +64,30 @@ export interface LinhaPlanilha {
   volumes: number;
   pesoBrutoKg: number;
   emitidoEm: string;
+  /** Linha que veio do ROMANEIO do Boticário (não desta planilha): número da
+   * rota de lá, guardado no pedido para a busca do painel. */
+  romaneio?: string;
+  /** Romaneio: GPS que o CADASTRO de revendedoras tinha para esta pessoa (o
+   * romaneio em si não traz). Na planilha ele sai do texto do endereço. */
+  pin?: GeoPonto | null;
+  /** Romaneio: a destinatária não está na base de revendedoras — o cliente
+   * nasce só com nome e endereço, marcado para o Admin Estoque completar. */
+  foraDoCadastro?: boolean;
+  /** Pedido do SITE: o código como o romaneio imprime ("160000001-1"), tirado
+   * do `CodExternoPedido` da planilha ("160000001BOT-F1"). Ver `codigoDoSite`. */
+  codigoExterno?: string | null;
+}
+
+/**
+ * O código do pedido do site no formato do ROMANEIO. A planilha dá a esse
+ * pedido um `CodigoPedido` próprio (9 dígitos) e põe o do site no
+ * `CodExternoPedido` ("160000001BOT-F1"; também "EUD-F", "QDB-F" — 680 em
+ * 2026); a folha imprime "160000001-1". Sem a ponte, o mesmo pacote soltado
+ * pelas duas fontes entrava DUAS vezes. Pedido de revendedora: vazio → null.
+ */
+export function codigoDoSite(externo: string): string | null {
+  const m = /^(\d{6,12})[A-Z]*-[A-Z]*(\d{1,4})$/i.exec(externo.trim());
+  return m ? `${m[1]}-${m[2]}` : null;
 }
 
 export type ResultadoPlanilha =
@@ -91,20 +115,30 @@ const OBRIGATORIAS = [
  */
 const XML_MAXIMO_BYTES = 40 * 1024 * 1024;
 
-export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
+/**
+ * Infla SÓ as partes do pacote que `aceitar` escolhe — estilos, temas e o resto
+ * nem passam pelo descompressor — com o teto de `XML_MAXIMO_BYTES` sobre a SOMA
+ * delas. O cadastro de revendedoras tem duas abas e o texto num arquivo à
+ * parte (`sharedStrings.xml`): o teto por parte deixaria três partes de 40 MB
+ * passarem juntas.
+ */
+export function descompactarXlsx(
+  conteudo: Uint8Array,
+  aceitar: (nome: string) => boolean,
+): { ok: true; partes: Record<string, string> } | { ok: false; motivo: string } {
   let arquivos: Record<string, Uint8Array>;
   let estourou = false;
+  let declarado = 0;
   try {
-    // Só a aba de dados é inflada — estilos, temas e o resto do pacote nem
-    // passam pelo descompressor. O tamanho é conferido ANTES de inflar, e o
-    // campo certo é `originalSize` (descomprimido) — `size` é o COMPRIMIDO,
-    // que numa bomba é justamente o número pequeno e inocente. Zip que mente o
-    // originalSize para baixo também não estoura: a fflate aloca o buffer pelo
-    // declarado e não cresce além dele.
+    // O tamanho é conferido ANTES de inflar, e o campo certo é `originalSize`
+    // (descomprimido) — `size` é o COMPRIMIDO, que numa bomba é justamente o
+    // número pequeno e inocente. Zip que mente o originalSize para baixo também
+    // não estoura: a fflate aloca o buffer pelo declarado e não cresce além dele.
     arquivos = unzipSync(conteudo, {
       filter: (arquivo) => {
-        if (arquivo.name !== 'xl/worksheets/sheet1.xml') return false;
-        if (arquivo.originalSize > XML_MAXIMO_BYTES) {
+        if (!aceitar(arquivo.name)) return false;
+        declarado += arquivo.originalSize;
+        if (declarado > XML_MAXIMO_BYTES) {
           estourou = true;
           return false;
         }
@@ -126,14 +160,37 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
   if (estourou) {
     return {
       ok: false,
-      motivo: `Planilha grande demais (aba de dados acima de ${XML_MAXIMO_BYTES / 1024 / 1024} MB descomprimida) — se for um export legítimo, divida o período`,
+      motivo: `Planilha grande demais (dados acima de ${XML_MAXIMO_BYTES / 1024 / 1024} MB descomprimidos) — se for um export legítimo, divida o período`,
     };
   }
-  const caminho = Object.keys(arquivos).find((n) => n === 'xl/worksheets/sheet1.xml');
-  if (!caminho) {
+  const partes: Record<string, string> = {};
+  for (const [nome, bytes] of Object.entries(arquivos)) {
+    partes[nome] = Buffer.from(bytes).toString('utf8');
+  }
+  return { ok: true, partes };
+}
+
+export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
+  // Só a aba de dados: o export de pedidos do ERP tem uma aba e o texto inline.
+  const pacote = descompactarXlsx(conteudo, (nome) => nome === 'xl/worksheets/sheet1.xml');
+  if (!pacote.ok) return pacote;
+  const xml = pacote.partes['xl/worksheets/sheet1.xml'];
+  if (xml === undefined) {
     return { ok: false, motivo: 'Planilha sem a aba de dados (xl/worksheets/sheet1.xml)' };
   }
-  const xml = Buffer.from(arquivos[caminho]!).toString('utf8');
+  return planilhaDoXml(xml);
+}
+
+/**
+ * As linhas a partir do XML da aba JÁ descompactado. Separado porque os pedidos
+ * de um ANO inteiro (usados como dado de cliente) passam do teto do servidor e
+ * são carregados por script, na máquina do escritório, com este mesmo leitor.
+ *
+ * `compartilhadas`: o texto de `sharedStrings.xml`, quando o export guarda o
+ * texto lá (o de pedidos de 2025 guarda; sem isto o cabeçalho saía como
+ * índices e o arquivo era recusado como "sem as colunas").
+ */
+export function planilhaDoXml(xml: string, compartilhadas?: string[]): ResultadoPlanilha {
 
   // Cabeçalho → coluna, casado por nome NORMALIZADO e nunca por posição: o ERP
   // pode reordenar colunas num export futuro, e um mapeamento posicional leria
@@ -144,7 +201,7 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
 
   for (const bruta of varrerLinhas(xml)) {
     if (!viuCabecalho) {
-      for (const [letra, valor] of celulas(bruta)) {
+      for (const [letra, valor] of celulas(bruta, compartilhadas)) {
         const nome = normalizar(valor);
         if (nome) colunas.set(letra, nome);
       }
@@ -159,7 +216,7 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
     }
 
     const valores = new Map<string, string>();
-    for (const [letra, valor] of celulas(bruta)) {
+    for (const [letra, valor] of celulas(bruta, compartilhadas)) {
       const nome = colunas.get(letra);
       if (nome) valores.set(nome, valor);
     }
@@ -209,6 +266,7 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
       // <pesoB> das NF-e do mesmo ciclo: /1000 bate em 2019/2019.
       pesoBrutoKg: pesoKg(v('pesoreal')) ?? pesoKg(v('pesoestimado')) ?? 0,
       emitidoEm: dataIso(v('datafaturamento')) ?? dataIso(v('datacaptacao')) ?? '',
+      codigoExterno: codigoDoSite(v('codexternopedido')),
     });
   }
 
@@ -225,7 +283,7 @@ export function lerPlanilha(conteudo: Uint8Array): ResultadoPlanilha {
  * padrão, e a busca passou a procurar algo que nunca existe — zero linhas,
  * sem erro nenhum. Mexer aqui é só com edição direta.
  */
-function* varrerLinhas(xml: string): Generator<string> {
+export function* varrerLinhas(xml: string): Generator<string> {
   // Abertura por regex, fechamento por `indexOf` — LINEAR. O par não-guloso
   // `<row>([\s\S]*?)</row>` reescaneava até o fim do texto a cada `<row>` sem
   // `</row>`: um .xlsx forjado de 61 KB (40 MB inflado) segurava o event loop
@@ -242,17 +300,26 @@ function* varrerLinhas(xml: string): Generator<string> {
 }
 
 /** `[letra da coluna, valor]` de cada célula. Suporta `<v>` (o que o ERP usa) e
- * `<is><t>` (string inline), célula vazia auto-fechada, e desescapa entidades. */
-function* celulas(linha: string): Generator<[string, string]> {
+ * `<is><t>` (string inline), célula vazia auto-fechada, e desescapa entidades.
+ *
+ * Com `compartilhadas`, a célula `t="s"` vira o texto daquele índice: o export
+ * de REVENDEDORAS guarda o texto em `sharedStrings.xml`, e lido sem isso cada
+ * nome saía como "1834". O de pedidos não usa (texto inline). */
+export function* celulas(linha: string, compartilhadas?: string[]): Generator<[string, string]> {
   // Mesma razão de `varrerLinhas`: fechamento por `indexOf`, nunca um par
   // não-guloso que reescaneia a linha inteira a cada `<c>` sem `</c>`.
   const abre = /<(\w+:)?c\b([^>]{0,2000})>/g;
   let m: RegExpExecArray | null;
+  // O `r=` é opcional no formato: sem ele, a célula é a coluna SEGUINTE à
+  // anterior. Pulá-la fazia a célula sumir e a linha perder o campo.
+  let proxima = 0;
   while ((m = abre.exec(linha))) {
     const atributos = m[2] ?? '';
     const ref = /\br="([A-Z]+)\d+"/.exec(atributos);
+    const coluna = ref ? ref[1]! : letraDaColuna(proxima);
+    proxima = indiceDaColuna(coluna) + 1;
     if (atributos.endsWith('/')) {
-      if (ref) yield [ref[1]!, ''];
+      yield [coluna, ''];
       continue;
     }
     const fecha = `</${m[1] ?? ''}c>`;
@@ -260,14 +327,76 @@ function* celulas(linha: string): Generator<[string, string]> {
     if (fim < 0) return;
     const interno = linha.slice(abre.lastIndex, fim);
     abre.lastIndex = fim + fecha.length;
-    if (!ref) continue;
-    yield [ref[1]!, valorDaCelula(interno)];
+    const valor = valorDaCelula(interno);
+    if (compartilhadas && /\bt="s"/.test(atributos)) {
+      // Índice fora da lista (arquivo forjado ou truncado) vira vazio, nunca
+      // "undefined" escrito no nome da cliente.
+      yield [coluna, compartilhadas[Number(valor)] ?? ''];
+      continue;
+    }
+    yield [coluna, valor];
   }
 }
 
-/** O texto de `<v>` ou `<is><t>`, também por `indexOf`. */
+/** "A" → 0, "Z" → 25, "AA" → 26. */
+function indiceDaColuna(letras: string): number {
+  let n = 0;
+  for (const ch of letras) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+/** 0 → "A", 26 → "AA". */
+function letraDaColuna(indice: number): string {
+  let letras = '';
+  for (let n = indice + 1; n > 0; n = Math.floor((n - 1) / 26)) {
+    letras = String.fromCharCode(65 + ((n - 1) % 26)) + letras;
+  }
+  return letras;
+}
+
+/**
+ * Textos de `sharedStrings.xml`, na ordem (o índice é o que a célula `t="s"`
+ * guarda). Um `<si>` pode ter vários `<t>` (texto com formatação mista): vão
+ * concatenados. Mesma varredura linear do resto do arquivo — fechamento por
+ * `indexOf`, nunca um par não-guloso que reescaneia o texto inteiro.
+ */
+export function textosCompartilhados(xml: string): string[] {
+  const textos: string[] = [];
+  const abre = /<(\w+:)?si\b[^>]{0,2000}>/g;
+  let m: RegExpExecArray | null;
+  while ((m = abre.exec(xml))) {
+    // `<si/>` (texto vazio) não tem fechamento: procurar `</si>` engolia o
+    // PRÓXIMO texto, e todo índice dali em diante apontava para o texto de
+    // outra célula — o nome de uma revendedora no lugar do de outra.
+    if (m[0].endsWith('/>')) {
+      textos.push('');
+      continue;
+    }
+    const fecha = `</${m[1] ?? ''}si>`;
+    const fim = xml.indexOf(fecha, abre.lastIndex);
+    if (fim < 0) break;
+    const interno = xml.slice(abre.lastIndex, fim);
+    abre.lastIndex = fim + fecha.length;
+    let texto = '';
+    const t = /<(\w+:)?t\b[^>]{0,2000}>/g;
+    let mt: RegExpExecArray | null;
+    while ((mt = t.exec(interno))) {
+      const fechaT = `</${mt[1] ?? ''}t>`;
+      const fimT = interno.indexOf(fechaT, t.lastIndex);
+      if (fimT < 0) break;
+      texto += interno.slice(t.lastIndex, fimT);
+      t.lastIndex = fimT + fechaT.length;
+    }
+    textos.push(desescapar(texto));
+  }
+  return textos;
+}
+
+/** O texto de `<v>` ou `<is><t>`, também por `indexOf`. O `<t>` pode vir com
+ * atributo (`<t xml:space="preserve">`, texto com espaço nas pontas): exigir a
+ * tag nua lia a célula como vazia. */
 function valorDaCelula(interno: string): string {
-  const abre = /<(\w+:)?(v|t)>/.exec(interno);
+  const abre = /<(\w+:)?(v|t)(\s[^>]{0,200})?>/.exec(interno);
   if (!abre) return '';
   const inicio = abre.index + abre[0].length;
   const fim = interno.indexOf(`</${abre[1] ?? ''}${abre[2]}>`, inicio);
@@ -402,7 +531,7 @@ function pesoKg(bruto: string): number | null {
 /** `"Tipo de Entrega"` → `tipodeentrega`. O range de diacríticos vai como
  * ESCAPE (`̀-ͯ`), nunca como caractere literal: o literal já se
  * corrompeu numa edição e a normalização passou a devolver lixo em silêncio. */
-function normalizar(s: string): string {
+export function normalizar(s: string): string {
   return s
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
@@ -410,6 +539,6 @@ function normalizar(s: string): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
-function somenteDigitos(s: string): string {
+export function somenteDigitos(s: string): string {
   return s.replace(/\D/g, '');
 }

@@ -971,3 +971,33 @@ tr.dossie-linha .dossie-bloco {
 .fora-da-montagem .filtros-fora + .vazio {
   margin-top: 12px;
 }
+
+/* Botão com cara de link que ainda assim cabe o dedo (--alvo-toque): o
+   "✎ editar" media 44 px de largura. */
+button.ligacao.alvo-toque {
+  min-height: var(--alvo-toque);
+  min-width: var(--alvo-toque);
+  padding: 0 8px;
+}
+
+/* Completar dados do cliente que o romaneio trouxe fora da base. */
+.completar-campos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.completar-campos label {
+  display: block;
+}
+
+.completar-campos .filtro {
+  max-width: none;
+  margin-bottom: 0;
+}
+
+.completar-campos textarea.filtro {
+  padding: 10px 12px;
+  resize: vertical;
+}

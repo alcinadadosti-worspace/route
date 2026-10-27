@@ -20,8 +20,12 @@ export function useClientesDaRota(
 ): Record<string, DossieCliente> {
   const [dossies, setDossies] = useState<Record<string, DossieCliente>>({});
 
+  // As exceções também: a cliente sem ponto (rural, ou do romaneio fora da
+  // base) é justamente a que se acha LIGANDO — e o telefone que o Admin
+  // completa depois de publicar só chega lendo o doc dela.
   const clienteIds = useMemo(
-    () => [...new Set(rota?.paradas.map((p) => p.clienteId) ?? [])].sort(),
+    () =>
+      [...new Set([...(rota?.paradas ?? []), ...(rota?.excecoes ?? [])].map((p) => p.clienteId))].sort(),
     [rota],
   );
   const chave = clienteIds.join('|');

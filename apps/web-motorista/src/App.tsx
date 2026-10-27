@@ -10,8 +10,10 @@ import {
   mesclarParametrosAviso,
   formatarCarga,
   mesclarParametrosTrilha,
+  itensConhecidos,
   paradaPrecisaMapear,
   quantidadeDeItens,
+  telefoneDaParada,
   type GeoPonto,
   type ItemPedido,
   type ResultadoEntrega,
@@ -62,7 +64,8 @@ interface ParadaTela {
   endereco: string;
   telefone: string;
   coordenada: GeoPonto;
-  itens: number;
+  /** Null = o pedido não diz quantos itens leva (romaneio do Boticário). */
+  itens: number | null;
   volumes: number;
   pesoKg: number;
   status: 'pendente' | 'entregue' | 'trilha' | 'insucesso';
@@ -251,7 +254,9 @@ export function App() {
               ordem: p.numero ?? i + 1,
               cliente: p.nome,
               endereco: p.endereco,
-              telefone: p.telefone ?? '',
+              // O do cliente primeiro: o do romaneio sem telefone ganha um do
+              // Admin Estoque depois que a rota já estava aqui.
+              telefone: telefoneDaParada(p.telefone, cliente?.telefone) ?? '',
               coordenada: p.coordenada,
               // `?? []` porque um único doc de rota sem `itens` derrubaria a
               // lista INTEIRA com um TypeError — falha desproporcional.
@@ -260,7 +265,9 @@ export function App() {
               // "0 itens" com a caixa cheia.
               // Unidades, pela regra comum (`quantidadeDeItens`): contar linhas
               // da nota dava um número diferente do painel para a mesma entrega.
-              itens: quantidadeDeItens(p),
+              // Romaneio não traz quantidade: "0 itens" na porta, com a caixa na
+              // mão, era mentira — some em vez de dizer zero.
+              itens: itensConhecidos(p) ? quantidadeDeItens(p) : null,
               itensNota: p.itens ?? [],
               numeroPedido: p.numeroPedido ?? null,
               numeroNota: p.numeroNota,
@@ -947,7 +954,8 @@ export function App() {
           <h2>{p.cliente}</h2>
           <div className="endereco">{p.endereco}</div>
           <div className="carga">
-            {p.itens} itens · {formatarCarga(p.volumes, p.pesoKg)}
+            {p.itens != null && `${p.itens} itens · `}
+            {formatarCarga(p.volumes, p.pesoKg)}
           </div>
           {p.fotoPath && <FotoReferencia caminho={p.fotoPath} alt={`Referência de ${p.cliente}`} />}
           {p.observacao && <div className="obs">📌 {p.observacao}</div>}
@@ -1098,19 +1106,22 @@ export function App() {
           <h3>Exceções — sem ponto no mapa ({(rota.excecoes ?? []).length})</h3>
           <p>Fora da ordem: encaixe no caminho. A baixa destas é dada no escritório.</p>
           <ul>
-            {(rota.excecoes ?? []).map((e, i) => (
-              <li key={e.pedidoId}>
-                <strong>E{e.numero ?? i + 1}</strong> · {e.nome} — {e.endereco}
-                {e.telefone && (
-                  <>
-                    {' '}
-                    · <a href={linkLigacao(e.telefone)}>ligar</a>
-                  </>
-                )}
-                {(e.status === 'entregue' || e.status === 'insucesso') &&
-                  ` · ${e.status === 'entregue' ? 'entregue' : 'não entregue'}`}
-              </li>
-            ))}
+            {(rota.excecoes ?? []).map((e, i) => {
+              const telefone = telefoneDaParada(e.telefone, dossies[e.clienteId]?.cliente?.telefone);
+              return (
+                <li key={e.pedidoId}>
+                  <strong>E{e.numero ?? i + 1}</strong> · {e.nome} — {e.endereco}
+                  {telefone && (
+                    <>
+                      {' '}
+                      · <a href={linkLigacao(telefone)}>ligar</a>
+                    </>
+                  )}
+                  {(e.status === 'entregue' || e.status === 'insucesso') &&
+                    ` · ${e.status === 'entregue' ? 'entregue' : 'não entregue'}`}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

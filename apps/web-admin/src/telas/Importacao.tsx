@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CentroDistribuicao, RelatorioImportacao } from '@rota/shared';
 import { contarEnderecosALocalizar, importarArquivos, listarCds, localizarEnderecos } from '../api';
+import { CompletarDados } from '../CompletarDados';
+import { resumoDoSalvo } from '../formularioCliente';
 
 /** Fluxo 1 — o operador solta a planilha do ERP (ou XMLs de NF-e) do dia (RF-01, RF-04). */
 export function Importacao() {
@@ -22,6 +24,10 @@ export function Importacao() {
    * logo depois de uma importação, e as telas que mandam "use Localizar
    * endereços na Importação" levavam a uma aba sem botão nenhum. */
   const [naFila, setNaFila] = useState<number | null>(null);
+  /** Clientes fora da base já resolvidos nesta tela (id → o que foi salvo). */
+  const [completados, setCompletados] = useState<Record<string, string>>({});
+  /** Formulários com algo digitado e não salvo: soltar outro arquivo os apaga. */
+  const naoSalvos = useRef(new Set<string>());
   // Só para dar nome ao CD no relatório — a importação devolve o id.
   const [cds, setCds] = useState<Record<string, CentroDistribuicao>>({});
   /** Sair da aba PARA o laço: ele seguia invisível, e voltar e clicar de novo
@@ -59,16 +65,29 @@ export function Importacao() {
     // tentativa mais provável depois de uma importação que falhou (API dormindo).
     if (inputRef.current) inputRef.current.value = '';
     if (escolhidos.length === 0) return;
-    const aceitos = escolhidos.filter((f) => /\.(xml|xlsx)$/i.test(f.name));
+    const aceitos = escolhidos.filter((f) => /\.(xml|xlsx|pdf)$/i.test(f.name));
     if (aceitos.length === 0) {
-      setErro('Nenhum arquivo .xlsx (planilha do ERP) ou .xml entre os selecionados.');
+      setErro('Nenhum romaneio (.pdf), planilha (.xlsx) ou .xml entre os selecionados.');
       return;
     }
+    // O relatório novo substitui o anterior — e com ele os formulários de
+    // completar dados. Perguntar, não decidir: o que foi digitado sumia calado.
+    if (
+      naoSalvos.current.size > 0 &&
+      !window.confirm(
+        `Há dados digitados e não salvos de ${naoSalvos.current.size} cliente(s) fora da base. ` +
+          'Importar agora descarta o que foi digitado (os clientes continuam na aba Clientes, para completar depois). Importar mesmo assim?',
+      )
+    ) {
+      return;
+    }
+    naoSalvos.current.clear();
     setEnviando(true);
     setErro(null);
     // O relatório anterior sai da tela: ficando debaixo do erro de uma
     // importação nova que falhou, parecia ser o resultado dela.
     setRelatorio(null);
+    setCompletados({});
     try {
       setRelatorio(await importarArquivos(aceitos));
     } catch (e) {
@@ -120,8 +139,17 @@ export function Importacao() {
     <section className="cartao">
       <h2>Importação do dia</h2>
       <p style={{ color: 'var(--texto-2)' }}>
-        Arraste a planilha ConsultaPedidos do ERP (.xlsx) — ou XMLs de NF-e — ou clique para selecionar. Reimportar o
-        mesmo arquivo é inócuo — a chave de acesso deduplica.
+        Arraste os <strong>romaneios em PDF</strong> da Plataforma Logística do Boticário (vários de uma vez) — ou
+        clique para selecionar. O CD sai do motorista da folha: Caique Santos = Palmeira dos Índios, Paulo Rogério
+        Santos = Penedo. Reimportar a mesma folha é inócuo — o pedido repetido é ignorado.
+      </p>
+      {/* O cadastro fica guardado no banco: pedir que ele acompanhe todo
+          romaneio fazia parecer obrigatório um arquivo que se manda uma vez. */}
+      <p style={{ color: 'var(--texto-2)' }}>
+        A <strong>base de revendedoras</strong> (cadastro e pedidos do ERP) fica guardada no sistema — não precisa
+        vir junto: cada linha do romaneio é cruzada com ela e entra com telefone, papel e referência. Quem não está
+        na base entra normalmente, só com nome e endereço, e o painel pede o resto logo abaixo do relatório. A
+        planilha ConsultaPedidos e os XMLs de NF-e continuam aceitos.
       </p>
 
       {/* Durante o envio a zona não aceita outro: uma segunda importação em
@@ -143,11 +171,11 @@ export function Importacao() {
           if (!enviando) void enviar(e.dataTransfer.files);
         }}
       >
-        {enviando ? 'PROCESSANDO…' : 'SOLTE A PLANILHA (OU XMLs) AQUI'}
+        {enviando ? 'PROCESSANDO…' : 'SOLTE OS ROMANEIOS (PDF) AQUI'}
         <input
           ref={inputRef}
           type="file"
-          accept=".xml,.xlsx"
+          accept=".pdf,.xml,.xlsx"
           multiple
           hidden
           onChange={(e) => void enviar(e.target.files)}
@@ -183,8 +211,22 @@ export function Importacao() {
       {relatorio && (
         <>
           <div className="grade-relatorio">
-            <Metrica valor={relatorio.total} rotulo="Arquivos" />
-            <Metrica valor={relatorio.importados} rotulo="Importados" />
+            {(relatorio.romaneios ?? 0) > 0 && <Metrica valor={relatorio.romaneios ?? 0} rotulo="Romaneios lidos" />}
+            {/* Cadastro de revendedoras: não gera pedido nem cliente — fica
+                guardado para casar os romaneios. */}
+            {relatorio.revendedoras !== undefined && (
+              <Metrica valor={relatorio.revendedoras} rotulo="Revendedoras guardadas" />
+            )}
+            {relatorio.clientesAtualizados !== undefined && (
+              <Metrica valor={relatorio.clientesAtualizados} rotulo="Clientes atualizados" />
+            )}
+            {/* "Lidos" e não "Arquivos": na planilha e no romaneio conta linhas. */}
+            <Metrica valor={relatorio.total} rotulo="Lidos" />
+            <Metrica valor={relatorio.importados} rotulo="Pedidos importados" />
+            {/* Entraram só com o que a folha traz: os dados se completam abaixo. */}
+            {(relatorio.semCadastro ?? 0) > 0 && (
+              <Metrica valor={relatorio.semCadastro ?? 0} rotulo="Fora da base de revendedoras" />
+            )}
             <Metrica valor={relatorio.duplicados} rotulo="Duplicados" />
             <Metrica valor={relatorio.prontosParaRota} rotulo="Prontos p/ rota" />
             <Metrica valor={relatorio.geocodificados} rotulo="Geocodificados" />
@@ -256,6 +298,35 @@ export function Importacao() {
               <strong>{a.nome}:</strong> {a.mensagem}
             </div>
           ))}
+
+          {/* O formulário de cada um ALI, logo depois de importar: é quando o
+              Admin Estoque tem o romaneio na mão — e antes de montar a rota. */}
+          {(relatorio.clientesACompletar ?? []).length > 0 && (
+            <div className="acoes-rota">
+              <h3>Completar dados — fora da base de revendedoras</h3>
+              {(relatorio.clientesACompletar ?? []).map((c) =>
+                c.id in completados ? (
+                  <div key={c.id} className="sucesso" style={{ marginTop: 8 }}>
+                    {c.nome}:{' '}
+                    {completados[c.id]}
+                  </div>
+                ) : (
+                  <CompletarDados
+                    key={c.id}
+                    cliente={c}
+                    aoConcluir={(atualizado, corpo) => {
+                      naoSalvos.current.delete(c.id);
+                      setCompletados((atual) => ({ ...atual, [c.id]: resumoDoSalvo(corpo, atualizado.telefone) }));
+                    }}
+                    aoMudar={(alterado) => {
+                      if (alterado) naoSalvos.current.add(c.id);
+                      else naoSalvos.current.delete(c.id);
+                    }}
+                  />
+                ),
+              )}
+            </div>
+          )}
 
           {relatorio.rejeitados.map((r) => (
             <div key={r.arquivo} className="erro">

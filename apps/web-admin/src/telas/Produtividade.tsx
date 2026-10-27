@@ -194,7 +194,8 @@ function Cartao({ m: bruto, nome }: { m: ProdutividadeMotorista; nome: string })
     volumesEntregues: bruto.volumesEntregues ?? 0,
     pesoEntregueKg: bruto.pesoEntregueKg ?? 0,
     entregasSemCarga: bruto.entregasSemCarga ?? 0,
-    rotas_detalhe: bruto.rotas_detalhe ?? [],
+    entregasSemItens: bruto.entregasSemItens ?? 0,
+    rotas_detalhe: (bruto.rotas_detalhe ?? []).map((r) => ({ ...r, entregasSemItens: r.entregasSemItens ?? 0 })),
     minutosAtendimentoMediana: bruto.minutosAtendimentoMediana ?? null,
     chegadasRegistradas: bruto.chegadasRegistradas ?? 0,
   };
@@ -215,7 +216,11 @@ function Cartao({ m: bruto, nome }: { m: ProdutividadeMotorista; nome: string })
         {/* O que o Admin Estoque procura ao abrir a aba: quanta mercadoria passou
             pela mão do motorista. Fica junto com "Entregues" porque é a mesma
             pergunta em outra unidade — parada não diz se foi 1 item ou 653. */}
-        <Metrica valor={num(m.itensEntregues)} rotulo="Itens entregues" />
+        {/* Só de romaneio (que não diz quantos itens): traço, não "0". */}
+        <Metrica
+          valor={m.entregues > 0 && m.entregasSemItens >= m.entregues ? '—' : num(m.itensEntregues)}
+          rotulo={m.entregasSemItens > 0 ? 'Itens entregues (parcial)' : 'Itens entregues'}
+        />
         <Metrica valor={m.insucessos} rotulo="Insucessos" />
         <Metrica valor={km(m.kmPlanejados)} rotulo="km planejados" />
         <Metrica
@@ -251,7 +256,10 @@ function Cartao({ m: bruto, nome }: { m: ProdutividadeMotorista; nome: string })
           porque "20 paradas" e "480 itens" medem coisas diferentes: uma parada
           pode ser um frasco ou 653 deles (a maior linha da base real). */}
       <div className="produtividade-linha carga">
-        <strong>Mercadoria entregue:</strong> {num(m.itensEntregues)} item(ns)
+        <strong>Mercadoria entregue:</strong>{' '}
+        {m.entregues > 0 && m.entregasSemItens >= m.entregues
+          ? 'quantidade de itens não informada'
+          : `${num(m.itensEntregues)} item(ns)`}
         {/* Null = pedido da planilha, que não manda a lista: o bloco some em vez
             de dizer "em 0 produto(s)" com o caminhão cheio. */}
         {m.produtosDistintos != null && ` em ${num(m.produtosDistintos)} produto(s) distinto(s)`}
@@ -274,7 +282,15 @@ function Cartao({ m: bruto, nome }: { m: ProdutividadeMotorista; nome: string })
               Já <strong>volume e peso são parciais</strong>: em {m.entregasSemCarga} das{' '}
               {m.entregues} entregas a nota não trouxe nenhum dos dois (o ERP emissor manda zerado),
               e há nota que informa um sem o outro. O que está somado é a parte declarada — não a
-              carga real do período. Itens e produtos, sim, saem de toda nota.
+              carga real do período.{m.entregasSemItens === 0 && ' Itens e produtos, sim, saem de toda nota.'}
+            </>
+          )}
+          {m.entregasSemItens > 0 && (
+            <>
+              {' '}
+              <strong>Itens são parciais</strong>: em {m.entregasSemItens} das {m.entregues} entregas o
+              pedido veio do romaneio do Boticário, que não informa quantos itens leva — a soma é só a
+              das outras.
             </>
           )}
         </div>
@@ -341,7 +357,7 @@ function TabelaRotas({ rotas }: { rotas: ProdutividadeRota[] }) {
             <Fragment key={r.rotaId}>
               {/* Sem a borda, a nota do "sem carga" cola na sua própria rota em
                   vez de parecer pertencer à de baixo. */}
-              <tr className={r.entregasSemCarga > 0 ? 'sem-borda' : undefined}>
+              <tr className={r.entregasSemCarga > 0 || r.entregasSemItens > 0 ? 'sem-borda' : undefined}>
                 <td className="mono">{diaCurto(r.data)}</td>
                 {/* A data do id repete a coluna Dia; só o sufixo identifica. */}
                 <td className="mono" title={r.rotaId}>
@@ -350,11 +366,16 @@ function TabelaRotas({ rotas }: { rotas: ProdutividadeRota[] }) {
                 <td className="mono">
                   {r.entregues + r.insucessos}/{r.paradas}
                 </td>
-                <td className="mono">{num(r.itensEntregues)}</td>
-                {/* Uma rota de 400 itens em 20 paradas não é a mesma coisa que
-                    400 numa só: é isto que separa carga pesada de rota grande. */}
                 <td className="mono">
-                  {r.entregues > 0 ? Math.round(r.itensEntregues / r.entregues) : '—'}
+                  {r.entregues > 0 && r.entregasSemItens >= r.entregues ? '—' : num(r.itensEntregues)}
+                </td>
+                {/* Uma rota de 400 itens em 20 paradas não é a mesma coisa que
+                    400 numa só: é isto que separa carga pesada de rota grande.
+                    A média é só das entregas que disseram quantos itens levavam. */}
+                <td className="mono">
+                  {r.entregues - r.entregasSemItens > 0
+                    ? Math.round(r.itensEntregues / (r.entregues - r.entregasSemItens))
+                    : '—'}
                 </td>
                 {/* Null = pedido sem lista (planilha): traço, não zero. */}
                 <td className="mono">
@@ -365,10 +386,18 @@ function TabelaRotas({ rotas }: { rotas: ProdutividadeRota[] }) {
                 <td className="mono">{km(r.kmPlanejados)}</td>
               </tr>
               {r.entregasSemCarga > 0 && (
-                <tr className="nota-linha">
+                <tr className={`nota-linha${r.entregasSemItens > 0 ? ' sem-borda' : ''}`}>
                   <td colSpan={9}>
                     {r.entregasSemCarga} de {r.entregues} entrega(s) desta rota sem volume nem peso
                     na nota — as colunas Volumes e Peso ficam abaixo do que saiu de fato.
+                  </td>
+                </tr>
+              )}
+              {r.entregasSemItens > 0 && (
+                <tr className="nota-linha">
+                  <td colSpan={9}>
+                    {r.entregasSemItens} de {r.entregues} entrega(s) desta rota vieram do romaneio, que
+                    não informa quantos itens leva — a coluna Itens soma só as outras.
                   </td>
                 </tr>
               )}

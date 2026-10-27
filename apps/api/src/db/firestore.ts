@@ -19,6 +19,7 @@ import type {
   LeituraTransacao,
   PedidoCancelado,
   Repositorio,
+  Revendedora,
 } from './repositorio.js';
 import { clientesDaRota } from './repositorio.js';
 import { appFirebase } from '../firebase.js';
@@ -134,12 +135,14 @@ class RepositorioFirestore implements Repositorio {
    * mas a latência é de uma viagem). Vazio devolve vazio — `getAll()` sem
    * referências rejeita no Admin SDK. */
   async chavesDePedidos(): Promise<{ ids: Set<string>; idPorNumero: Map<string, string> }> {
-    // `select` de um campo só: o mesmo custo de leitura do `idsDePedidos`.
-    const resposta = await this.pedidos.select('numeroPedido').get();
+    // `select` só do necessário: o mesmo custo de leitura do `idsDePedidos`.
+    const resposta = await this.pedidos.select('numeroPedido', 'codigoExterno').get();
     const idPorNumero = new Map<string, string>();
     for (const d of resposta.docs) {
-      const numero = (d.data() as { numeroPedido?: string | null }).numeroPedido;
-      if (numero) idPorNumero.set(numero, d.id);
+      const { numeroPedido, codigoExterno } = d.data() as { numeroPedido?: string | null; codigoExterno?: string };
+      if (numeroPedido) idPorNumero.set(numeroPedido, d.id);
+      // O pedido do site da planilha também responde pelo código da folha.
+      if (codigoExterno) idPorNumero.set(codigoExterno, d.id);
     }
     return { ids: new Set(resposta.docs.map((d) => d.id)), idPorNumero };
   }
@@ -223,6 +226,44 @@ class RepositorioFirestore implements Repositorio {
     await gravarTudoOuFalhar(this.db, (escritor) =>
       registros.map((r) => escritor.set(this.db.collection('pedidosCancelados').doc(r.id), { ...r.dados })),
     );
+  }
+
+  async gravarRevendedoras(registros: Array<{ id: string; dados: Revendedora }>): Promise<void> {
+    if (registros.length === 0) return;
+    await gravarTudoOuFalhar(this.db, (escritor) =>
+      registros.map((r) => escritor.set(this.db.collection('revendedoras').doc(r.id), { ...r.dados })),
+    );
+  }
+
+  async revendedorasPorChaves(chaves: string[]): Promise<Array<{ id: string } & Revendedora>> {
+    const unicas = [...new Set(chaves)];
+    const achadas: Array<{ id: string } & Revendedora> = [];
+    // `in` aceita 30 valores por consulta: um romaneio tem ~11 nomes, então
+    // isto é 1 consulta por folha — e não a leitura das 40 mil revendedoras.
+    for (let i = 0; i < unicas.length; i += 30) {
+      const r = await this.db.collection('revendedoras').where('chave', 'in', unicas.slice(i, i + 30)).get();
+      achadas.push(...r.docs.map((d) => ({ ...(d.data() as Revendedora), id: d.id })));
+    }
+    return achadas;
+  }
+
+  async revendedorasComNome(nome: string, limite: number): Promise<Array<{ id: string } & Revendedora>> {
+    // A chave é "NOME|CIDADE" e a cidade só tem A–Z e 0–9: a faixa
+    // ["NOME|", "NOME|~") (o '~' vem depois de todos eles) pega o nome em todas as
+    // cidades com o índice automático do campo, sem varrer a base.
+    const r = await this.db
+      .collection('revendedoras')
+      .where('chave', '>=', `${nome}|`)
+      .where('chave', '<', `${nome}|~`)
+      .limit(limite)
+      .get();
+    return r.docs.map((d) => ({ ...(d.data() as Revendedora), id: d.id }));
+  }
+
+  async revendedorasPorIds(ids: string[]): Promise<Array<{ id: string } & Revendedora>> {
+    if (ids.length === 0) return [];
+    const docs = await this.db.getAll(...ids.map((id) => this.db.collection('revendedoras').doc(id)));
+    return docs.filter((d) => d.exists).map((d) => ({ ...(d.data() as Revendedora), id: d.id }));
   }
 
   async pedidosPorIds(ids: string[]): Promise<Array<{ id: string } & Pedido>> {

@@ -12,7 +12,8 @@
     "cadastrar-cd": "node --import tsx scripts/cadastrar-cd.ts",
     "publicar-rules": "node --import tsx scripts/publicar-rules.ts",
     "publicar-mapa": "node --import tsx scripts/publicar-mapa.ts",
-    "configurar-cors": "node --import tsx scripts/configurar-cors-storage.ts"
+    "configurar-cors": "node --import tsx scripts/configurar-cors-storage.ts",
+    "carregar-cadastro": "node --import tsx scripts/carregar-cadastro.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
@@ -21,7 +22,8 @@
     "fast-xml-parser": "^4.5.0",
     "fastify": "^5.1.0",
     "fflate": "^0.8.3",
-    "firebase-admin": "^14.2.0"
+    "firebase-admin": "^14.2.0",
+    "pdfjs-dist": "4.10.38"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

@@ -1,4 +1,4 @@
-import { produtosDistintos, quantidadeDeItens, temCarga } from '@rota/shared';
+import { itensConhecidos, produtosDistintos, quantidadeDeItens, temCarga } from '@rota/shared';
 import type {
   ExcecaoRota,
   ParadaRota,
@@ -100,6 +100,7 @@ export function calcularProdutividade(
     volumesEntregues: 0,
     pesoEntregueKg: 0,
     entregasSemCarga: 0,
+    entregasSemItens: 0,
     rotas_detalhe: [],
   });
   const de = (motoristaId: string) => {
@@ -158,6 +159,7 @@ export function calcularProdutividade(
       volumesEntregues: 0,
       pesoEntregueKg: 0,
       entregasSemCarga: 0,
+      entregasSemItens: 0,
       kmPlanejados: rota.distanciaTotalKm,
     };
     // Rota publicada e ainda não executada entra no detalhe com zero: sumir da
@@ -181,6 +183,9 @@ export function calcularProdutividade(
       // um `?? 0` aqui fazia exatamente isso: com a base importada da planilha,
       // o relatório inteiro dizia "0 produto(s) distinto(s)" com o caminhão cheio.
       daqui.itensEntregues += quantidadeDeItens(parada);
+      // Pedido do romaneio: não se sabe quantos itens levava. Contado à parte
+      // para a tela dizer que a soma é parcial, em vez de somar um zero mudo.
+      if (!itensConhecidos(parada)) daqui.entregasSemItens += 1;
       const distintos = produtosDistintos(parada);
       if (distintos === null) produtosDesconhecidos = true;
       else daqui.produtosDistintos = (daqui.produtosDistintos ?? 0) + distintos;
@@ -263,6 +268,7 @@ export function calcularProdutividade(
     m.volumesEntregues += daqui.volumesEntregues;
     m.pesoEntregueKg = Math.round((m.pesoEntregueKg + daqui.pesoEntregueKg) * 1000) / 1000;
     m.entregasSemCarga += daqui.entregasSemCarga;
+    m.entregasSemItens += daqui.entregasSemItens;
     m.rotas_detalhe.push(daqui);
 
     // Ritmo e jornada só existem com a hora do app.
