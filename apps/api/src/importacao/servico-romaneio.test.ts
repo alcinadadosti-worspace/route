@@ -59,6 +59,7 @@ test('romaneio: revendedora do cadastro com ponto sai pronta, com o telefone e o
   await importarRomaneiosLidos([{ romaneio: romaneio([linha()]), codCd: '684' }], repo, r);
 
   assert.equal(r.importados, 1);
+  assert.deepEqual(r.folhas, [{ rota: '1673300', motorista: 'Caique Santos', pacotes: 1 }]);
   assert.equal(r.prontosParaRota, 1);
   assert.equal(r.pendentesDeDecisao, 0, 'mesmo endereço escrito como no romaneio não abre revisão');
   assert.equal(r.semCadastro ?? 0, 0);

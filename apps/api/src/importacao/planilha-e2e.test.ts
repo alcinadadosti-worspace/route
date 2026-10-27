@@ -51,24 +51,24 @@ function xlsx(linhas: Array<Record<string, string>>): Uint8Array {
 }
 
 const PEDIDO_DE_ROTA = {
-  CodigoPedido: '523636997',
-  NotaFiscal: '293604',
-  Pessoa: '1260943',
-  NomePessoa: 'CLAUDEANE ROSA FERREIRA',
+  CodigoPedido: '520000997',
+  NotaFiscal: '290004',
+  Pessoa: '7000943',
+  NomePessoa: 'CLAUDIA EXEMPLO FERREIRA',
   Papel: 'Diamante GB',
   QtdeMateriais: '7',
   ValorPraticado: '662.82',
   'Tipo de Entrega': 'No endereço de entrega',
   // "Transporte" é o pedido de rota por entregar; "Entregue" não entra na montagem.
   'SituaçãoComercial': 'Transporte',
-  LogradouroEntrega: 'RUA DA PROVIDENCIA',
+  LogradouroEntrega: 'RUA DAS PALMEIRAS',
   ComplementoEntregaRetirada: '149',
   BairroEntregaRetirada: 'CENTRO',
   CidadeEntregaRetirada: 'IGREJA NOVA',
   UFEntregaRetirada: 'AL',
   CEPEntregaRetirada: '57280-000',
-  'ReferênciaEntregaRetirada': 'PROX A PISCINA DO VAL',
-  Telefone: '82999310976',
+  'ReferênciaEntregaRetirada': 'PROX A PRACINHA',
+  Telefone: '82988880976',
   'Cód Estrutura Pai': '1.048',
   'Lote de separação': '48312281',
   Volume: '1',
@@ -127,7 +127,7 @@ test('planilha → localizar → publicar: a parada leva a quantidade, e o recib
 
   // 3. Publica a rota.
   const publicacao = await publicarRota(
-    { pedidoIds: ['523636997'], cdId: 'penedo', motoristaId: 'motorista-demo' },
+    { pedidoIds: ['520000997'], cdId: 'penedo', motoristaId: 'motorista-demo' },
     repo,
     osrmFalso(),
   );
@@ -140,10 +140,10 @@ test('planilha → localizar → publicar: a parada leva a quantidade, e o recib
   assert.equal(quantidadeDeItens(parada), 7);
   assert.equal(parada.volumes, 1);
   assert.equal(parada.pesoBrutoKg, 12.047);
-  assert.equal(parada.telefone, '+5582999310976');
-  assert.match(parada.endereco, /RUA DA PROVIDENCIA, 149/);
-  assert.equal(parada.numeroPedido, '523636997');
-  assert.equal(parada.numeroNota, 293604);
+  assert.equal(parada.telefone, '+5582988880976');
+  assert.match(parada.endereco, /RUA DAS PALMEIRAS, 149/);
+  assert.equal(parada.numeroPedido, '520000997');
+  assert.equal(parada.numeroNota, 290004);
 
   // 5. O que o CLIENTE recebe no WhatsApp.
   const recibo = mensagemDeRecibo(
@@ -158,7 +158,7 @@ test('planilha → localizar → publicar: a parada leva a quantidade, e o recib
     },
   );
   assert.match(recibo, /7 produto/); // não omite a mercadoria
-  assert.match(recibo, /523636997/);
+  assert.match(recibo, /520000997/);
   assert.doesNotMatch(recibo, /\{/); // nenhum placeholder vaza
 });
 

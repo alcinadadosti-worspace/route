@@ -162,6 +162,116 @@
   color: var(--texto);
 }
 
+/* Enviando: a zona vira o painel do "processando" — giro, relógio e barra em
+   movimento. Parada por até 1 min (API acordando), parecia travada. */
+.zona-upload.enviando {
+  cursor: progress;
+  border-style: solid;
+  border-color: var(--ambar);
+  color: var(--texto);
+}
+
+.processando {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: left;
+}
+
+.processando-detalhe {
+  font-size: 0.85rem;
+  color: var(--texto-2);
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.giro {
+  display: inline-block;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--borda);
+  border-top-color: var(--ambar);
+  border-radius: 50%;
+  animation: girar 0.8s linear infinite;
+}
+
+.giro.pequeno {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+  margin-right: 8px;
+  vertical-align: -3px;
+}
+
+@keyframes girar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.barra-indeterminada {
+  position: relative;
+  height: 4px;
+  margin-top: 16px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--borda);
+}
+
+.barra-indeterminada span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -35%;
+  width: 35%;
+  border-radius: 2px;
+  background: var(--ambar);
+  animation: deslizar 1.2s ease-in-out infinite;
+}
+
+@keyframes deslizar {
+  to {
+    left: 100%;
+  }
+}
+
+/* Quem pede menos movimento no sistema ainda vê que está andando, devagar. */
+@media (prefers-reduced-motion: reduce) {
+  .giro,
+  .barra-indeterminada span {
+    animation-duration: 3s;
+  }
+}
+
+/* O lote: os romaneios já enviados desta rota. */
+.lote-importacao {
+  margin-top: 16px;
+  border: 1px solid var(--borda);
+  border-left: 6px solid var(--ambar);
+  border-radius: var(--raio);
+  padding: 10px 14px;
+}
+
+.lote-cabecalho {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lote-importacao ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.lote-importacao li {
+  padding: 3px 0;
+  overflow-wrap: anywhere;
+}
+
 .grade-relatorio {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

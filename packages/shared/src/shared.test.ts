@@ -540,10 +540,10 @@ test('recibo de pedido da PLANILHA diz a quantidade — não pode omitir a merca
     new Date('2026-08-03T14:05:00-03:00'),
     'Maria',
     PARAMETROS_AVISO_PADRAO,
-    { numeroPedido: '523636997', numeroNota: 293604, itens: [], quantidadeMateriais: 7 },
+    { numeroPedido: '520000997', numeroNota: 290004, itens: [], quantidadeMateriais: 7 },
   );
   assert.match(texto, /Itens entregues:\* 7 produto/);
-  assert.match(texto, /523636997/);
+  assert.match(texto, /520000997/);
 });
 
 test('recibo com LISTA continua listando (a lista manda sobre o total)', () => {

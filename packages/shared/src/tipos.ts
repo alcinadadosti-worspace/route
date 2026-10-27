@@ -710,6 +710,12 @@ export interface RelatorioImportacao {
   /** Romaneios em PDF do Boticário lidos nesta remessa. */
   romaneios?: number;
   /**
+   * Cada folha lida, para a tela listar o que JÁ entrou: uma rota do
+   * Boticário às vezes vem em mais de um romaneio, mandados um de cada vez, e
+   * o Admin precisa ver que todos chegaram antes de localizar e montar.
+   */
+  folhas?: Array<{ rota: string; motorista: string; pacotes: number }>;
+  /**
    * Linhas de romaneio cuja destinatária NÃO foi achada no cadastro (pedido
    * do site, revendedora nova, nome repetido na cidade): entram com um cliente
    * novo, sem telefone. Contadas à parte porque esse cliente não herda o ponto

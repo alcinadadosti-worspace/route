@@ -90,6 +90,10 @@ export async function importarRomaneiosLidos(
 
   for (const { romaneio, codCd } of lidos) {
     relatorio.romaneios = (relatorio.romaneios ?? 0) + 1;
+    relatorio.folhas = [
+      ...(relatorio.folhas ?? []),
+      { rota: romaneio.rota, motorista: romaneio.motorista, pacotes: romaneio.linhas.length },
+    ];
     // Data no futuro (relógio errado no PC que imprimiu) não vale: virava o
     // `enderecoDe` do cliente, e até ela passar nenhuma folha mais nova
     // conseguia corrigir o endereço.

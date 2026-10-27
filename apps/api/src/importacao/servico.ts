@@ -855,6 +855,7 @@ export function mesclarRelatorios(
   for (const campo of ['romaneios', 'semCadastro', 'revendedoras', 'clientesAtualizados'] as const) {
     if (origem[campo] !== undefined) destino[campo] = (destino[campo] ?? 0) + origem[campo];
   }
+  if (origem.folhas) destino.folhas = [...(destino.folhas ?? []), ...origem.folhas];
   if (origem.clientesACompletar) {
     destino.clientesACompletar = [...(destino.clientesACompletar ?? []), ...origem.clientesACompletar];
   }

@@ -18,7 +18,7 @@ function pedido(status: Pedido['status'], extra: Partial<Pedido> = {}): Pedido {
     serie: 1,
     numeroPedido: '536361204',
     lote: null,
-    clienteId: '1260943',
+    clienteId: '7000943',
     emitidoEm: '2026-10-15T00:00:00-03:00',
     itens: [],
     valorTotal: 100,

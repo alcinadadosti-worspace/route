@@ -76,13 +76,13 @@ function xlsxDe(linhas: Array<Record<string, string>>): Uint8Array {
   });
 }
 
-/** Linha realista de ROTA (espelho da nota 293604 que foi para rota). */
+/** Linha realista de ROTA (espelho da nota 290004 que foi para rota). */
 function linhaRota(extra: Record<string, string> = {}): Record<string, string> {
   return {
-    CodigoPedido: '523636997',
-    NotaFiscal: '293604',
-    Pessoa: '1260943',
-    NomePessoa: 'CLAUDEANE ROSA FERREIRA',
+    CodigoPedido: '520000997',
+    NotaFiscal: '290004',
+    Pessoa: '7000943',
+    NomePessoa: 'CLAUDIA EXEMPLO FERREIRA',
     Papel: 'Diamante GB',
     QtdeMateriais: '7',
     ValorPraticado: '662.82',
@@ -90,21 +90,21 @@ function linhaRota(extra: Record<string, string> = {}): Record<string, string> {
     // Pedido de rota ainda por entregar está "Transporte" no ERP; "Entregue" é
     // o que já foi entregue e não vai mais para a montagem.
     'SituaçãoComercial': 'Transporte',
-    Logradouro: 'RUA DA PROVIDENCIA',
+    Logradouro: 'RUA DAS PALMEIRAS',
     Complemento: '149',
     Bairro: 'CENTRO',
     Cidade: 'IGREJA NOVA',
     UF: 'AL',
     CEP: '57280-000',
-    'Referência': 'PROX A PISCINA DO VAL',
-    LogradouroEntrega: 'RUA DA PROVIDENCIA',
+    'Referência': 'PROX A PRACINHA',
+    LogradouroEntrega: 'RUA DAS PALMEIRAS',
     ComplementoEntregaRetirada: '149',
     BairroEntregaRetirada: 'CENTRO',
     CidadeEntregaRetirada: 'IGREJA NOVA',
     UFEntregaRetirada: 'AL',
     CEPEntregaRetirada: '57280-000',
-    'ReferênciaEntregaRetirada': 'PROX A PISCINA DO VAL',
-    Telefone: '82999310976',
+    'ReferênciaEntregaRetirada': 'PROX A PRACINHA',
+    Telefone: '82988880976',
     'Cód Estrutura Pai': '1.048',
     'Lote de separação': '48312281',
     Volume: '1',
@@ -142,8 +142,8 @@ test('linha de ROTA vira pedido com modoEntrega=rota, Pessoa como cliente e quan
   assert.equal(rel.total, 1);
   assert.equal(rel.importados, 1);
   const pedido = (await repo.listarPedidos())[0]!;
-  assert.equal(pedido.id, '523636997'); // CodigoPedido é o ID
-  assert.equal(pedido.clienteId, '1260943'); // Pessoa é a identidade
+  assert.equal(pedido.id, '520000997'); // CodigoPedido é o ID
+  assert.equal(pedido.clienteId, '7000943'); // Pessoa é a identidade
   assert.equal(pedido.modoEntrega, 'rota');
   assert.equal(pedido.quantidadeMateriais, 7);
   assert.equal(pedido.valorTotal, 662.82);
@@ -153,10 +153,10 @@ test('linha de ROTA vira pedido com modoEntrega=rota, Pessoa como cliente e quan
   assert.equal(pedido.status, 'pendente_de_mapeamento'); // sem geocodificador
 
   const cliente = (await repo.listarClientes())[0]!;
-  assert.equal(cliente.id, '1260943');
+  assert.equal(cliente.id, '7000943');
   assert.equal(cliente.papel, 'Diamante GB');
-  assert.equal(cliente.telefone, '+5582999310976');
-  assert.equal(cliente.observacoes, 'PROX A PISCINA DO VAL'); // referência → dossiê
+  assert.equal(cliente.telefone, '+5582988880976');
+  assert.equal(cliente.observacoes, 'PROX A PRACINHA'); // referência → dossiê
 });
 
 test('RETIRADA nasce classificada, SEM aba Decisões — e o cliente NÃO herda o endereço do CD', async () => {
@@ -195,7 +195,7 @@ test('cliente que ALTERNA rota/retirada não troca de endereço nem abre revisã
     repo,
   );
   // 2º ciclo: a MESMA revendedora retira no CD. O cadastro dela (RUA DA
-  // PROVIDENCIA) diverge do endereço de entrega gravado (POVOADO SERRA).
+  // PALMEIRAS) diverge do endereço de entrega gravado (POVOADO SERRA).
   await importarPlanilha(
     'c2.xlsx',
     xlsxDe([linhaRota({
@@ -315,7 +315,7 @@ test('revisão de endereço gera UM alerta por cliente, não um por nota', async
   // Sem `enderecoAnterior` no pedido a aba Decisões não desenhava o cartão e a
   // resposta recusava (409): o pedido ficava preso para sempre.
   const preso = (await repo.obterPedido('600000021'))!;
-  assert.equal(preso.enderecoAnterior?.logradouro, 'RUA DA PROVIDENCIA');
+  assert.equal(preso.enderecoAnterior?.logradouro, 'RUA DAS PALMEIRAS');
   const r = await decidirMudancaEndereco(repo, '600000021', 'manter');
   assert.ok(r.ok, JSON.stringify(r));
   for (const id of ['600000021', '600000022', '600000023']) {
@@ -345,7 +345,7 @@ test('cancelada NOVA é ignorada; cancelada JÁ IMPORTADA é apagada sozinha, co
   assert.equal((await repo.listarPedidos()).length, 0, 'nem o novo entrou, nem o antigo ficou');
   const alerta = rel.alertas.find((a) => /CANCELADO/i.test(a.mensagem));
   assert.ok(alerta);
-  assert.match(alerta!.mensagem, /523636997.*apagado automaticamente/);
+  assert.match(alerta!.mensagem, /520000997.*apagado automaticamente/);
 });
 
 /** Põe o pedido já importado numa rota publicada (o PDF pode estar impresso). */
@@ -353,9 +353,9 @@ async function emRota(repo: RepositorioMemoria, pedidoId: string, outros: string
   const rotaId = '2026-10-17_abcdef01';
   const parada = (id: string) => ({
     pedidoId: id,
-    clienteId: '1260943',
-    nome: 'CLAUDEANE',
-    endereco: 'RUA DA PROVIDENCIA, 149',
+    clienteId: '7000943',
+    nome: 'CLAUDIA',
+    endereco: 'RUA DAS PALMEIRAS, 149',
     telefone: null,
     itens: [],
     volumes: 1,
@@ -391,17 +391,17 @@ test('cancelada que estava NUMA ROTA sai da rota, e o alerta manda avisar o moto
   const repo = new RepositorioMemoria();
   await importarPlanilha(
     'd1.xlsx',
-    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605' })]),
+    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '520000998', NotaFiscal: '293605' })]),
     repo,
   );
-  const rotaId = await emRota(repo, '523636997', ['523636998']);
+  const rotaId = await emRota(repo, '520000997', ['520000998']);
 
   const rel = await importarPlanilha('d2.xlsx', xlsxDe([linhaRota({ 'SituaçãoComercial': 'Cancelado' })]), repo);
 
   assert.equal(rel.canceladasApagadas, 1);
-  assert.equal(await repo.obterPedido('523636997'), null);
+  assert.equal(await repo.obterPedido('520000997'), null);
   const rota = (await repo.obterRota(rotaId))!;
-  assert.deepEqual(rota.paradas.map((p) => p.pedidoId), ['523636998'], 'a outra parada fica');
+  assert.deepEqual(rota.paradas.map((p) => p.pedidoId), ['520000998'], 'a outra parada fica');
   const alerta = rel.alertas.find((a) => /CANCELADO/.test(a.mensagem))!;
   assert.match(alerta.mensagem, new RegExp(`tirado da rota ${rotaId} de 17/10`));
   assert.match(alerta.mensagem, /avise o motorista para NÃO entregar/);
@@ -411,18 +411,18 @@ test('cancelada que era a ÚNICA parada desfaz a rota; já ENTREGUE não se apag
   const repo = new RepositorioMemoria();
   await importarPlanilha(
     'd1.xlsx',
-    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605' })]),
+    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '520000998', NotaFiscal: '293605' })]),
     repo,
   );
-  const rotaId = await emRota(repo, '523636997');
-  const entregue = (await repo.obterPedido('523636998'))!;
-  await repo.salvarPedido('523636998', { ...entregue, status: 'entregue' });
+  const rotaId = await emRota(repo, '520000997');
+  const entregue = (await repo.obterPedido('520000998'))!;
+  await repo.salvarPedido('520000998', { ...entregue, status: 'entregue' });
 
   const rel = await importarPlanilha(
     'd2.xlsx',
     xlsxDe([
       linhaRota({ 'SituaçãoComercial': 'Cancelado' }),
-      linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605', 'SituaçãoComercial': 'Cancelado' }),
+      linhaRota({ CodigoPedido: '520000998', NotaFiscal: '293605', 'SituaçãoComercial': 'Cancelado' }),
     ]),
     repo,
   );
@@ -432,7 +432,7 @@ test('cancelada que era a ÚNICA parada desfaz a rota; já ENTREGUE não se apag
   const [desfeita, historico] = rel.alertas.filter((a) => /CANCELADO/.test(a.mensagem));
   assert.match(desfeita!.mensagem, /só tinha ele e foi desfeita/);
   // Entrega é histórico: cancelamento depois dela é para conferir, não sumir.
-  assert.equal((await repo.obterPedido('523636998'))!.status, 'entregue');
+  assert.equal((await repo.obterPedido('520000998'))!.status, 'entregue');
   assert.match(historico!.mensagem, /293605.*NÃO foi apagado.*Confira com o ERP/);
 });
 
@@ -445,14 +445,14 @@ test('cancelado não volta quando uma planilha MAIS VELHA é importada depois', 
   const nova = xlsxDe([
     linhaRota({ 'SituaçãoComercial': 'Cancelado' }),
     // Cancelado que nunca chegou a entrar.
-    linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605', 'SituaçãoComercial': 'Cancelado' }),
+    linhaRota({ CodigoPedido: '520000998', NotaFiscal: '293605', 'SituaçãoComercial': 'Cancelado' }),
   ]);
   const rel = await importarPlanilha('nova.xlsx', nova, repo);
   assert.equal(rel.canceladasApagadas, 1);
 
   const velha = await importarPlanilha(
     'velha.xlsx',
-    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605' })]),
+    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '520000998', NotaFiscal: '293605' })]),
     repo,
   );
   assert.equal(velha.importados, 0);
@@ -471,26 +471,26 @@ test('cancelado que era a única parada COM PONTO não solta as exceções do PD
   const repo = new RepositorioMemoria();
   await importarPlanilha(
     'd1.xlsx',
-    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '523636998', NotaFiscal: '293605' })]),
+    xlsxDe([linhaRota(), linhaRota({ CodigoPedido: '520000998', NotaFiscal: '293605' })]),
     repo,
   );
-  const rotaId = await emRota(repo, '523636997');
+  const rotaId = await emRota(repo, '520000997');
   const rota = (await repo.obterRota(rotaId))!;
   const { coordenada: _c, etaMin: _e, distanciaKm: _d, itens: _i, ...excecao } = rota.paradas[0]!;
   await repo.salvarRota(rotaId, {
     ...rota,
-    excecoes: [{ ...excecao, pedidoId: '523636998', numero: 1 }],
+    excecoes: [{ ...excecao, pedidoId: '520000998', numero: 1 }],
   });
-  const p = (await repo.obterPedido('523636998'))!;
-  await repo.salvarPedido('523636998', { ...p, status: 'em_rota', rotaId });
+  const p = (await repo.obterPedido('520000998'))!;
+  await repo.salvarPedido('520000998', { ...p, status: 'em_rota', rotaId });
 
   const rel = await importarPlanilha('d2.xlsx', xlsxDe([linhaRota({ 'SituaçãoComercial': 'Cancelado' })]), repo);
 
   assert.equal(rel.canceladasApagadas, 1);
   const depois = (await repo.obterRota(rotaId))!;
   assert.deepEqual(depois.paradas, []);
-  assert.deepEqual(depois.excecoes!.map((e) => e.pedidoId), ['523636998']);
-  assert.equal((await repo.obterPedido('523636998'))!.status, 'em_rota', 'a exceção segue reservada');
+  assert.deepEqual(depois.excecoes!.map((e) => e.pedidoId), ['520000998']);
+  assert.equal((await repo.obterPedido('520000998'))!.status, 'em_rota', 'a exceção segue reservada');
   const alerta = rel.alertas.find((a) => /CANCELADO/.test(a.mensagem))!;
   assert.doesNotMatch(alerta.mensagem, /desfeita/);
 });
@@ -513,7 +513,7 @@ test('pedido de rota que o ERP já dá como ENTREGUE fica fora da montagem, com 
   assert.equal(rel.jaEntregues, 1);
   assert.equal(rel.prontosParaRota, 0, 'mesmo com pin do cadastro, não vai para a montagem');
   assert.equal(rel.retiradas, 1, 'retirada entregue continua retirada');
-  const pedido = (await repo.obterPedido('523636997'))!;
+  const pedido = (await repo.obterPedido('520000997'))!;
   assert.equal(pedido.status, 'entregue_no_erp');
   assert.deepEqual(pedido.entregueNoErp, { data: '2026-10-16' });
   assert.deepEqual((await repo.obterPedido('521670637'))!.entregueNoErp, { data: '2026-10-16' });
@@ -524,7 +524,7 @@ test('pedido de rota que o ERP já dá como ENTREGUE fica fora da montagem, com 
   // segura — não volta sozinho para a montagem.
   const velha = await importarPlanilha('d0.xlsx', xlsxDe([linhaRota()]), repo);
   assert.equal(velha.duplicados, 1);
-  assert.equal((await repo.obterPedido('523636997'))!.status, 'entregue_no_erp');
+  assert.equal((await repo.obterPedido('520000997'))!.status, 'entregue_no_erp');
 });
 
 test('o "Entregue" do ERP NÃO tira da montagem o que já estava esperando rota', async () => {
@@ -532,7 +532,7 @@ test('o "Entregue" do ERP NÃO tira da montagem o que já estava esperando rota'
   // transporte e ainda não levado sairia da montagem sem ter sido entregue.
   const repo = new RepositorioMemoria();
   await importarPlanilha('d1.xlsx', xlsxDe([linhaRota({ Complemento: '149 -10.404108,-36.431132' })]), repo);
-  assert.equal((await repo.obterPedido('523636997'))!.status, 'pronto_para_rota');
+  assert.equal((await repo.obterPedido('520000997'))!.status, 'pronto_para_rota');
 
   const rel = await importarPlanilha(
     'd7.xlsx',
@@ -540,7 +540,7 @@ test('o "Entregue" do ERP NÃO tira da montagem o que já estava esperando rota'
     repo,
   );
   assert.equal(rel.duplicados, 1);
-  assert.equal((await repo.obterPedido('523636997'))!.status, 'pronto_para_rota');
+  assert.equal((await repo.obterPedido('520000997'))!.status, 'pronto_para_rota');
 });
 
 test('UF fora de AL é rejeitada com motivo; Tipo de Entrega desconhecido também', async () => {
@@ -588,13 +588,13 @@ test('sem telefone na planilha, o telefone que o cliente JÁ TINHA fica', async 
   // (ele vai na NF-e). A política: o telefone mora no CLIENTE; a planilha
   // preenche quando traz, e nunca apaga o que existe.
   const repo = new RepositorioMemoria();
-  await repo.salvarCliente('1260943', {
-    nome: 'CLAUDEANE ROSA FERREIRA',
-    documentoMascarado: 'cód. 1260943',
+  await repo.salvarCliente('7000943', {
+    nome: 'CLAUDIA EXEMPLO FERREIRA',
+    documentoMascarado: 'cód. 7000943',
     telefone: '+5582988887777',
     email: null,
     enderecoFiscal: {
-      logradouro: 'RUA DA PROVIDENCIA',
+      logradouro: 'RUA DAS PALMEIRAS',
       numero: '149',
       bairro: 'CENTRO',
       municipio: 'IGREJA NOVA',
@@ -619,7 +619,7 @@ test('observação escrita pelo motorista em campo NUNCA é sobrescrita pela ref
   await importarPlanilha('c.xlsx', xlsxDe([linhaRota()]), repo);
   // motorista escreve o que aprendeu no local
   const cliente = (await repo.listarClientes())[0]!;
-  await repo.atualizarCliente('1260943', { observacoes: 'portão azul, entrar pela lateral' });
+  await repo.atualizarCliente('7000943', { observacoes: 'portão azul, entrar pela lateral' });
   void cliente;
 
   await importarPlanilha(
@@ -659,7 +659,7 @@ test('entidade hexadecimal no XML é desescapada — e código inválido não vi
   ];
   const linha1 = cabecalho.map((c, i) => cel(`${String.fromCharCode(65 + i)}1`, c)).join('');
   const linha2 = [
-    cel('A2', '523636997'), cel('B2', '1'), cel('C2', '77'),
+    cel('A2', '520000997'), cel('B2', '1'), cel('C2', '77'),
     cel('D2', 'JOS&#xC9;&#x110000; MARIA'),
     cel('E2', 'No endere&#xE7;o de entrega'),
     cel('F2', 'Entregue'), cel('G2', 'RUA A'), cel('H2', 'PENEDO'), cel('I2', 'AL'),
@@ -693,7 +693,7 @@ test('extrairCoordenada: os formatos reais do cadastro, e lixo fora de AL não p
   assert.ok(dms && Math.abs(dms.lat - -10.125028) < 0.001 && Math.abs(dms.lng - -36.169972) < 0.001);
   // coordenada válida no MUNDO mas fora de Alagoas = lixo de digitação
   assert.equal(extrairCoordenada(['-23.55052, -46.633308']), null);
-  assert.equal(extrairCoordenada(['PROX A PISCINA DO VAL', null, undefined]), null);
+  assert.equal(extrairCoordenada(['PROX A PRACINHA', null, undefined]), null);
 });
 
 test('coordenada digitada junto do número não vaza para o endereço', async () => {
