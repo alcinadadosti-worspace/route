@@ -10,22 +10,66 @@ import { descricaoDoEnvio, somarEnvios, type Envio } from '../loteDeImportacao';
  * O lote vive FORA do componente (e na sessão da aba do navegador): trocar de
  * aba desmonta a tela, e voltar da aba Clientes ou Rotas encontrava a lista de
  * romaneios vazia — como se nada tivesse sido enviado.
+ *
+ * O ENVIO em curso também: trocar de aba no meio dele perdia o resultado (a
+ * importação acabava no servidor, mas não entrava na lista), e a tela, de
+ * volta, deixava soltar outro arquivo em paralelo.
  */
+interface EstadoDoLote {
+  envios: Envio[];
+  /** Clientes fora da base já resolvidos neste lote (id → o que foi salvo). */
+  completados: Record<string, string>;
+  /** Arquivos sendo processados agora, e desde quando (null = nenhum envio em curso). */
+  enviando: { arquivos: string[]; desde: number } | null;
+  erroDoEnvio: string | null;
+}
 const CHAVE_DA_SESSAO = 'rota.importacao.lote';
-const sessao: { envios: Envio[]; completados: Record<string, string> } = (() => {
+const lote: EstadoDoLote = {
+  ...(() => {
+    try {
+      const salvo = sessionStorage.getItem(CHAVE_DA_SESSAO);
+      if (salvo) return JSON.parse(salvo) as Pick<EstadoDoLote, 'envios' | 'completados'>;
+    } catch {
+      // Sem sessionStorage (modo privado, cota): o lote vale só enquanto a página estiver aberta.
+    }
+    return { envios: [], completados: {} };
+  })(),
+  enviando: null,
+  erroDoEnvio: null,
+};
+const ouvintes = new Set<() => void>();
+function mudarLote(mudanca: Partial<EstadoDoLote>) {
+  Object.assign(lote, mudanca);
   try {
-    const salvo = sessionStorage.getItem(CHAVE_DA_SESSAO);
-    if (salvo) return JSON.parse(salvo) as { envios: Envio[]; completados: Record<string, string> };
-  } catch {
-    // Sem sessionStorage (modo privado, cota): o lote vale só enquanto a página estiver aberta.
-  }
-  return { envios: [], completados: {} };
-})();
-function guardarSessao() {
-  try {
-    sessionStorage.setItem(CHAVE_DA_SESSAO, JSON.stringify(sessao));
+    sessionStorage.setItem(CHAVE_DA_SESSAO, JSON.stringify({ envios: lote.envios, completados: lote.completados }));
   } catch {
     // Idem: sem onde guardar, segue só na memória.
+  }
+  for (const avisar of ouvintes) avisar();
+}
+/** O lote, redesenhando a tela quando ele muda — inclusive com ela remontada. */
+function useLote(): EstadoDoLote {
+  const [, redesenhar] = useState(0);
+  useEffect(() => {
+    const avisar = () => redesenhar((n) => n + 1);
+    ouvintes.add(avisar);
+    return () => void ouvintes.delete(avisar);
+  }, []);
+  return lote;
+}
+
+/** Manda os arquivos e põe o resultado no lote — fora do componente, para não
+ * se perder se a tela for desmontada no meio. */
+async function enviarAoLote(aceitos: File[]): Promise<void> {
+  const arquivos = aceitos.map((f) => f.name);
+  mudarLote({ enviando: { arquivos, desde: Date.now() }, erroDoEnvio: null });
+  try {
+    const novo = await importarArquivos(aceitos);
+    mudarLote({ envios: [...lote.envios, { quando: new Date().toISOString(), arquivos, relatorio: novo }] });
+  } catch (e) {
+    mudarLote({ erroDoEnvio: e instanceof Error ? e.message : 'Falha na importação' });
+  } finally {
+    mudarLote({ enviando: null });
   }
 }
 
@@ -33,10 +77,8 @@ function guardarSessao() {
 export function Importacao() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [arrastando, setArrastando] = useState(false);
-  /** Arquivos sendo processados agora (null = nenhum envio em curso). */
-  const [enviando, setEnviando] = useState<string[] | null>(null);
+  const { envios, completados, enviando, erroDoEnvio } = useLote();
   const [segundos, setSegundos] = useState(0);
-  const [envios, setEnviosEstado] = useState<Envio[]>(sessao.envios);
   const [erro, setErro] = useState<string | null>(null);
   /** Progresso da localização de endereços (passo separado, pago e em lotes). */
   const [localizando, setLocalizando] = useState<{ feitos: number; restantes: number } | null>(null);
@@ -51,8 +93,6 @@ export function Importacao() {
    * logo depois de uma importação, e as telas que mandam "use Localizar
    * endereços na Importação" levavam a uma aba sem botão nenhum. */
   const [naFila, setNaFila] = useState<number | null>(null);
-  /** Clientes fora da base já resolvidos neste lote (id → o que foi salvo). */
-  const [completados, setCompletadosEstado] = useState<Record<string, string>>(sessao.completados);
   // Só para dar nome ao CD no relatório — a importação devolve o id.
   const [cds, setCds] = useState<Record<string, CentroDistribuicao>>({});
   /** Sair da aba PARA o laço: ele seguia invisível, e voltar e clicar de novo
@@ -67,23 +107,6 @@ export function Importacao() {
       montado.current = false;
     };
   }, []);
-
-  function setEnvios(atualizar: (atual: Envio[]) => Envio[]) {
-    setEnviosEstado((atual) => {
-      const novo = atualizar(atual);
-      sessao.envios = novo;
-      guardarSessao();
-      return novo;
-    });
-  }
-  function setCompletados(atualizar: (atual: Record<string, string>) => Record<string, string>) {
-    setCompletadosEstado((atual) => {
-      const novo = atualizar(atual);
-      sessao.completados = novo;
-      guardarSessao();
-      return novo;
-    });
-  }
 
   function contarFila() {
     contarEnderecosALocalizar()
@@ -102,9 +125,11 @@ export function Importacao() {
   // uma tela parada nesse tempo parecia travada.
   useEffect(() => {
     if (!enviando) return;
-    setSegundos(0);
-    const inicio = Date.now();
-    const relogio = setInterval(() => setSegundos(Math.floor((Date.now() - inicio) / 1000)), 1000);
+    // Conta desde o INÍCIO do envio, não da montagem: voltando de outra aba no
+    // meio dele, o relógio continua de onde estava.
+    const marcar = () => setSegundos(Math.floor((Date.now() - enviando.desde) / 1000));
+    marcar();
+    const relogio = setInterval(marcar, 1000);
     return () => clearInterval(relogio);
   }, [enviando]);
 
@@ -128,17 +153,10 @@ export function Importacao() {
     }
     // O envio novo ENTRA no lote — não substitui o anterior: os romaneios de
     // uma rota vão chegando um a um, e os formulários abertos continuam.
-    setEnviando(aceitos.map((f) => f.name));
+    if (lote.enviando) return;
     setErro(null);
-    try {
-      const novo = await importarArquivos(aceitos);
-      setEnvios((atual) => [...atual, { quando: new Date().toISOString(), arquivos: aceitos.map((f) => f.name), relatorio: novo }]);
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha na importação');
-    } finally {
-      setEnviando(null);
-      contarFila();
-    }
+    await enviarAoLote(aceitos);
+    if (montado.current) contarFila();
   }
 
   /** Esvazia a LISTA da tela para a próxima rota — os pedidos já importados
@@ -148,8 +166,7 @@ export function Importacao() {
     if (!window.confirm('Limpar a lista desta tela para começar outra rota? Os pedidos já importados continuam no sistema.')) {
       return;
     }
-    setEnvios(() => []);
-    setCompletados(() => ({}));
+    mudarLote({ envios: [], completados: {}, erroDoEnvio: null });
     setUltimaLocalizacao(null);
   }
 
@@ -234,9 +251,9 @@ export function Importacao() {
               <span className="giro" aria-hidden="true" />
               <div>
                 <strong>
-                  Processando {enviando.length} arquivo(s)… {segundos} s
+                  Processando {enviando.arquivos.length} arquivo(s)… {segundos} s
                 </strong>
-                <div className="processando-detalhe">{enviando.join(' · ')}</div>
+                <div className="processando-detalhe">{enviando.arquivos.join(' · ')}</div>
                 <div className="processando-detalhe">
                   {segundos >= 15
                     ? 'O servidor pode levar até 1 minuto para acordar — continue com a tela aberta.'
@@ -263,7 +280,7 @@ export function Importacao() {
         />
       </div>
 
-      {erro && <div className="erro">{erro}</div>}
+      {(erro ?? erroDoEnvio) && <div className="erro">{erro ?? erroDoEnvio}</div>}
 
       {/* O que JÁ entrou neste lote: com a rota em vários romaneios, é aqui
           que se confere que todos chegaram antes de localizar e montar. */}
@@ -437,7 +454,7 @@ export function Importacao() {
                     key={c.id}
                     cliente={c}
                     aoConcluir={(atualizado, corpo) => {
-                      setCompletados((atual) => ({ ...atual, [c.id]: resumoDoSalvo(corpo, atualizado.telefone) }));
+                      mudarLote({ completados: { ...lote.completados, [c.id]: resumoDoSalvo(corpo, atualizado.telefone) } });
                     }}
                   />
                 ),
