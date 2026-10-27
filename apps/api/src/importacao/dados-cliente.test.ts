@@ -68,6 +68,20 @@ test('dados: a revendedora reconhecida na base deixa o código à vista — o id
   assert.equal(c?.enderecoFiscal.logradouro, 'RUA A');
 });
 
+test('dados: "é ela" não vale para cliente do ERP; null desliga; telefone apagado fica MARCADO', async () => {
+  assert.equal(camposDosDados({ codigo: '70000002' }, '70000001').ok, false);
+  const desligar = camposDosDados({ codigo: null }, ID);
+  assert.ok(desligar.ok);
+  assert.equal(desligar.campos.codigoErp, null);
+  assert.equal(desligar.campos.documentoMascarado, 'fora da base');
+  const apagar = camposDosDados({ telefone: '' }, ID);
+  assert.ok(apagar.ok);
+  assert.equal(apagar.campos.telefoneApagado, true);
+  const novo = camposDosDados({ telefone: '82999991234' }, ID);
+  assert.ok(novo.ok);
+  assert.equal(novo.campos.telefoneApagado, false);
+});
+
 test('dados: cliente inexistente → 404; dado inválido → 400 sem gravar', async () => {
   const repo = new RepositorioMemoria();
   assert.deepEqual(await salvarDadosDoCliente(repo, ID, {}), { ok: false, status: 404, erro: 'Cliente não encontrado' });

@@ -25,9 +25,16 @@ export type CamposDosDados = { ok: true; campos: Partial<Cliente> } | { ok: fals
  * O corpo do formulário vira os campos a gravar. Corpo vazio é "não tenho mais
  * dados": só tira o cliente da lista. Campo AUSENTE não mexe no que existe; o
  * telefone EM BRANCO apaga de propósito — é o Admin corrigindo, com o número
- * na frente dele (diferente da importação, onde vazio nunca apaga).
+ * na frente dele (diferente da importação, onde vazio nunca apaga) — e fica
+ * MARCADO como apagado (`telefoneApagado`): sem a marca, o romaneio seguinte e
+ * a carga da base o preenchiam de novo como "faltando", e o aviso e o recibo
+ * voltavam para o número que o Admin tirou por estar errado.
+ *
+ * `clienteId`: o "É ela" (`codigo`) só vale para cliente de FORA da base (id
+ * de 64 hex). Num cliente do ERP ele ligava o cliente a OUTRA pessoa, e os
+ * pedidos da homônima passavam a cair nele. `codigo: null` desfaz a ligação.
  */
-export function camposDosDados(corpo: unknown): CamposDosDados {
+export function camposDosDados(corpo: unknown, clienteId = ''): CamposDosDados {
   const c = (corpo !== null && typeof corpo === 'object' ? corpo : {}) as Record<string, unknown>;
   const campos: Partial<Cliente> = { completarDados: false };
 
@@ -36,11 +43,13 @@ export function camposDosDados(corpo: unknown): CamposDosDados {
     const texto = (c.telefone ?? '').trim();
     if (texto === '') {
       campos.telefone = null;
+      campos.telefoneApagado = true;
     } else {
       // Mesma normalização da importação: o link do WhatsApp precisa do +55.
       const fone = normalizarTelefone(texto);
       if (!fone) return { ok: false, erro: `Telefone "${texto}" inválido — escreva com DDD, ex.: (82) 99999-1234` };
       campos.telefone = fone;
+      campos.telefoneApagado = false;
     }
   }
 
@@ -62,10 +71,18 @@ export function camposDosDados(corpo: unknown): CamposDosDados {
   // aparece na coluna "Documento" no lugar de "fora da base", e o próximo
   // romaneio dela cai NESTE cliente (`codigoErp`, ver criarCasador). O id do
   // cliente e os pedidos dele não mudam.
-  if (c.codigo !== undefined && c.codigo !== null) {
-    if (typeof c.codigo !== 'string' || !/^\d{1,20}$/.test(c.codigo)) return { ok: false, erro: 'Código inválido' };
-    campos.documentoMascarado = `cód. ${c.codigo}`;
-    campos.codigoErp = c.codigo;
+  if (c.codigo !== undefined) {
+    if (/^\d{1,20}$/.test(clienteId)) {
+      return { ok: false, erro: 'Cliente do ERP já é a revendedora do código dele — "é ela" só vale para cliente fora da base' };
+    }
+    if (c.codigo === null) {
+      campos.documentoMascarado = 'fora da base';
+      campos.codigoErp = null;
+    } else {
+      if (typeof c.codigo !== 'string' || !/^\d{1,20}$/.test(c.codigo)) return { ok: false, erro: 'Código inválido' };
+      campos.documentoMascarado = `cód. ${c.codigo}`;
+      campos.codigoErp = c.codigo;
+    }
   }
 
   return { ok: true, campos };
@@ -80,7 +97,7 @@ export async function salvarDadosDoCliente(
   clienteId: string,
   corpo: unknown,
 ): Promise<ResultadoDados> {
-  const v = camposDosDados(corpo);
+  const v = camposDosDados(corpo, clienteId);
   if (!v.ok) return { ok: false, status: 400, erro: v.erro };
   const cliente = await repo.obterCliente(clienteId);
   if (!cliente) return { ok: false, status: 404, erro: 'Cliente não encontrado' };
@@ -145,5 +162,6 @@ export function clienteACompletar(c: { id: string } & Cliente): ClienteACompleta
     endereco: enderecoEmLinha(c.enderecoFiscal),
     telefone: c.telefone,
     observacoes: c.observacoes,
+    codigoErp: c.codigoErp ?? null,
   };
 }

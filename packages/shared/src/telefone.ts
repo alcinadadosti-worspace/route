@@ -37,6 +37,11 @@ export function telefoneDaParada(
   return doCliente !== undefined ? doCliente || null : daParada || null;
 }
 
+/** Celular brasileiro (E.164): DDD + 9 + 8 dígitos. O WhatsApp é nele. */
+export function ehCelular(telefone: string | null | undefined): boolean {
+  return !!telefone && /^\+55\d{2}9\d{8}$/.test(telefone);
+}
+
 /** `+5582999990000` → `(82) 99999-0000`. O que não reconhece passa como veio. */
 export function telefoneLegivel(e164: string | null | undefined): string | null {
   if (!e164) return null;

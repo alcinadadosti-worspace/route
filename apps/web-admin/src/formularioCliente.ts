@@ -12,6 +12,12 @@ export interface CamposDoFormulario {
   observacoes: string;
 }
 
+/** Cliente que veio do ERP (id = código da revendedora), e não de um romaneio
+ * fora da base (id = hash de 64): ele JÁ é a pessoa do cadastro. */
+export function clienteDoErp(id: string): boolean {
+  return /^\d{1,20}$/.test(id);
+}
+
 /** Como o formulário abre: telefone legível ("(82) 99999-1234", não "+5582…"). */
 export function camposIniciais(c: Pick<ClienteACompletar, 'telefone' | 'observacoes'>): CamposDoFormulario {
   return { telefone: telefoneLegivel(c.telefone) ?? '', observacoes: c.observacoes };
@@ -22,6 +28,9 @@ export function camposIniciais(c: Pick<ClienteACompletar, 'telefone' | 'observac
  * null). O que a escolha ANTERIOR pôs no formulário sai com ela: trocar da A
  * (com telefone) para a B (sem) deixava o telefone da A ao lado do código da
  * B, e o aviso pelo WhatsApp ia para outra pessoa. O que o Admin digitou fica.
+ *
+ * `inicial` é para onde se volta: os campos de ANTES da primeira escolha (com
+ * o que o Admin já tinha digitado), não os de quando o formulário abriu.
  */
 export function trocarEscolhida(
   atual: CamposDoFormulario,

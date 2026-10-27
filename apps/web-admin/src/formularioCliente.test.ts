@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { RevendedoraCandidata } from '@rota/shared';
 import {
   camposIniciais,
+  clienteDoErp,
   corpoDoFormulario,
   formularioAlterado,
   resumoDoSalvo,
@@ -64,6 +65,22 @@ test('desfazer a escolha devolve o que o formulário tinha; o que o Admin digito
   // Digitado à mão depois de escolher: desfazer não apaga.
   const digitado = { ...comA, telefone: '(82) 98888-7777' };
   assert.equal(trocarEscolhida(digitado, inicial, a, null).telefone, '(82) 98888-7777');
+});
+
+test('desfazer volta ao que o Admin tinha DIGITADO antes de escolher, não ao que abriu', () => {
+  const inicial = camposIniciais({ telefone: null, observacoes: '' });
+  const digitado = { telefone: '(82) 98888-7777', observacoes: 'portão verde' };
+  const a = candidata('1', { telefone: '+5582900000001' });
+  // O componente guarda os campos de antes da escolha e volta a eles.
+  const comA = trocarEscolhida(digitado, digitado, null, a);
+  assert.equal(comA.telefone, '(82) 90000-0001');
+  assert.deepEqual(trocarEscolhida(comA, digitado, a, null), digitado);
+  void inicial;
+});
+
+test('cliente do ERP (id = código) não é "fora da base"', () => {
+  assert.equal(clienteDoErp('70000001'), true);
+  assert.equal(clienteDoErp('a'.repeat(64)), false);
 });
 
 test('o resumo diz o que foi gravado de fato', () => {

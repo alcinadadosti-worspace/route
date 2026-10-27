@@ -261,7 +261,8 @@ export interface DadosDoCliente {
   observacoes?: string;
   /** Da revendedora da base que o Admin reconheceu como esta pessoa. */
   papel?: string | null;
-  codigo?: string;
+  /** Código da revendedora reconhecida; null DESLIGA a ligação feita antes. */
+  codigo?: string | null;
 }
 
 export async function salvarDadosDoCliente(

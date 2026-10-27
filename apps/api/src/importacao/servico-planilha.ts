@@ -152,6 +152,9 @@ export async function importarLinhas(
    * pode entrar — ela entraria e ficaria marcada como cancelada, e nunca mais
    * seria apagada. */
   const canceladosAqui = new Set<string>();
+  /** Pedido que JÁ existia (entrou antes pela planilha) e agora veio num
+   * romaneio: ganha o número da folha, senão a busca por ela não o achava. */
+  const romaneioDosRepetidos = new Map<string, string>();
   let pinsDoCadastro = 0;
   let aGeocodificar = 0;
 
@@ -205,7 +208,8 @@ export async function importarLinhas(
       idJa !== undefined ||
       vistos.has(linha.codigoPedido) ||
       (!!linha.codigoExterno && vistos.has(linha.codigoExterno)) ||
-      cancelados.has(linha.codigoPedido);
+      cancelados.has(linha.codigoPedido) ||
+      (!!linha.codigoExterno && cancelados.has(linha.codigoExterno));
 
     // Cancelado no ERP: não entra, e o que JÁ tinha entrado numa importação
     // anterior é apagado depois das gravações (ver `apagarCancelado`).
@@ -247,6 +251,7 @@ export async function importarLinhas(
       // depois de 6 dias, e um pedido esperando rota sairia da montagem sem
       // ter sido entregue. O estado daqui (baixa, liberação) é o que vale.
       relatorio.duplicados += 1;
+      if (linha.romaneio && idJa !== undefined) romaneioDosRepetidos.set(idJa, linha.romaneio);
       continue;
     }
     vistos.add(linha.codigoPedido);
@@ -356,13 +361,14 @@ export async function importarLinhas(
       const revisao = existente.enderecoEmRevisao ?? (mudouDeLugar ? existente.enderecoFiscal : null);
       enderecoAnterior = revisao;
 
-      const campos: Partial<Cliente> = {
-        nome: linha.nome,
-        // Telefone: preenche quando a planilha traz; NUNCA apaga o que existe.
-        // 413 de 2019 linhas do ciclo real vêm sem telefone e o ERP tem o
-        // número (ele vai na NF-e) — a coluna é que fica em branco.
-        telefone: telefone ?? existente.telefone,
-      };
+      const campos: Partial<Cliente> = { nome: linha.nome };
+      // Telefone: só PREENCHE quem não tem. A coluna Telefone da planilha é o
+      // residencial primeiro (nem sempre o celular, nem sempre mais novo): por
+      // cima do que o cliente tinha, trocava celular por fixo e desfazia o
+      // número que o Admin corrigiu. Também não repõe o que o Admin APAGOU, e
+      // só vai na gravação quando muda — mandar sempre o lido no início da
+      // remessa desfazia o telefone salvo com a importação rodando.
+      if (telefone && !existente.telefone && !existente.telefoneApagado) campos.telefone = telefone;
       if (atualizaEndereco) {
         campos.enderecoFiscal = endereco;
         campos.enderecoEmRevisao = revisao;
@@ -378,14 +384,19 @@ export async function importarLinhas(
         pinDoCadastro !== null &&
         existente.pontoDescartado != null &&
         chaveDePonto(existente.pontoDescartado) === chaveDePonto(pinDoCadastro);
-      if (!existente.coordenada && pinDoCadastro && !descartado) {
+      // O pin e a referência desta linha são do endereço DELA: se o cliente
+      // ficou com outro (a linha é de uma folha mais velha, ou de retirada),
+      // não servem — o cliente ficava "RUA A" com o GPS do sítio, como ponto
+      // exato, e o pedido saía pronto para a porta errada.
+      const doMesmoLugar = !enderecosDivergem(campos.enderecoFiscal ?? existente.enderecoFiscal, endereco);
+      if (doMesmoLugar && !existente.coordenada && pinDoCadastro && !descartado) {
         campos.coordenada = pinDoCadastro;
         campos.statusMapeamento = 'geocodificado';
         pinsDoCadastro += 1;
       }
       // Referência alimenta o dossiê, mas NUNCA por cima do que o motorista
       // escreveu: o conhecimento de quem foi lá vale mais que o cadastro.
-      if (referencia && !existente.observacoes) campos.observacoes = referencia;
+      if (doMesmoLugar && referencia && !existente.observacoes) campos.observacoes = referencia;
 
       cliente = { ...existente, ...campos };
       // Cliente que NASCEU nesta remessa continua com a escrita completa: só
@@ -503,6 +514,11 @@ export async function importarLinhas(
     ...escritasDePedido,
   ]);
 
+  if (romaneioDosRepetidos.size > 0) {
+    const semNumero = (await repo.pedidosPorIds([...romaneioDosRepetidos.keys()])).filter((p) => !p.romaneio);
+    await repo.anotarRomaneio(semNumero.map(({ id }) => ({ id, romaneio: romaneioDosRepetidos.get(id)! })));
+  }
+
   // Um a um e depois das gravações: são poucos por remessa (9 no ciclo 11
   // inteiro), e cada um pode mexer numa rota — o mesmo caminho do botão Apagar.
   for (const { linha, id } of canceladosJaImportados) {
@@ -515,11 +531,15 @@ export async function importarLinhas(
   // A marca vem DEPOIS de apagar: se a importação cair no meio, a próxima
   // planilha ainda encontra o pedido e o apaga — marcado antes, ele ficaria.
   const registradoEm = new Date().toISOString();
+  // O pedido do site fica marcado pelos DOIS códigos: só pelo da planilha, o
+  // mesmo pacote reenviado pelo romaneio ("NNN-1") voltava depois de apagado.
   await repo.registrarCancelados(
-    canceladosNovos.map((l) => ({
-      id: l.codigoPedido,
-      dados: { notaFiscal: l.notaFiscal, clienteId: l.pessoa, registradoEm },
-    })),
+    canceladosNovos.flatMap((l) =>
+      [l.codigoPedido, ...(l.codigoExterno ? [l.codigoExterno] : [])].map((id) => ({
+        id,
+        dados: { notaFiscal: l.notaFiscal, clienteId: l.pessoa, registradoEm },
+      })),
+    ),
   );
 
   if (pinsDoCadastro > 0) {

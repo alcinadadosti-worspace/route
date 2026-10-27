@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import {
   chaveDePonto,
+  ehCelular,
   enderecosDivergem,
   normalizarTelefone,
   pontosRepetidos,
@@ -9,121 +10,165 @@ import {
 } from '@rota/shared';
 import type { LinhaCadastro } from './cadastro.js';
 import { chaveDeRevendedora } from './casamento.js';
-import { enderecoDeBloco, extrairCoordenada, type LinhaPlanilha } from './planilha.js';
+import { enderecoDeBloco, extrairCoordenada, type BlocoEndereco, type LinhaPlanilha } from './planilha.js';
 import { realinharPedidosDosClientes } from './servico.js';
-import type { Repositorio, Revendedora } from '../db/repositorio.js';
+import type { FonteRevendedora, FontesDaRevendedora, Repositorio, Revendedora } from '../db/repositorio.js';
 
 /**
  * A base de dados de clientes que o romaneio consulta (`revendedoras/`), feita
- * de DUAS fontes: o cadastro de revendedoras do ERP (sem data — o usuário diz
- * que o enviado é de 2025) e os pedidos (cada linha com a data do pedido). O
- * usuário quer a base "rica": todo mundo, inclusive inativa, com o dado mais
- * novo que existir.
+ * de TRÊS fontes: o cadastro de revendedoras do ERP (sem data — o usuário diz
+ * que o enviado é de 2025), os pedidos de ENTREGA e os de RETIRADA (cada um
+ * com a data do pedido). O usuário quer a base "rica": todo mundo, inclusive
+ * inativa, com o dado mais novo que existir.
+ *
+ * Cada registro guarda o que cada fonte disse (`fontes`) e os campos que as
+ * consultas usam saem de `consolidarRevendedora`, uma regra fixa. Assim a base
+ * é a MESMA em qualquer ordem de carga, e recarregar um arquivo grava zero
+ * documentos — juntando registro com registro, aos pares, nenhuma das duas
+ * coisas era verdade.
  */
+
+/** Telefones válidos, normalizados, sem repetir, na ordem dada. */
+function telefonesValidos(brutos: Array<string | null | undefined>): string[] {
+  return [...new Set(brutos.map((t) => normalizarTelefone(t)).filter((t): t is string => !!t))];
+}
 
 /** Uma linha do cadastro de revendedoras. */
 export function revendedoraDoCadastro(linha: LinhaCadastro): Revendedora {
-  return {
+  return comFonte('cadastro', {
     nome: linha.nome,
-    chave: chaveDeRevendedora(linha.nome, linha.endereco.cidade),
-    telefone: normalizarTelefone(linha.telefone),
+    telefones: telefonesValidos(linha.telefones),
     papel: linha.papel,
     endereco: enderecoDeBloco(linha.endereco),
     referencia: linha.endereco.referencia.trim(),
     // GPS digitado no texto do endereço (208 no cadastro completo).
     pin: extrairCoordenada([linha.endereco.complemento, linha.endereco.referencia]),
+    data: null,
     situacao: linha.situacao,
-    dadosDe: null,
-  };
+  });
 }
 
 /**
  * Uma linha da planilha de PEDIDOS, como dado de cliente (sem criar pedido).
  *
  * Retirada usa o bloco do CADASTRO — o de entrega dela é o endereço do próprio
- * CD, a mesma regra da importação de pedidos —, e por isso também o GPS só
- * dele: lido do bloco de entrega, a cliente rural ganhava o pin do CD. E vale
- * como dado SEM data: o bloco do cadastro na planilha é o do momento do export
- * (não muda ao longo do ano), não o do pedido; datado, a retirada de outubro
- * vencia a entrega de setembro e a revendedora "mudava" para o endereço de
- * cadastro — em 10 casos reais, de cidade, e o romaneio deixava de achá-la.
+ * CD, a mesma regra da importação de pedidos — e por isso o GPS só dele (lido
+ * do bloco de entrega, a cliente rural ganhava o pin do CD). É uma fonte à
+ * parte, abaixo do cadastro: o bloco "cadastro" da planilha é o endereço
+ * RESIDENCIAL, e o cadastro guarda o de ENTREGA, que é o que o romaneio imprime.
+ *
+ * Na linha de entrega, a referência e o GPS do bloco do cadastro só servem se
+ * os dois blocos falam do mesmo lugar — senão a referência da casa de cadastro
+ * ia parar no endereço de entrega (96 pessoas em 2026).
  */
 export function revendedoraDoPedido(linha: LinhaPlanilha): Revendedora {
   const retirada = linha.tipoEntrega === 'retirada';
-  const bloco = retirada ? linha.enderecoCadastro : linha.enderecoEntrega;
-  return {
+  const bloco: BlocoEndereco = retirada ? linha.enderecoCadastro : linha.enderecoEntrega;
+  const endereco = enderecoDeBloco(bloco);
+  const cadastroNoMesmoLugar =
+    !retirada && !enderecosDivergem(enderecoDeBloco(linha.enderecoCadastro), endereco);
+  const doCadastro = retirada || cadastroNoMesmoLugar;
+  return comFonte(retirada ? 'retirada' : 'pedido', {
     nome: linha.nome,
-    chave: chaveDeRevendedora(linha.nome, bloco.cidade),
-    telefone: normalizarTelefone(linha.telefone),
+    telefones: telefonesValidos([linha.telefone]),
     papel: linha.papel,
-    endereco: enderecoDeBloco(bloco),
-    referencia: (bloco.referencia || linha.enderecoCadastro.referencia).trim(),
-    pin: extrairCoordenada(
-      retirada
-        ? [linha.enderecoCadastro.complemento, linha.enderecoCadastro.referencia]
-        : [
-            linha.enderecoCadastro.complemento,
-            linha.enderecoCadastro.referencia,
-            linha.enderecoEntrega.complemento,
-            linha.enderecoEntrega.referencia,
-          ],
-    ),
-    situacao: null,
-    dadosDe: retirada ? null : linha.emitidoEm || null,
+    endereco,
+    referencia: (bloco.referencia || (doCadastro ? linha.enderecoCadastro.referencia : '')).trim(),
+    pin: extrairCoordenada([
+      bloco.complemento,
+      bloco.referencia,
+      ...(doCadastro && !retirada ? [linha.enderecoCadastro.complemento, linha.enderecoCadastro.referencia] : []),
+    ]),
+    data: linha.emitidoEm || null,
+    codigo: linha.codigoPedido,
+  });
+}
+
+/** Um registro com uma fonte só, já consolidado. */
+function comFonte(qual: keyof FontesDaRevendedora, fonte: FonteRevendedora): Revendedora {
+  // Sem chaves `undefined`: o banco as descarta, e o registro relido não
+  // seria igual ao gravado — tudo pareceria mudado a cada carga.
+  const limpa = Object.fromEntries(Object.entries(fonte).filter(([, v]) => v !== undefined)) as FonteRevendedora;
+  const fontes: FontesDaRevendedora = { [qual]: limpa };
+  return { ...consolidarRevendedora(fontes), fontes };
+}
+
+/**
+ * Os campos que as consultas usam, a partir das fontes. Regra fixa — não
+ * depende de qual chegou antes:
+ * - endereço, nome e chave: do pedido de entrega; senão do cadastro; senão da
+ *   retirada (o pedido de 2026 é mais novo que o cadastro de 2025; a retirada
+ *   traz o residencial, não o de entrega);
+ * - GPS e referência: da primeira fonte que fala do MESMO endereço escolhido —
+ *   são do lugar, não da pessoa;
+ * - telefone: o primeiro CELULAR, olhando o cadastro antes (ele separa celular
+ *   de residencial) e os pedidos depois (a coluna Telefone da planilha de
+ *   pedidos traz o residencial primeiro); sem celular nenhum, o primeiro fixo;
+ * - papel: o da fonte mais nova que tiver; situação: só o cadastro tem.
+ */
+export function consolidarRevendedora(fontes: FontesDaRevendedora): Omit<Revendedora, 'fontes'> {
+  const porPrioridade = [fontes.pedido, fontes.cadastro, fontes.retirada].filter(
+    (f): f is FonteRevendedora => !!f,
+  );
+  const principal = porPrioridade[0]!;
+  const doLugar = porPrioridade.filter((f) => !enderecosDivergem(principal.endereco, f.endereco));
+  const telefones = [fontes.cadastro, fontes.pedido, fontes.retirada].flatMap((f) => f?.telefones ?? []);
+  return {
+    nome: principal.nome,
+    chave: chaveDeRevendedora(principal.nome, principal.endereco.municipio),
+    telefone: telefones.find((t) => ehCelular(t)) ?? telefones[0] ?? null,
+    papel: porPrioridade.find((f) => f.papel)?.papel ?? null,
+    endereco: principal.endereco,
+    referencia: doLugar.find((f) => f.referencia)?.referencia ?? '',
+    pin: doLugar.find((f) => f.pin)?.pin ?? null,
+    situacao: fontes.cadastro?.situacao ?? null,
+    dadosDe: fontes.pedido?.data ?? null,
   };
 }
 
-/** Celular brasileiro: DDD + 9 + 8 dígitos. O WhatsApp (aviso, recibo) é nele. */
-function ehCelular(telefone: string): boolean {
-  return /^\+55\d{2}9\d{8}$/.test(telefone);
+/** A fonte que chegou substitui a guardada? Cadastro: sim (o último carregado
+ * vale). Pedido e retirada: só a mais NOVA (data, e o código no empate) — a
+ * ordem de chegada não decide. */
+function substitui(qual: keyof FontesDaRevendedora, guardada: FonteRevendedora | undefined, nova: FonteRevendedora): boolean {
+  if (!guardada || qual === 'cadastro') return true;
+  const chave = (f: FonteRevendedora) => `${f.data ?? ''}|${f.codigo ?? ''}`;
+  if (chave(nova) !== chave(guardada)) return chave(nova) > chave(guardada);
+  // O MESMO pedido em duas planilhas (o ciclo e o ano inteiro), com algum
+  // campo diferente: desempate pelo conteúdo, para não valer o que chegou
+  // primeiro — senão a base dependia da ordem das cargas.
+  return JSON.stringify(nova) > JSON.stringify(guardada);
+}
+
+/** Registro gravado antes de existirem as fontes: o que ele diz vira a fonte
+ * que a data indica (sem data = cadastro). */
+function fontesDeRegistroAntigo(r: Revendedora): FontesDaRevendedora {
+  const fonte: FonteRevendedora = {
+    nome: r.nome,
+    telefones: r.telefone ? [r.telefone] : [],
+    papel: r.papel,
+    endereco: r.endereco,
+    referencia: r.referencia,
+    pin: r.pin,
+    data: r.dadosDe,
+    ...(r.dadosDe === null ? { situacao: r.situacao } : {}),
+  };
+  return r.dadosDe === null ? { cadastro: fonte } : { pedido: fonte };
 }
 
 /**
- * O telefone que fica, entre o guardado e o que chegou. NÃO é "o mais novo":
- * a coluna Telefone da planilha de pedidos traz o RESIDENCIAL primeiro, o
- * cadastro traz o CELULAR — e carregar os pedidos de 2026 trocou o celular de
- * ~800 revendedoras por um fixo, para onde o WhatsApp não vai. Nem o telefone
- * do pedido é datado de verdade (nenhuma das 5944 pessoas com telefone varia
- * ao longo do ano: é o cadastro do momento do export). Ordem: celular antes de
- * fixo; depois o do cadastro; depois o do dado mais novo (`base`).
- */
-function telefoneQueFica(base: Revendedora, outra: Revendedora): string | null {
-  const nota = (r: Revendedora) => (r.telefone ? (ehCelular(r.telefone) ? 2 : 0) + (r.dadosDe === null ? 1 : 0) : -1);
-  const melhor = nota(outra) > nota(base) ? outra : base;
-  return melhor.telefone ?? outra.telefone;
-}
-
-/**
- * Junta o que já está guardado com o que chegou. O endereço e o nome vêm do
- * dado MAIS NOVO (pedido com data > cadastro sem data; entre dois pedidos, o
- * de data maior; entre dois cadastros, o que chegou agora). Papel: o mais
- * novo, mas o vazio nunca apaga o que existe. Telefone: ver `telefoneQueFica`.
- *
- * GPS e referência são do LUGAR, não da pessoa: só passam do dado velho para
- * o novo se o endereço é o mesmo. Sem isto, a revendedora que se mudou ficava
- * com o endereço novo e o pin da casa velha — e o romaneio levava esse pin
- * como ponto exato.
- *
- * null = nada mudou (não grava de novo). Comparação por CONTEÚDO: por texto
- * (JSON), a ordem das chaves — que o banco devolve em ordem alfabética — fazia
- * todo registro parecer mudado, e cada carga regravava a base inteira.
+ * Junta o registro guardado com o que chegou, fonte por fonte.
+ * null = nada mudou (não grava de novo). A comparação é por CONTEÚDO, não por
+ * texto: o banco devolve as chaves em ordem alfabética.
  */
 export function mesclarRevendedora(antiga: Revendedora | undefined, nova: Revendedora): Revendedora | null {
-  if (!antiga) return nova;
-  const novaVale =
-    nova.dadosDe === null ? antiga.dadosDe === null : antiga.dadosDe === null || nova.dadosDe >= antiga.dadosDe;
-  const [base, outra] = novaVale ? [nova, antiga] : [antiga, nova];
-  const mesmoLugar = !enderecosDivergem(base.endereco, outra.endereco);
-  const junta: Revendedora = {
-    ...base,
-    telefone: telefoneQueFica(base, outra),
-    papel: base.papel ?? outra.papel,
-    pin: base.pin ?? (mesmoLugar ? outra.pin : null),
-    referencia: base.referencia || (mesmoLugar ? outra.referencia : ''),
-    // Situação só o cadastro tem: o pedido (null) não apaga.
-    situacao: nova.situacao ?? antiga.situacao,
-  };
-  return isDeepStrictEqual({ ...junta }, { ...antiga }) ? null : junta;
+  const fontes: FontesDaRevendedora = { ...(antiga ? (antiga.fontes ?? fontesDeRegistroAntigo(antiga)) : {}) };
+  const chegaram = nova.fontes ?? fontesDeRegistroAntigo(nova);
+  for (const qual of ['cadastro', 'pedido', 'retirada'] as const) {
+    const chegou = chegaram[qual];
+    if (chegou && substitui(qual, fontes[qual], chegou)) fontes[qual] = chegou;
+  }
+  const junta: Revendedora = { ...consolidarRevendedora(fontes), fontes };
+  return antiga && isDeepStrictEqual({ ...junta }, { ...antiga }) ? null : junta;
 }
 
 /**
@@ -160,7 +205,9 @@ export async function guardarRevendedoras(
     const r = guardadas.get(id);
     if (!r || !novas.has(id)) continue;
     const campos: Partial<Cliente> = {};
-    if (r.telefone && !existente.telefone) campos.telefone = r.telefone;
+    // Nem o telefone que o Admin APAGOU por estar errado: sem a marca, cada
+    // carga o devolvia como "faltando".
+    if (r.telefone && !existente.telefone && !existente.telefoneApagado) campos.telefone = r.telefone;
     if (r.papel && !existente.papel) campos.papel = r.papel;
     // Referência e GPS são do lugar: só valem se a base fala do MESMO
     // endereço do cliente (que pode ter mudado por um pedido mais novo).
@@ -196,26 +243,19 @@ export async function guardarRevendedoras(
     const comPonto = new Set([...pontos.keys()].filter((id) => !pulados.has(id)));
     // Os pedidos deles que esperavam ponto saem da fila da localização paga.
     await realinharPedidosDosClientes(repo, comPonto);
-    relatorio.clientesAtualizados = (relatorio.clientesAtualizados ?? 0) +
-      [...comPonto].filter((id) => !escritas.some((e) => e.id === id)).length;
+    relatorio.clientesAtualizados =
+      (relatorio.clientesAtualizados ?? 0) + [...comPonto].filter((id) => !escritas.some((e) => e.id === id)).length;
   }
 
   relatorio.revendedoras = (relatorio.revendedoras ?? 0) + novas.size;
   relatorio.clientesAtualizados = (relatorio.clientesAtualizados ?? 0) + escritas.length;
 }
 
-/**
- * Os pedidos de uma planilha como dado de cliente: uma revendedora por código,
- * a do pedido MAIS NOVO (uma planilha do ano tem várias por pessoa). Em ordem
- * de data e código: no mesmo dia, a ordem das linhas do arquivo decidia o
- * endereço (13 pessoas com dois endereços no mesmo dia em 2026).
- */
+/** Os pedidos de uma planilha como dado de cliente: uma revendedora por
+ * código, com o pedido de entrega e o de retirada mais novos dela. */
 export function revendedorasDosPedidos(linhas: LinhaPlanilha[]): Map<string, Revendedora> {
-  const ordenadas = [...linhas].sort(
-    (a, b) => (a.emitidoEm || '').localeCompare(b.emitidoEm || '') || a.codigoPedido.localeCompare(b.codigoPedido),
-  );
   const porCodigo = new Map<string, Revendedora>();
-  for (const linha of ordenadas) {
+  for (const linha of linhas) {
     if (!/^\d{1,20}$/.test(linha.pessoa)) continue;
     const junta = mesclarRevendedora(porCodigo.get(linha.pessoa), revendedoraDoPedido(linha));
     if (junta) porCodigo.set(linha.pessoa, junta);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { clienteIdDeDocumento, mascararDocumento, notaDaChaveDeAcesso } from './documento.js';
-import { normalizarTelefone, linkWhatsApp, telefoneDaParada, telefoneLegivel } from './telefone.js';
+import { ehCelular, normalizarTelefone, linkWhatsApp, telefoneDaParada, telefoneLegivel } from './telefone.js';
 import {
   ehEnderecoRural,
   enderecosDivergem,
@@ -221,6 +221,12 @@ test('telefone da parada: o do cliente (completado depois de publicar) vem antes
   // O Admin APAGOU o número (era da homônima errada): o motorista não pode
   // voltar a ver o da parada, que é o da outra pessoa.
   assert.equal(telefoneDaParada('+5582911110000', null), null);
+});
+
+test('celular: DDD + 9 + 8 dígitos', () => {
+  assert.equal(ehCelular('+5582999887766'), true);
+  assert.equal(ehCelular('+558233334444'), false);
+  assert.equal(ehCelular(null), false);
 });
 
 test('telefone legível: +55 vira (DDD) número; o resto passa como veio', () => {

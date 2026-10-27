@@ -81,14 +81,19 @@ export async function importarRomaneiosLidos(
   const casar = criarCasador([
     // Clientes primeiro: o nome e o endereço que valem são os daqui.
     ...clientes.map((c) => ({ ...c, ehCliente: true })),
-    ...[...doCadastro.values()].map((r) => ({ id: r.id, nome: r.nome, enderecoFiscal: r.endereco })),
+    ...[...doCadastro.values()].map((r) => ({ id: r.id, nome: r.nome, enderecoFiscal: r.endereco, papel: r.papel })),
   ]);
   const agora = agoraEmMaceio();
   const linhas: LinhaPlanilha[] = [];
+  /** Cliente do romaneio que agora casou com a base (id ≠ código): fica ligado. */
+  const passaramABase = new Map<string, string>();
 
   for (const { romaneio, codCd } of lidos) {
     relatorio.romaneios = (relatorio.romaneios ?? 0) + 1;
-    const emitidoEm = romaneio.impressoEm ?? agora;
+    // Data no futuro (relógio errado no PC que imprimiu) não vale: virava o
+    // `enderecoDe` do cliente, e até ela passar nenhuma folha mais nova
+    // conseguia corrigir o endereço.
+    const emitidoEm = romaneio.impressoEm && romaneio.impressoEm <= agora ? romaneio.impressoEm : agora;
     for (const motivo of romaneio.recusadas ?? []) {
       relatorio.total += 1;
       relatorio.rejeitados.push({ arquivo: `romaneio ${romaneio.rota}`, motivo });
@@ -119,6 +124,7 @@ export async function importarRomaneiosLidos(
       // papel atual pelo do cadastro de 2025.
       const r = c.noCadastro ? doCadastro.get(c.codigo) : undefined;
       const existente = clientePorId.get(c.id);
+      if (c.noCadastro && c.id !== c.codigo && existente?.codigoErp !== c.codigo) passaramABase.set(c.id, c.codigo);
       // O GPS da base é da casa da BASE: com o endereço da folha diferente
       // (mudou), o pin velho entrava como ponto exato no endereço novo — o
       // motorista ia à porta errada com cara de certa.
@@ -139,7 +145,8 @@ export async function importarRomaneiosLidos(
         enderecoCadastro: bloco,
         enderecoEntrega: bloco,
         // Null = não mexe: `importarLinhas` nunca apaga o telefone que existe.
-        telefone: existente?.telefone ? null : (r?.telefone ?? null),
+        // Nem repõe o que o Admin APAGOU por estar errado.
+        telefone: existente?.telefone || existente?.telefoneApagado ? null : (r?.telefone ?? null),
         estrutura: null,
         codCd,
         lote: null,
@@ -154,6 +161,20 @@ export async function importarRomaneiosLidos(
   }
 
   await importarLinhas(linhas, repo, relatorio, { clientesExistentes: clientes });
+
+  // Quem veio fora da base e agora casou com ela (entrou nos pedidos do ano,
+  // ou no cadastro) passa a ser dela: sem a ligação, mudando de porta o
+  // vínculo se perdia; e continuava na lista de "completar dados".
+  if (passaramABase.size > 0) {
+    await repo.gravarEmLote(
+      [...passaramABase].map(([id, codigo]) => ({
+        colecao: 'clientes' as const,
+        id,
+        dados: { codigoErp: codigo, documentoMascarado: `cód. ${codigo}`, completarDados: false },
+        merge: true,
+      })),
+    );
+  }
 
   // Quem entrou fora da base e ainda espera dados: o cliente recém-criado, ou
   // o de um romaneio anterior que ninguém completou. Lido DEPOIS de gravar —

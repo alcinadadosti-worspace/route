@@ -89,6 +89,14 @@ const SALTO_MAXIMO = 22;
  * romaneio real, 22 pt do topo e 16 pt do pé; o conteúdo começa a 28 pt. */
 const FAIXA_DA_MARGEM = 26;
 
+/**
+ * Altura (a partir do pé da página) abaixo da qual uma linha da tabela pode ter
+ * sido CORTADA pela quebra de página: o conteúdo começa a 28 pt e o passo entre
+ * linhas de uma célula é 13 pt. Linha que termina acima disto coube inteira — e
+ * o que estiver no topo da página seguinte não é resto dela.
+ */
+const PE_DA_PAGINA = 70;
+
 /** "26/10/2026, 17:12" — a data que o navegador imprime no topo da folha. */
 const DATA_IMPRESSA = /^(\d{2})\/(\d{2})\/(\d{4}),?\s+(\d{1,2}):(\d{2})$/;
 
@@ -150,12 +158,14 @@ export async function lerRomaneio(conteudo: Uint8Array): Promise<ResultadoRomane
       const pagina = await doc.getPage(n);
       const { items } = await pagina.getTextContent();
       const itens: ItemTexto[] = [];
+      // y medido a partir do PÉ da página (a caixa da página pode não começar
+      // em 0): as faixas de margem e o `PE_DA_PAGINA` contam daí.
       const [, yBase = 0, , yTopo = 842] = pagina.view;
       for (const item of items) {
         if (!('str' in item) || !item.str.trim()) continue;
-        const y = item.transform[5] as number;
+        const y = (item.transform[5] as number) - yBase;
         const texto = item.str.trim();
-        itens.push({ x: item.transform[4] as number, y, texto, margem: ehDaMargem(texto, y, yBase, yTopo) });
+        itens.push({ x: item.transform[4] as number, y, texto, margem: ehDaMargem(texto, y, 0, yTopo - yBase) });
       }
       paginas.push(itens);
     }
@@ -189,6 +199,8 @@ export function romaneioDasPaginas(paginas: ItemTexto[][]): ResultadoRomaneio {
   let colunas: Array<{ campo: Campo; x: number }> | null = null;
   const brutas: Celulas[] = [];
   let paginaDaUltima = -1;
+  /** Onde a última linha lida terminou (o menor y dela). */
+  let pisoDaUltima = Infinity;
 
   for (const [p, daPagina] of paginas.entries()) {
     // O que o navegador imprime na margem não é da tabela.
@@ -234,10 +246,17 @@ export function romaneioDasPaginas(paginas: ItemTexto[][]): ResultadoRomaneio {
     // vai para o TOPO da página seguinte, antes da primeira NF dela. Ignorado,
     // o nome saía sem o sobrenome e o endereço pela metade — e a contagem de
     // pacotes batia, então nada avisava.
+    //
+    // Só quando a última linha ENCOSTOU no pé da página anterior. O PDF real
+    // tem uma 2ª página só com o cabeçalho do navegador: emendando sempre, um
+    // título ou um "Observações" ali virava o fim do nome da última cliente. E
+    // rótulo ("Observações:") nunca é resto de célula.
     const ultima = brutas[brutas.length - 1];
-    if (ultima && paginaDaUltima < p) {
+    if (ultima && paginaDaUltima < p && pisoDaUltima < PE_DA_PAGINA) {
       const yPrimeira = ancoras[0] ?? -Infinity;
-      const acima = itens.filter((i) => i.y < yCabecalho - MESMA_LINHA && i.y > yPrimeira + MESMA_LINHA);
+      const acima = itens.filter(
+        (i) => i.y < yCabecalho - MESMA_LINHA && i.y > yPrimeira + MESMA_LINHA && !i.texto.endsWith(':'),
+      );
       anexar(ultima, contiguasDoTopo(acima));
     }
 
@@ -247,9 +266,11 @@ export function romaneioDasPaginas(paginas: ItemTexto[][]): ResultadoRomaneio {
       // Só as linhas visuais CONTÍGUAS à da NF: o que vem depois de um salto
       // ("Observações", a assinatura) não é desta linha da tabela.
       const celulas: Celulas = {};
-      anexar(celulas, contiguasDoTopo(daFaixa));
+      const daLinha = contiguasDoTopo(daFaixa);
+      anexar(celulas, daLinha);
       brutas.push(celulas);
       paginaDaUltima = p;
+      pisoDaUltima = Math.min(...daLinha.map((i) => i.y));
     }
   }
 
@@ -323,17 +344,20 @@ function contiguasDoTopo(itens: ItemTexto[]): ItemTexto[] {
  * texto que termina em ":" é rótulo, não valor.
  */
 function valoresAoLado(paginas: ItemTexto[][], rotulo: string): string[] {
-  const valores = new Set<string>();
+  // Distintos pelo texto NORMALIZADO: o mesmo motorista em caixa diferente, ou
+  // a rota com um espaço no meio, num topo repetido, não são dois romaneios.
+  const valores = new Map<string, string>();
   for (const itens of paginas) {
     for (const r of itens.filter((i) => normalizar(i.texto) === rotulo)) {
       const ao = itens
         .filter((i) => Math.abs(i.y - r.y) <= MESMA_LINHA && i.x > r.x)
         .sort((a, b) => a.x - b.x)[0];
       const valor = ao?.texto.trim() ?? '';
-      if (valor && !valor.endsWith(':')) valores.add(valor);
+      const chave = normalizar(valor).replace(/\s+/g, '');
+      if (valor && !valor.endsWith(':') && !valores.has(chave)) valores.set(chave, valor);
     }
   }
-  return [...valores];
+  return [...valores.values()];
 }
 
 /** A data impressa no topo da folha, no formato das outras datas do sistema. */
@@ -342,7 +366,12 @@ function dataImpressa(itens: ItemTexto[]): string | null {
     const m = DATA_IMPRESSA.exec(i.texto);
     if (!m) continue;
     const [, d, mes, a, h, min] = m;
-    if (Number(mes) < 1 || Number(mes) > 12 || Number(d) < 1 || Number(d) > 31 || Number(h) > 23) continue;
+    // Data que existe ("31/02" não): o texto vira data de pedido e entra na
+    // comparação de "endereço mais novo".
+    const dia = new Date(Date.UTC(Number(a), Number(mes) - 1, Number(d)));
+    if (dia.getUTCMonth() !== Number(mes) - 1 || dia.getUTCDate() !== Number(d) || Number(h) > 23 || Number(min) > 59) {
+      continue;
+    }
     return `${a}-${mes}-${d}T${h!.padStart(2, '0')}:${min}:00-03:00`;
   }
   return null;
@@ -384,18 +413,25 @@ export function blocoDoRomaneio(linha: LinhaRomaneio): BlocoEndereco {
   // "43", "43A", "43-A", "271 B", e sem número: "S/N", "S\N", "SN", "S/Nº".
   // Antes o "43-A" não parecia número: o hífen dele virava o separador da
   // referência e a letra da casa se perdia ("43" + referência "A, CASA-…").
-  const comDigito = /^\d+\s*-?\s*[A-Z]{0,2}$/i;
+  const comDigito = /^(N[º°O]?\.?\s*)?\d+\s*-?\s*[A-Z]{0,2}$/i;
   const semNumero = /^S\s*[\\/]?\s*N\s*[º°O.]?$/i;
   // Lote como número da casa ("LT-9", "J-16") só quando nenhuma parte começa
   // por dígito: "QUADRA 3" ou "QD 3" antes do número não podem tomar o lugar dele.
   const lote = /^(LT|LOTE|[A-Z])\s*-?\s*\d+\s*[A-Z]?$/i;
-  let k = partes.findIndex((p, i) => i > 0 && (comDigito.test(p) || semNumero.test(p)));
-  if (k < 0) k = partes.findIndex((p, i) => i > 0 && lote.test(p));
+  // O número mora ANTES da referência: procurar depois do primeiro "-" (a
+  // fronteira complemento-referência) tirava o "2" de "PERTO DO BAR, 2" e o
+  // tomava pelo número da casa — revisão falsa e endereço ilegível.
+  const comHifen = partes.findIndex((p) => p.includes('-'));
+  const ate = comHifen >= 0 ? comHifen : partes.length - 1;
+  const candidata = (teste: (p: string) => boolean) => partes.findIndex((p, i) => i > 0 && i <= ate && teste(p));
+  let k = candidata((p) => comDigito.test(p) || semNumero.test(p));
+  if (k < 0) k = candidata((p) => lote.test(p));
   const logradouro = (k > 0 ? partes.slice(0, k) : partes.slice(0, 1)).join(', ');
   const numero = k > 0 ? partes[k]! : '';
   const resto = (k > 0 ? partes.slice(k + 1) : partes.slice(1)).join(', ');
   const hifen = resto.indexOf('-');
-  const complemento = (hifen >= 0 ? resto.slice(0, hifen) : resto).trim();
+  // Sem a vírgula que sobra antes do "-" ("SEM NUMERO, -PERTO…").
+  const complemento = (hifen >= 0 ? resto.slice(0, hifen) : resto).trim().replace(/[,\s]+$/, '');
   const referencia = (hifen >= 0 ? resto.slice(hifen + 1) : '').trim();
   return {
     logradouro,

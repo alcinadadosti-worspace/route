@@ -247,6 +247,21 @@ class RepositorioFirestore implements Repositorio {
     return achadas;
   }
 
+  async anotarRomaneio(registros: Array<{ id: string; romaneio: string }>): Promise<void> {
+    // `update` só do campo; pedido apagado no meio (NOT_FOUND, código 5) é
+    // pulado — não derruba a importação por causa de uma anotação.
+    await Promise.all(
+      registros.map(({ id, romaneio }) =>
+        this.pedidos
+          .doc(id)
+          .update({ romaneio })
+          .catch((e: { code?: number }) => {
+            if (e?.code !== 5) throw e;
+          }),
+      ),
+    );
+  }
+
   async revendedorasComNome(nome: string, limite: number): Promise<Array<{ id: string } & Revendedora>> {
     // A chave é "NOME|CIDADE" e a cidade só tem A–Z e 0–9: a faixa
     // ["NOME|", "NOME|~") (o '~' vem depois de todos eles) pega o nome em todas as

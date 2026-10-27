@@ -289,8 +289,8 @@ function Cartao({ m: bruto, nome }: { m: ProdutividadeMotorista; nome: string })
             <>
               {' '}
               <strong>Itens são parciais</strong>: em {m.entregasSemItens} das {m.entregues} entregas o
-              pedido veio do romaneio do Boticário, que não informa quantos itens leva — a soma é só a
-              das outras.
+              pedido não informa quantos itens leva (o romaneio do Boticário não traz a quantidade) — a
+              soma é só a das outras.
             </>
           )}
         </div>
@@ -396,8 +396,8 @@ function TabelaRotas({ rotas }: { rotas: ProdutividadeRota[] }) {
               {r.entregasSemItens > 0 && (
                 <tr className="nota-linha">
                   <td colSpan={9}>
-                    {r.entregasSemItens} de {r.entregues} entrega(s) desta rota vieram do romaneio, que
-                    não informa quantos itens leva — a coluna Itens soma só as outras.
+                    {r.entregasSemItens} de {r.entregues} entrega(s) desta rota sem a quantidade de itens
+                    (o romaneio do Boticário não traz) — a coluna Itens soma só as outras.
                   </td>
                 </tr>
               )}

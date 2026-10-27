@@ -179,6 +179,7 @@ test('romaneio: destinatária fora da base vira cliente novo MARCADO para o Admi
       endereco: 'PREFEITO JOSÉ INÁCIO, 43 CASA — CENTRO, QUEBRANGULO/AL',
       telefone: null,
       observacoes: 'SUBIDA DA PADARIA',
+      codigoErp: null,
     },
   ]);
 });
@@ -316,7 +317,173 @@ test('pedido do SITE pelo romaneio e pela planilha (outro código, mesmo pacote)
     await importarLinhas([daPlanilha()], repo, relatorioVazio());
     if (!primeiroRomaneio) await importarRomaneiosLidos(daFolha(), repo, relatorioVazio());
     assert.equal((await repo.listarPedidos()).length, 1, primeiroRomaneio ? 'romaneio → planilha' : 'planilha → romaneio');
+    // Veio antes pela planilha: o pedido ganha o número da folha, para a busca achar.
+    if (!primeiroRomaneio) assert.equal((await repo.obterPedido('530000002'))?.romaneio, '1673300');
   }
+});
+
+test('pedido do site CANCELADO pela planilha não volta quando o mesmo romaneio é reenviado', async () => {
+  const repo = new RepositorioMemoria();
+  const folha = () => [{ romaneio: romaneio([linha({ nome: 'Maria do Site', pedido: '160000001-1' })]), codCd: '684' }];
+  await importarRomaneiosLidos(folha(), repo, relatorioVazio());
+  assert.ok(await repo.obterPedido('160000001-1'));
+  const cancelada: LinhaPlanilha = {
+    codigoPedido: '530000002',
+    codigoExterno: '160000001-1',
+    notaFiscal: 1,
+    pessoa: '9000001',
+    nome: 'MARIA DO SITE',
+    papel: 'Consumidor Final',
+    quantidadeMateriais: 1,
+    valor: 1,
+    tipoEntrega: 'rota',
+    tipoEntregaBruto: 'No endereço de entrega',
+    cancelada: true,
+    entregueNoErp: false,
+    dataEntrega: null,
+    enderecoCadastro: blocoDoRomaneio(linha()),
+    enderecoEntrega: blocoDoRomaneio(linha()),
+    telefone: null,
+    estrutura: null,
+    codCd: '684',
+    lote: null,
+    volumes: 1,
+    pesoBrutoKg: 1,
+    emitidoEm: '2026-10-20T00:00:00-03:00',
+  };
+  await importarLinhas([cancelada], repo, relatorioVazio());
+  assert.equal(await repo.obterPedido('160000001-1'), null, 'o cancelado sai');
+  await importarRomaneiosLidos(folha(), repo, relatorioVazio());
+  assert.equal(await repo.obterPedido('160000001-1'), null, 'e não volta com a folha reenviada');
+});
+
+test('planilha não troca o CELULAR do cliente pelo fixo, nem repõe o telefone que o Admin apagou', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('70000001', cliente({ telefone: '+5582999991234' }));
+  await repo.salvarCliente('70000002', cliente({ telefone: null, telefoneApagado: true }));
+  const linhaDe = (pessoa: string, codigoPedido: string, telefone: string): LinhaPlanilha => ({
+    codigoPedido,
+    notaFiscal: 1,
+    pessoa,
+    nome: 'JOANA BATISTA DA SILVA',
+    papel: null,
+    quantidadeMateriais: 1,
+    valor: 1,
+    tipoEntrega: 'rota',
+    tipoEntregaBruto: 'No endereço de entrega',
+    cancelada: false,
+    entregueNoErp: false,
+    dataEntrega: null,
+    enderecoCadastro: blocoDoRomaneio(linha()),
+    enderecoEntrega: blocoDoRomaneio(linha()),
+    telefone,
+    estrutura: '1515',
+    codCd: '684',
+    lote: null,
+    volumes: 1,
+    pesoBrutoKg: 1,
+    emitidoEm: '2026-10-20T00:00:00-03:00',
+  });
+  await importarLinhas(
+    [linhaDe('70000001', '530000021', '(82) 3333-4444'), linhaDe('70000002', '530000022', '(82) 99888-7777')],
+    repo,
+    relatorioVazio(),
+  );
+  assert.equal((await repo.obterCliente('70000001'))?.telefone, '+5582999991234');
+  assert.equal((await repo.obterCliente('70000002'))?.telefone, null);
+});
+
+test('folha VELHA soltada depois da nova não traz o GPS da casa velha para o cliente da casa nova', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.gravarRevendedoras([
+    {
+      id: '70000001',
+      dados: {
+        nome: 'JOANA BATISTA DA SILVA',
+        chave: 'JOANA BATISTA DA SILVA|QUEBRANGULO',
+        telefone: '+5582911110000',
+        papel: null,
+        endereco: { ...cliente().enderecoFiscal, logradouro: 'SITIO B', numero: 'S/N' },
+        referencia: '',
+        pin: { lat: -9.31, lng: -36.46 },
+        situacao: 'Ativo',
+        dadosDe: null,
+      },
+    },
+  ]);
+  const nova: Romaneio = { ...romaneio([linha({ pedido: '530000031', endereco: 'RUA A, 10, -' })]), impressoEm: '2026-10-25T08:00:00-03:00' };
+  const velha: Romaneio = { ...romaneio([linha({ pedido: '530000032', endereco: 'SITIO B, S/N, -' })]), impressoEm: '2026-10-23T08:00:00-03:00' };
+  await importarRomaneiosLidos([{ romaneio: nova, codCd: '684' }], repo, relatorioVazio());
+  await importarRomaneiosLidos([{ romaneio: velha, codCd: '684' }], repo, relatorioVazio());
+  const c = await repo.obterCliente('70000001');
+  assert.equal(c?.enderecoFiscal.logradouro, 'RUA A');
+  assert.equal(c?.coordenada, null, 'o GPS é do sítio, não da RUA A');
+});
+
+test('telefone que o Admin APAGOU não volta da base no romaneio seguinte', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('70000001', cliente({ telefone: '+5582911110000' }));
+  await repo.gravarRevendedoras([
+    {
+      id: '70000001',
+      dados: {
+        nome: 'JOANA BATISTA DA SILVA',
+        chave: 'JOANA BATISTA DA SILVA|QUEBRANGULO',
+        telefone: '+5582911110000',
+        papel: null,
+        endereco: cliente().enderecoFiscal,
+        referencia: '',
+        pin: null,
+        situacao: 'Ativo',
+        dadosDe: null,
+      },
+    },
+  ]);
+  await salvarDadosDoCliente(repo, '70000001', { telefone: '' });
+  await importarRomaneiosLidos([{ romaneio: romaneio([linha()]), codCd: '684' }], repo, relatorioVazio());
+  assert.equal((await repo.obterCliente('70000001'))?.telefone, null);
+});
+
+test('cliente do romaneio que passa a casar com a base fica LIGADO a ela e sai de "completar dados"', async () => {
+  const repo = new RepositorioMemoria();
+  const folha = (pedido: string) => [{ romaneio: romaneio([linha({ nome: 'Maria do Site', pedido })]), codCd: '684' }];
+  const r1 = relatorioVazio();
+  await importarRomaneiosLidos(folha('530000011'), repo, r1);
+  const id = r1.clientesACompletar![0]!.id;
+  // Os pedidos do ano trouxeram a Maria para a base, na mesma porta.
+  await repo.gravarRevendedoras([
+    {
+      id: '777',
+      dados: {
+        nome: 'MARIA DO SITE',
+        chave: 'MARIA DO SITE|QUEBRANGULO',
+        telefone: '+5582977776666',
+        papel: 'Bronze',
+        endereco: cliente().enderecoFiscal,
+        referencia: '',
+        pin: null,
+        situacao: 'Ativo',
+        dadosDe: null,
+      },
+    },
+  ]);
+  const r2 = relatorioVazio();
+  await importarRomaneiosLidos(folha('530000012'), repo, r2);
+  assert.equal((await repo.obterPedido('530000012'))?.clienteId, id, 'o pedido fica no cliente que já existia');
+  const c = await repo.obterCliente(id);
+  assert.equal(c?.codigoErp, '777');
+  assert.equal(c?.completarDados, false);
+  assert.equal(c?.telefone, '+5582977776666');
+});
+
+test('data impressa no FUTURO (relógio errado) não vira a data do pedido', async () => {
+  const repo = new RepositorioMemoria();
+  await importarRomaneiosLidos(
+    [{ romaneio: { ...romaneio([linha()]), impressoEm: '2099-01-01T08:00:00-03:00' }, codCd: '684' }],
+    repo,
+    relatorioVazio(),
+  );
+  assert.ok(((await repo.obterPedido('530000001'))?.emitidoEm ?? '') < '2099');
 });
 
 test('romaneio: a folha diz N pacotes e a leitura achou outro número — avisa', async () => {

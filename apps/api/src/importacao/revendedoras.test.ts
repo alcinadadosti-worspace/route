@@ -1,11 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Cliente } from '@rota/shared';
+import type { LinhaCadastro } from './cadastro.js';
 import type { LinhaPlanilha } from './planilha.js';
-import { guardarRevendedoras, mesclarRevendedora, revendedorasDosPedidos } from './revendedoras.js';
+import {
+  guardarRevendedoras,
+  mesclarRevendedora,
+  revendedoraDoCadastro,
+  revendedoraDoPedido,
+  revendedorasDosPedidos,
+} from './revendedoras.js';
 import { relatorioVazio } from './servico-planilha.js';
 import { RepositorioMemoria, type Revendedora } from '../db/repositorio.js';
 
+/** Registro no formato antigo (sem `fontes`) — o guardar ainda o aceita. */
 function rev(extra: Partial<Revendedora> = {}): Revendedora {
   return {
     nome: 'JOANA BATISTA DA SILVA',
@@ -21,67 +29,26 @@ function rev(extra: Partial<Revendedora> = {}): Revendedora {
   };
 }
 
-const NOVO = { logradouro: 'RUA NOVA', numero: '9', bairro: 'CENTRO', municipio: 'QUEBRANGULO', uf: 'AL', cep: '57750000' };
-
-test('pedido de 2026 vence o cadastro sem data no ENDEREÇO — em qualquer ordem de chegada', () => {
-  const cadastro = rev();
-  const pedido = rev({ endereco: NOVO, telefone: '+5582922220000', situacao: null, dadosDe: '2026-03-10T00:00:00-03:00' });
-  // pedido chega depois do cadastro
-  assert.equal(mesclarRevendedora(cadastro, pedido)?.endereco.logradouro, 'RUA NOVA');
-  // cadastro chega depois do pedido: NÃO volta para a rua velha
-  const depois = mesclarRevendedora(pedido, cadastro);
-  assert.equal((depois ?? pedido).endereco.logradouro, 'RUA NOVA');
-  // a situação, que só o cadastro tem, entra mesmo assim
-  assert.equal(depois?.situacao, 'Ativo');
-  // O telefone não é "o mais novo": o do cadastro (que escolhe o celular) fica.
-  assert.equal(mesclarRevendedora(cadastro, pedido)?.telefone, '+5582911110000');
-  assert.equal((depois ?? pedido).telefone, '+5582911110000');
-});
-
-test('telefone: o FIXO do pedido não toma o lugar do celular do cadastro — o WhatsApp é no celular', () => {
-  // A coluna Telefone da planilha de pedidos traz o residencial primeiro.
-  const cadastro = rev({ telefone: '+5582999991234' });
-  const pedidoComFixo = rev({ telefone: '+558233334444', situacao: null, dadosDe: '2026-09-01T00:00:00-03:00' });
-  assert.equal(mesclarRevendedora(cadastro, pedidoComFixo)?.telefone ?? cadastro.telefone, '+5582999991234');
-  assert.equal(mesclarRevendedora(pedidoComFixo, cadastro)?.telefone, '+5582999991234');
-  // Sem telefone no cadastro, o do pedido entra; celular do pedido vence fixo do cadastro.
-  assert.equal(mesclarRevendedora(rev({ telefone: null }), pedidoComFixo)?.telefone, '+558233334444');
-  const cadastroFixo = rev({ telefone: '+558233334444' });
-  const pedidoCelular = rev({ telefone: '+5582988887777', situacao: null, dadosDe: '2026-09-01T00:00:00-03:00' });
-  assert.equal(mesclarRevendedora(cadastroFixo, pedidoCelular)?.telefone, '+5582988887777');
-});
-
-test('o GPS e a referência da casa velha não vão junto para o endereço novo', () => {
-  const cadastro = rev({ pin: { lat: -9.31, lng: -36.46 } });
-  const mudou = rev({ endereco: NOVO, referencia: '', situacao: null, dadosDe: '2026-03-10T00:00:00-03:00' });
-  const junta = mesclarRevendedora(cadastro, mudou)!;
-  assert.equal(junta.endereco.logradouro, 'RUA NOVA');
-  assert.equal(junta.pin, null);
-  assert.equal(junta.referencia, '');
-  // Mesmo endereço: o GPS e a referência que o dado novo não tem continuam.
-  const mesmo = mesclarRevendedora(cadastro, rev({ situacao: null, referencia: '', dadosDe: '2026-03-10T00:00:00-03:00' }));
-  assert.deepEqual((mesmo ?? cadastro).pin, { lat: -9.31, lng: -36.46 });
-  assert.equal((mesmo ?? cadastro).referencia, 'PERTO DA PRAÇA');
-});
-
-test('igual ao guardado em OUTRA ordem de chaves (como o banco devolve): não regrava', () => {
-  const guardada = Object.fromEntries(Object.entries(rev()).sort(([a], [b]) => a.localeCompare(b))) as unknown as Revendedora;
-  assert.equal(mesclarRevendedora(guardada, rev()), null);
-});
-
-test('entre dois pedidos vence o de data maior; o vazio nunca apaga o que existe', () => {
-  const marco = rev({ endereco: NOVO, dadosDe: '2026-03-10T00:00:00-03:00' });
-  const janeiroSemFone = rev({ telefone: null, dadosDe: '2026-01-05T00:00:00-03:00' });
-  assert.equal(mesclarRevendedora(marco, janeiroSemFone), null, 'mais velho não muda nada');
-  const outubroSemFone = rev({ endereco: { ...NOVO, logradouro: 'RUA MAIS NOVA' }, telefone: null, dadosDe: '2026-10-01T00:00:00-03:00' });
-  const junta = mesclarRevendedora(marco, outubroSemFone)!;
-  assert.equal(junta.endereco.logradouro, 'RUA MAIS NOVA');
-  assert.equal(junta.telefone, '+5582911110000', 'pedido sem telefone não apaga o telefone');
-});
-
-test('igual ao que está guardado: null (não regrava)', () => {
-  assert.equal(mesclarRevendedora(rev(), rev()), null);
-});
+function linhaCadastro(extra: Partial<LinhaCadastro> = {}, endereco: Partial<LinhaCadastro['endereco']> = {}): LinhaCadastro {
+  return {
+    codigo: '70000001',
+    nome: 'JOANA BATISTA DA SILVA',
+    papel: 'Cobre',
+    telefones: ['(82) 99111-0000'],
+    situacao: 'Ativo',
+    endereco: {
+      logradouro: 'RUA VELHA',
+      complemento: '1',
+      bairro: 'CENTRO',
+      cidade: 'QUEBRANGULO',
+      uf: 'AL',
+      cep: '57750000',
+      referencia: 'PERTO DA PRAÇA',
+      ...endereco,
+    },
+    ...extra,
+  };
+}
 
 function linhaPedido(extra: Partial<LinhaPlanilha> = {}): LinhaPlanilha {
   const bloco = { logradouro: 'RUA NOVA', complemento: '9 CASA', bairro: 'CENTRO', cidade: 'QUEBRANGULO', uf: 'AL', cep: '57750000', referencia: '' };
@@ -111,6 +78,109 @@ function linhaPedido(extra: Partial<LinhaPlanilha> = {}): LinhaPlanilha {
   };
 }
 
+/** Junta, na ordem dada, como cargas sucessivas fariam. */
+function emOrdem(registros: Revendedora[]): Revendedora {
+  let r: Revendedora | undefined;
+  for (const nova of registros) r = mesclarRevendedora(r, nova) ?? r;
+  return r!;
+}
+
+/** Todas as ordens possíveis. */
+function permutacoes<T>(xs: T[]): T[][] {
+  if (xs.length <= 1) return [xs];
+  return xs.flatMap((x, i) => permutacoes([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p]));
+}
+
+const CADASTRO = revendedoraDoCadastro(linhaCadastro());
+const ENTREGA_MARCO = revendedoraDoPedido(linhaPedido({ codigoPedido: '537000010', emitidoEm: '2026-03-01T00:00:00-03:00', telefone: '(82) 3333-4444' }));
+const ENTREGA_SETEMBRO = revendedoraDoPedido(
+  linhaPedido({
+    codigoPedido: '537000020',
+    emitidoEm: '2026-09-01T00:00:00-03:00',
+    telefone: '',
+    enderecoEntrega: { ...linhaPedido().enderecoEntrega, logradouro: 'RUA DE SETEMBRO' },
+  }),
+);
+const RETIRADA_OUTUBRO = revendedoraDoPedido(
+  linhaPedido({
+    codigoPedido: '537000030',
+    emitidoEm: '2026-10-01T00:00:00-03:00',
+    tipoEntrega: 'retirada',
+    enderecoCadastro: { ...linhaPedido().enderecoCadastro, logradouro: 'RUA RESIDENCIAL', cidade: 'IGACI' },
+  }),
+);
+
+test('a base é a MESMA em qualquer ordem de carga — e recarregar não grava nada', () => {
+  const ordens = permutacoes([CADASTRO, ENTREGA_MARCO, ENTREGA_SETEMBRO, RETIRADA_OUTUBRO]);
+  const primeira = emOrdem(ordens[0]!);
+  for (const ordem of ordens) assert.deepEqual(emOrdem(ordem), primeira);
+  // Cada fonte recarregada por cima da base pronta: nada muda.
+  for (const r of [CADASTRO, ENTREGA_MARCO, ENTREGA_SETEMBRO, RETIRADA_OUTUBRO]) {
+    assert.equal(mesclarRevendedora(primeira, r), null);
+  }
+  // Endereço: a entrega mais nova; a retirada (residencial) não ganha dela.
+  assert.equal(primeira.endereco.logradouro, 'RUA DE SETEMBRO');
+  assert.equal(primeira.dadosDe, '2026-09-01T00:00:00-03:00');
+  assert.equal(primeira.situacao, 'Ativo');
+});
+
+test('igual ao guardado em OUTRA ordem de chaves (como o banco devolve): não regrava', () => {
+  const ordenar = (o: unknown): unknown =>
+    o && typeof o === 'object' && !Array.isArray(o)
+      ? Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, ordenar(v)]))
+      : o;
+  const pronta = emOrdem([CADASTRO, ENTREGA_MARCO]);
+  assert.equal(mesclarRevendedora(ordenar(pronta) as Revendedora, ENTREGA_MARCO), null);
+});
+
+test('telefone: o CELULAR do cadastro, nunca o fixo do pedido; sem celular no cadastro, o do pedido', () => {
+  // O pedido de março traz um fixo (a coluna da planilha é o residencial primeiro).
+  assert.equal(emOrdem([ENTREGA_MARCO, CADASTRO]).telefone, '+5582991110000');
+  assert.equal(emOrdem([CADASTRO, ENTREGA_MARCO]).telefone, '+5582991110000');
+  // Coluna do celular com um FIXO e a do residencial com o celular (182 no real): o celular.
+  const trocadas = revendedoraDoCadastro(linhaCadastro({ telefones: ['(82) 3333-4444', '(82) 98888-7777'] }));
+  assert.equal(trocadas.telefone, '+5582988887777');
+  // Coluna do celular inválida (sem DDD) e residencial boa (12 no real): não perde.
+  assert.equal(revendedoraDoCadastro(linhaCadastro({ telefones: ['9999-1234', '(82) 98888-7777'] })).telefone, '+5582988887777');
+  // Cadastro sem telefone: vale o do pedido.
+  assert.equal(emOrdem([revendedoraDoCadastro(linhaCadastro({ telefones: [] })), ENTREGA_MARCO]).telefone, '+558233334444');
+  // Pedido sem telefone não apaga nada.
+  assert.equal(emOrdem([CADASTRO, ENTREGA_SETEMBRO]).telefone, '+5582991110000');
+});
+
+test('GPS e referência são do LUGAR: os da casa velha não vão para o endereço novo', () => {
+  const cadastroComPin = revendedoraDoCadastro(linhaCadastro({}, { referencia: 'GPS -9.3112, -36.4634 PERTO DA PRAÇA' }));
+  assert.ok(cadastroComPin.pin);
+  const mudou = emOrdem([cadastroComPin, ENTREGA_SETEMBRO]);
+  assert.equal(mudou.endereco.logradouro, 'RUA DE SETEMBRO');
+  assert.equal(mudou.pin, null);
+  assert.equal(mudou.referencia, '');
+  // Pedido no MESMO endereço do cadastro, sem referência: a do cadastro fica.
+  const mesmoLugar = revendedoraDoPedido(
+    linhaPedido({ enderecoEntrega: { ...linhaPedido().enderecoEntrega, logradouro: 'RUA VELHA', complemento: '1' } }),
+  );
+  const junto = emOrdem([cadastroComPin, mesmoLugar]);
+  assert.deepEqual(junto.pin, cadastroComPin.pin);
+  assert.match(junto.referencia, /PERTO DA PRAÇA/);
+});
+
+test('linha de entrega: a referência do bloco do CADASTRO só vale se for o mesmo lugar', () => {
+  const r = revendedoraDoPedido(
+    linhaPedido({
+      enderecoCadastro: { ...linhaPedido().enderecoCadastro, logradouro: 'RUA DE CASA', referencia: 'AO LADO DA IGREJA' },
+    }),
+  );
+  assert.equal(r.endereco.logradouro, 'RUA NOVA');
+  assert.equal(r.referencia, '');
+});
+
+test('entre dois pedidos vence o de data maior; no mesmo dia, o de código maior — em qualquer ordem', () => {
+  const a = revendedoraDoPedido(linhaPedido({ codigoPedido: '537000040', emitidoEm: '2026-06-01T00:00:00-03:00', enderecoEntrega: { ...linhaPedido().enderecoEntrega, logradouro: 'RUA A' } }));
+  const b = revendedoraDoPedido(linhaPedido({ codigoPedido: '537000041', emitidoEm: '2026-06-01T00:00:00-03:00', enderecoEntrega: { ...linhaPedido().enderecoEntrega, logradouro: 'RUA B' } }));
+  assert.equal(emOrdem([a, b]).endereco.logradouro, 'RUA B');
+  assert.equal(emOrdem([b, a]).endereco.logradouro, 'RUA B');
+});
+
 test('pedidos do ano como dado de cliente: um por pessoa, o do pedido mais novo; retirada usa o cadastro', () => {
   const cd = { logradouro: 'AV DO CD', complemento: '874', bairro: 'X', cidade: 'PENEDO', uf: 'AL', cep: '', referencia: '' };
   const porCodigo = revendedorasDosPedidos([
@@ -131,12 +201,13 @@ test('pedidos do ano como dado de cliente: um por pessoa, o do pedido mais novo;
   assert.equal(porCodigo.get('999')?.pin, null);
 });
 
-test('retirada não vence a ENTREGA mais velha: o bloco dela é o do cadastro, não o do pedido', () => {
+test('retirada não vence a ENTREGA mais velha nem o cadastro: o bloco dela é o residencial', () => {
   const entrega = linhaPedido({
     emitidoEm: '2026-09-01T00:00:00-03:00',
     enderecoEntrega: { ...linhaPedido().enderecoEntrega, logradouro: 'RUA DA ENTREGA' },
   });
   const retirada = linhaPedido({
+    codigoPedido: '537000099',
     emitidoEm: '2026-10-01T00:00:00-03:00',
     tipoEntrega: 'retirada',
     enderecoCadastro: { ...linhaPedido().enderecoCadastro, logradouro: 'RUA DO CADASTRO', cidade: 'IGACI' },
@@ -144,6 +215,10 @@ test('retirada não vence a ENTREGA mais velha: o bloco dela é o do cadastro, n
   for (const ordem of [[entrega, retirada], [retirada, entrega]]) {
     assert.equal(revendedorasDosPedidos(ordem).get('70000001')?.endereco.logradouro, 'RUA DA ENTREGA');
   }
+  // Só retirada e cadastro: vale o cadastro (endereço de ENTREGA dele).
+  const soRetirada = revendedorasDosPedidos([retirada]).get('70000001')!;
+  assert.equal(emOrdem([soRetirada, CADASTRO]).endereco.logradouro, 'RUA VELHA');
+  assert.equal(emOrdem([CADASTRO, soRetirada]).endereco.logradouro, 'RUA VELHA');
 });
 
 test('guardar: cliente existente só ganha o que falta; nenhum pedido é criado', async () => {

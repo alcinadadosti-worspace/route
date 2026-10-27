@@ -3,6 +3,7 @@ import type { CentroDistribuicao, RelatorioImportacao } from '@rota/shared';
 import { contarEnderecosALocalizar, importarArquivos, listarCds, localizarEnderecos } from '../api';
 import { CompletarDados } from '../CompletarDados';
 import { resumoDoSalvo } from '../formularioCliente';
+import { confirmarDescarte } from '../alteracoesPendentes';
 
 /** Fluxo 1 — o operador solta a planilha do ERP (ou XMLs de NF-e) do dia (RF-01, RF-04). */
 export function Importacao() {
@@ -26,8 +27,6 @@ export function Importacao() {
   const [naFila, setNaFila] = useState<number | null>(null);
   /** Clientes fora da base já resolvidos nesta tela (id → o que foi salvo). */
   const [completados, setCompletados] = useState<Record<string, string>>({});
-  /** Formulários com algo digitado e não salvo: soltar outro arquivo os apaga. */
-  const naoSalvos = useRef(new Set<string>());
   // Só para dar nome ao CD no relatório — a importação devolve o id.
   const [cds, setCds] = useState<Record<string, CentroDistribuicao>>({});
   /** Sair da aba PARA o laço: ele seguia invisível, e voltar e clicar de novo
@@ -72,16 +71,7 @@ export function Importacao() {
     }
     // O relatório novo substitui o anterior — e com ele os formulários de
     // completar dados. Perguntar, não decidir: o que foi digitado sumia calado.
-    if (
-      naoSalvos.current.size > 0 &&
-      !window.confirm(
-        `Há dados digitados e não salvos de ${naoSalvos.current.size} cliente(s) fora da base. ` +
-          'Importar agora descarta o que foi digitado (os clientes continuam na aba Clientes, para completar depois). Importar mesmo assim?',
-      )
-    ) {
-      return;
-    }
-    naoSalvos.current.clear();
+    if (!confirmarDescarte()) return;
     setEnviando(true);
     setErro(null);
     // O relatório anterior sai da tela: ficando debaixo do erro de uma
@@ -315,12 +305,7 @@ export function Importacao() {
                     key={c.id}
                     cliente={c}
                     aoConcluir={(atualizado, corpo) => {
-                      naoSalvos.current.delete(c.id);
                       setCompletados((atual) => ({ ...atual, [c.id]: resumoDoSalvo(corpo, atualizado.telefone) }));
-                    }}
-                    aoMudar={(alterado) => {
-                      if (alterado) naoSalvos.current.add(c.id);
-                      else naoSalvos.current.delete(c.id);
                     }}
                   />
                 ),
@@ -328,8 +313,9 @@ export function Importacao() {
             </div>
           )}
 
-          {relatorio.rejeitados.map((r) => (
-            <div key={r.arquivo} className="erro">
+          {/* Índice na chave: o romaneio recusa várias linhas com o mesmo "arquivo". */}
+          {relatorio.rejeitados.map((r, i) => (
+            <div key={`${r.arquivo}-${i}`} className="erro">
               <span className="mono">{r.arquivo}</span> — {r.motivo}
             </div>
           ))}

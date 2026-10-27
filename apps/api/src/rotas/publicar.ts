@@ -150,6 +150,7 @@ export async function publicarRota(
       ...(pedido.quantidadeMateriais !== undefined
         ? { quantidadeMateriais: pedido.quantidadeMateriais }
         : {}),
+      ...(pedido.itens?.length ? { itens: pedido.itens } : {}),
       status: 'em_rota',
     });
     statusLido[id] = pedido.status;

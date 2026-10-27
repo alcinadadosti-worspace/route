@@ -172,6 +172,34 @@ test('romaneio: linha cortada pela QUEBRA DE PÁGINA é emendada com o resto, no
   assert.equal(seguinte!.nome, 'JOANA');
 });
 
+test('romaneio: linha que coube INTEIRA não recebe o que estiver no topo da página seguinte', () => {
+  // Como o PDF real: a 2ª página só tem o que o navegador imprime — e aqui um
+  // título que não foi marcado como margem, caindo na coluna do nome.
+  const pagina2: ItemTexto[] = [
+    { x: X.nome, y: 800, texto: 'Rotas - Portal | Grupo' },
+    { x: X.nome, y: 760, texto: 'Observações:' },
+  ];
+  const r = romaneioDasPaginas([PAGINA_REAL, pagina2]);
+  assert.ok(r.ok);
+  assert.equal(r.romaneio.linhas.length, 2);
+  assert.equal(r.romaneio.linhas[1]!.nome, 'Bia Teste');
+});
+
+test('romaneio: data impressa que não existe não vira data de pedido', () => {
+  const comData = (data: string) =>
+    romaneioDasPaginas([PAGINA_REAL.map((i) => (i.texto === '26/10/2026, 17:12' ? { ...i, texto: data } : i))]);
+  const invalida = comData('31/02/2026, 17:12');
+  assert.ok(invalida.ok);
+  assert.equal(invalida.romaneio.impressoEm, null);
+});
+
+test('romaneio: o topo repetido com o motorista em outra caixa não é "outro romaneio"', () => {
+  const repetido = topo('CAIQUE SANTOS').map((i) => (i.texto === '1673300' ? { ...i, texto: '1673 300' } : i));
+  const r = romaneioDasPaginas([PAGINA_REAL, repetido]);
+  assert.ok(r.ok, !r.ok ? r.motivo : '');
+  assert.equal(r.romaneio.rota, '1673300');
+});
+
 test('romaneio: dois romaneios num PDF só são recusados — o segundo entraria com o motorista do primeiro', () => {
   const outro = [
     ...topo('Paulo Rogério Santos').map((i) => (i.texto === '1673300' ? { ...i, texto: '1673999' } : i)),
@@ -269,6 +297,9 @@ test('endereço do romaneio no formato do cadastro: número dentro do complement
     ['RUA DAS FLORES, S/Nº, CASA-PERTO DO BAR, 2', 'RUA DAS FLORES', 'S/Nº CASA', 'PERTO DO BAR, 2'],
     // Quadra com número antes do número da casa continua na rua.
     ['RUA A, QD 3, 43, CASA-REF', 'RUA A, QD 3', '43 CASA', 'REF'],
+    // "Nº 43" é o número; e o "2" da referência não é.
+    ['RUA DAS FLORES, Nº 43, CASA-PERTO DO BAR, 2', 'RUA DAS FLORES', 'Nº 43 CASA', 'PERTO DO BAR, 2'],
+    ['RUA DAS FLORES, SEM NUMERO, -PERTO DA ESCOLA, 100 M', 'RUA DAS FLORES', 'SEM NUMERO', 'PERTO DA ESCOLA, 100 M'],
   ];
   for (const [texto, logradouro, complemento, referencia] of casos) {
     const b = blocoDoRomaneio(linhaR(texto));

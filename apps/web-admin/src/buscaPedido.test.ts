@@ -40,6 +40,9 @@ test('o código do pedido do SITE, colado como a folha imprime ("160000001-1"), 
   assert.equal(casaBusca(doSite, 'X', '160000001-1'), true);
   assert.equal(casaBusca(doSite, 'X', '160000001'), true);
   assert.equal(casaBusca(doSite, 'X', '160000001-2'), false);
+  // Entrou primeiro pela planilha: id do ERP, código do site no externo.
+  const daPlanilha = { ...P, id: '530000002', numeroPedido: '530000002', codigoExterno: '160000001-1' };
+  assert.equal(casaBusca(daPlanilha, 'X', '160000001-1'), true);
 });
 
 test('onde está: rota com o dia, e o que fazer quando está fora da montagem', () => {

@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
 import { telefoneLegivel, type Cliente, type ClienteACompletar, type RevendedoraCandidata } from '@rota/shared';
 import { candidatasDoCliente, salvarDadosDoCliente, type DadosDoCliente } from './api';
-import { camposIniciais, corpoDoFormulario, formularioAlterado, trocarEscolhida } from './formularioCliente';
+import { marcarAlteracao } from './alteracoesPendentes';
+import {
+  camposIniciais,
+  clienteDoErp,
+  corpoDoFormulario,
+  formularioAlterado,
+  trocarEscolhida,
+  type CamposDoFormulario,
+} from './formularioCliente';
 
 /**
  * Formulário do cliente que o romaneio trouxe SEM estar na base de
@@ -10,13 +18,16 @@ import { camposIniciais, corpoDoFormulario, formularioAlterado, trocarEscolhida 
  * do dossiê — depende do telefone e da referência que o Admin Estoque põe
  * aqui. Mostra quem tem o mesmo nome na base: se for ela, um toque traz os
  * dados; quem confirma que é a mesma pessoa é o Admin, olhando o endereço.
+ *
+ * Em cliente que JÁ é do ERP (id = código) a lista não aparece: o "É ela" ali
+ * ligava o cliente a OUTRA pessoa, e os pedidos da homônima passavam a cair
+ * nele, trocando o endereço a cada romaneio.
  */
 export function CompletarDados({
   cliente,
   pendente = true,
   aoConcluir,
   aoCancelar,
-  aoMudar,
 }: {
   cliente: ClienteACompletar;
   /** Ainda na lista de "completar dados" (`Cliente.completarDados`). Na aba
@@ -25,19 +36,22 @@ export function CompletarDados({
   /** `corpo` = o que foi mandado (vazio = "não tenho mais dados"). */
   aoConcluir: (atualizado: { id: string } & Cliente, corpo: DadosDoCliente) => void;
   aoCancelar?: () => void;
-  /** Avisa quando passa a ter (ou deixa de ter) algo digitado e não salvo. */
-  aoMudar?: (alterado: boolean) => void;
 }) {
+  const doErp = clienteDoErp(cliente.id);
   // O formulário compara com o que ABRIU: só o que mudou vai para o servidor.
   const [inicial] = useState(() => camposIniciais(cliente));
   const [campos, setCampos] = useState(inicial);
   const [escolhida, setEscolhida] = useState<RevendedoraCandidata | null>(null);
+  /** Os campos como estavam ao escolher: desfazer volta a ELES — o telefone
+   * digitado antes do "É ela" não pode sumir no desfazer. */
+  const [antesDaEscolha, setAntesDaEscolha] = useState<CamposDoFormulario>(inicial);
   const [candidatas, setCandidatas] = useState<RevendedoraCandidata[] | null>(null);
   const [erroBusca, setErroBusca] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
+    if (doErp) return;
     let vivo = true;
     candidatasDoCliente(cliente.id)
       .then((c) => vivo && setCandidatas(c))
@@ -45,17 +59,20 @@ export function CompletarDados({
     return () => {
       vivo = false;
     };
-  }, [cliente.id]);
+  }, [cliente.id, doErp]);
 
   const alterado = formularioAlterado(inicial, campos, escolhida);
   useEffect(() => {
-    aoMudar?.(alterado);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alterado]);
+    marcarAlteracao(cliente.id, alterado);
+  }, [cliente.id, alterado]);
+  // Desmontou (salvou, fechou, trocou de tela já confirmada): nada pendente aqui.
+  useEffect(() => () => marcarAlteracao(cliente.id, false), [cliente.id]);
 
   /** `c` null desfaz a escolha. */
   function escolher(c: RevendedoraCandidata | null) {
-    setCampos(trocarEscolhida(campos, inicial, escolhida, c));
+    const base = escolhida ? antesDaEscolha : campos;
+    if (!escolhida) setAntesDaEscolha(campos);
+    setCampos(trocarEscolhida(campos, base, escolhida, c));
     setEscolhida(c);
   }
 
@@ -103,47 +120,65 @@ export function CompletarDados({
         </label>
       </div>
 
-      <div className="decisao-rotulo" style={{ marginTop: 12 }}>
-        Na base de revendedoras com o mesmo nome
-      </div>
-      {erroBusca && <div className="erro">{erroBusca}</div>}
-      {!erroBusca && candidatas === null && <div className="decisao-aviso">Procurando…</div>}
-      {candidatas?.length === 0 && (
-        <div className="decisao-aviso">
-          Ninguém com esse nome na base — preencha à mão. Pedido do site (Consumidor Final) é sempre assim.
+      {doErp ? (
+        <div className="decisao-aviso" style={{ marginTop: 12 }}>
+          Cliente do ERP (cód. {cliente.id}): já é a pessoa do cadastro — aqui só se corrige o telefone e a referência.
         </div>
-      )}
-      {candidatas && candidatas.length > 0 && (
-        <div className="decisao-opcoes">
-          {candidatas.map((c) => (
-            <div key={c.codigo} className={`decisao-opcao${escolhida?.codigo === c.codigo ? ' ativa' : ''}`}>
-              <div>
-                <div className="decisao-rotulo">
-                  cód. {c.codigo}
-                  {c.situacao ? ` · ${c.situacao}` : ''} ·{' '}
-                  {c.dadosDe ? `pedido de ${dataCurta(c.dadosDe)}` : 'cadastro (sem data)'}
-                </div>
-                <div className="decisao-endereco">{c.endereco}</div>
-                <div className="decisao-aviso">
-                  {telefoneLegivel(c.telefone) ?? 'sem telefone'}
-                  {c.papel ? ` · ${c.papel}` : ''}
-                  {c.referencia ? ` · ${c.referencia}` : ''}
-                </div>
-                {escolhida?.codigo === c.codigo ? (
-                  // Desfazer devolve o formulário ao que era antes da escolha:
-                  // sem isto, o engano só se corrigia apagando à mão.
-                  <button type="button" style={{ marginTop: 8 }} disabled={salvando} onClick={() => escolher(null)}>
-                    ESCOLHIDA — DESFAZER
-                  </button>
-                ) : (
-                  <button type="button" style={{ marginTop: 8 }} disabled={salvando} onClick={() => escolher(c)}>
-                    É ELA — USAR ESTES DADOS
-                  </button>
-                )}
-              </div>
+      ) : (
+        <>
+          {/* Ligação errada se desfaz: sem isto, o "É ela" salvo por engano
+              mandava para sempre os pedidos da homônima para este cliente. */}
+          {cliente.codigoErp && (
+            <div className="decisao-aviso" style={{ marginTop: 12 }}>
+              Ligado à revendedora cód. {cliente.codigoErp}: os pedidos dela caem neste cliente.{' '}
+              <button className="ligacao alvo-toque" disabled={salvando} onClick={() => void enviar({ codigo: null })}>
+                Não é ela — desligar
+              </button>
             </div>
-          ))}
-        </div>
+          )}
+          <div className="decisao-rotulo" style={{ marginTop: 12 }}>
+            Na base de revendedoras com o mesmo nome
+          </div>
+          {erroBusca && <div className="erro">{erroBusca}</div>}
+          {!erroBusca && candidatas === null && <div className="decisao-aviso">Procurando…</div>}
+          {candidatas?.length === 0 && (
+            <div className="decisao-aviso">
+              Ninguém com esse nome na base — preencha à mão. Pedido do site (Consumidor Final) é sempre assim.
+            </div>
+          )}
+          {candidatas && candidatas.length > 0 && (
+            <div className="decisao-opcoes">
+              {candidatas.map((c) => (
+                <div key={c.codigo} className={`decisao-opcao${escolhida?.codigo === c.codigo ? ' ativa' : ''}`}>
+                  <div>
+                    <div className="decisao-rotulo">
+                      cód. {c.codigo}
+                      {c.situacao ? ` · ${c.situacao}` : ''} ·{' '}
+                      {c.dadosDe ? `pedido de ${dataCurta(c.dadosDe)}` : 'cadastro (sem data)'}
+                    </div>
+                    <div className="decisao-endereco">{c.endereco}</div>
+                    <div className="decisao-aviso">
+                      {telefoneLegivel(c.telefone) ?? 'sem telefone'}
+                      {c.papel ? ` · ${c.papel}` : ''}
+                      {c.referencia ? ` · ${c.referencia}` : ''}
+                    </div>
+                    {escolhida?.codigo === c.codigo ? (
+                      // Desfazer devolve o formulário ao que era antes da escolha:
+                      // sem isto, o engano só se corrigia apagando à mão.
+                      <button type="button" style={{ marginTop: 8 }} disabled={salvando} onClick={() => escolher(null)}>
+                        ESCOLHIDA — DESFAZER
+                      </button>
+                    ) : (
+                      <button type="button" style={{ marginTop: 8 }} disabled={salvando} onClick={() => escolher(c)}>
+                        É ELA — USAR ESTES DADOS
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {erro && <div className="erro">{erro}</div>}
@@ -164,7 +199,10 @@ export function CompletarDados({
           </button>
         )}
         {aoCancelar && (
-          <button disabled={salvando} onClick={aoCancelar}>
+          <button
+            disabled={salvando}
+            onClick={() => (!alterado || window.confirm('Descartar o que foi digitado para este cliente?')) && aoCancelar()}
+          >
             FECHAR
           </button>
         )}

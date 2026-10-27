@@ -32,8 +32,14 @@ export interface LinhaCadastro {
   codigo: string;
   nome: string;
   papel: string | null;
-  /** Celular, ou o residencial quando não houver; bruto, como veio. */
-  telefone: string | null;
+  /**
+   * As colunas de telefone, brutas, como vieram — o celular antes do
+   * residencial, sem as vazias e sem as que são o CPF. As duas, e não "a
+   * primeira preenchida": em 182 linhas do cadastro real a coluna do celular
+   * tem um FIXO e a do residencial, o celular; em 12, a do celular é inválida
+   * (sem DDD) e a residencial, boa. Quem escolhe é `consolidarRevendedora`.
+   */
+  telefones: string[];
   endereco: BlocoEndereco;
   /** "Ativo", "Cadastrado", "Desativado"… (o completo tem 15 mil desativadas). */
   situacao: string | null;
@@ -150,7 +156,7 @@ export function cadastroDasPartes(partes: Record<string, string>): ResultadoCada
         codigo,
         nome,
         papel: v('papel') || null,
-        telefone: [v('telcelular'), v('telresidencial')].find((t) => t && naoEhCpf(t)) ?? null,
+        telefones: [v('telcelular'), v('telresidencial')].filter((t) => t && naoEhCpf(t)),
         situacao: v('situacao') || null,
         endereco: {
           logradouro: v(`rua${sufixo}`),

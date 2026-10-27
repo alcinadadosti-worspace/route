@@ -104,3 +104,21 @@ test('pedido do SITE com o nome de uma revendedora da cidade não herda o telefo
   const mesmaPorta = casar({ nome: 'JOANA BATISTA DA SILVA', cidade: 'QUEBRANGULO', logradouro: 'PREFEITO JOSE INACIO', numero: '43', doSite: true });
   assert.equal(mesmaPorta.id, '70000001', 'a revendedora comprando pelo site, em casa');
 });
+
+test('a MESMA porta vem antes do cliente ligado pelo Admin a outra porta', () => {
+  const d = { nome: 'ANA DO SITIO', cidade: 'IGACI', logradouro: 'RUA NOVA', numero: '1' };
+  const naPorta = { id: idSemCadastro(d), nome: 'ANA DO SITIO', enderecoFiscal: end('RUA NOVA', '1', 'IGACI'), ehCliente: true };
+  const ligadoLonge = { id: 'e'.repeat(64), nome: 'ANA DO SITIO', enderecoFiscal: end('SITIO X', 'S/N', 'IGACI'), ehCliente: true, codigoErp: '555' };
+  const casar = criarCasador([ligadoLonge, naPorta, { id: '555', nome: 'ANA DO SITIO', enderecoFiscal: end('RUA NOVA', '1', 'IGACI') }]);
+  assert.equal(casar(d).id, naPorta.id);
+});
+
+test('Consumidor Final da base não herda pelo nome o pedido de uma revendedora de outra porta', () => {
+  const casar = criarCasador([
+    { id: '9000001', nome: 'LUCIA DO SITE', enderecoFiscal: end('RUA DA LUCIA', '5'), papel: 'Consumidor Final' },
+  ]);
+  const outraPorta = casar({ nome: 'LUCIA DO SITE', cidade: 'QUEBRANGULO', logradouro: 'RUA DA REVENDEDORA', numero: '9' });
+  assert.equal(outraPorta.noCadastro, false);
+  const naPorta = casar({ nome: 'LUCIA DO SITE', cidade: 'QUEBRANGULO', logradouro: 'RUA DA LUCIA', numero: '5' });
+  assert.equal(naPorta.id, '9000001');
+});

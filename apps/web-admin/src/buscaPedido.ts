@@ -9,7 +9,7 @@ import { formatarDia, normalizar, type Pedido } from '@rota/shared';
  * letras procura no nome da cliente, sem acento nem caixa.
  */
 export function casaBusca(
-  pedido: Pick<Pedido, 'numeroPedido' | 'numeroNota' | 'romaneio'> & { id: string; serie?: number },
+  pedido: Pick<Pedido, 'numeroPedido' | 'numeroNota' | 'romaneio' | 'codigoExterno'> & { id: string; serie?: number },
   nomeCliente: string,
   termo: string,
 ): boolean {
@@ -29,7 +29,11 @@ export function casaBusca(
     if (!digitos) return true;
     // O pedido do site, como a folha imprime ("160000001-1"): juntar os
     // dígitos dava "1600000011", que não está dentro de "160000001-1".
-    const comHifen = /^\d+\s*-\s*\d{1,4}$/.test(t) && pedido.id.includes(t.replace(/\s/g, ''));
+    // Também o que entrou primeiro pela PLANILHA: lá o id é o código do ERP e
+    // o do site fica em `codigoExterno`.
+    const comHifen =
+      /^\d+\s*-\s*\d{1,4}$/.test(t) &&
+      [pedido.id, pedido.codigoExterno ?? ''].some((c) => c.includes(t.replace(/\s/g, '')));
     return (
       comHifen ||
       (pedido.numeroPedido ?? '').includes(digitos) ||

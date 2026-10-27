@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Importacao } from './telas/Importacao';
 import { Decisoes } from './telas/Decisoes';
 import { Pedidos } from './telas/Pedidos';
@@ -8,6 +8,7 @@ import { Rotas } from './telas/Rotas';
 import { Login } from './telas/Login';
 import { useAutenticacao } from './useAutenticacao';
 import { useAtualizacao } from './useAtualizacao';
+import { alteracoesPendentes, confirmarDescarte } from './alteracoesPendentes';
 
 type Aba = 'importacao' | 'decisoes' | 'rotas' | 'pedidos' | 'clientes' | 'produtividade';
 
@@ -31,6 +32,18 @@ export function App() {
   const [aba, setAba] = useState<Aba>('importacao');
   const atualizacao = useAtualizacao();
   const { usuario, papel, ehEscritorio, carregando, entrar, sair } = useAutenticacao();
+
+  // Fechar ou recarregar a página com dados de cliente digitados e não
+  // salvos: o navegador pergunta antes (ver `alteracoesPendentes`).
+  useEffect(() => {
+    const aoSair = (evento: BeforeUnloadEvent) => {
+      if (alteracoesPendentes() === 0) return;
+      evento.preventDefault();
+      evento.returnValue = '';
+    };
+    window.addEventListener('beforeunload', aoSair);
+    return () => window.removeEventListener('beforeunload', aoSair);
+  }, []);
 
   if (carregando) {
     return <div className="tela-login"><div className="sub">CARREGANDO…</div></div>;
@@ -92,7 +105,7 @@ export function App() {
             {usuario.email}
             {papel && ` · ${ROTULO_PAPEL[papel] ?? papel}`}
           </span>
-          <button onClick={() => void sair()}>Sair</button>
+          <button onClick={() => confirmarDescarte() && void sair()}>Sair</button>
         </div>
       </header>
 
@@ -102,7 +115,8 @@ export function App() {
             key={a.id}
             role="tab"
             aria-selected={aba === a.id}
-            onClick={() => setAba(a.id)}
+            // Trocar de aba desmonta a tela inteira — e o formulário digitado.
+            onClick={() => (a.id === aba || confirmarDescarte()) && setAba(a.id)}
           >
             {a.rotulo}
           </button>

@@ -149,6 +149,10 @@ export interface Repositorio {
   /** Revendedoras com este nome (`chaveDeNome`) em QUALQUER cidade — consulta
    * por faixa da `chave` ("NOME|…"), até `limite`. */
   revendedorasComNome(nome: string, limite: number): Promise<Array<{ id: string } & Revendedora>>;
+  /** Grava SÓ o `romaneio` destes pedidos (os que não existem mais são
+   * pulados) — gravar o doc inteiro lido antes desfazia outro campo mudado
+   * no meio. */
+  anotarRomaneio(registros: Array<{ id: string; romaneio: string }>): Promise<void>;
   /** `clienteId` dos pedidos que esperam ponto. É exatamente a fila da
    * localização: pedido só fica `pendente_de_mapeamento` porque o cliente não
    * tem coordenada, e quem só faz retirada nunca entra (a operação não paga
@@ -255,6 +259,42 @@ export interface Revendedora {
    * trocaria o endereço novo pelo velho.
    */
   dadosDe: string | null;
+  /**
+   * O que cada FONTE disse desta pessoa; os campos de cima são calculados
+   * daqui por uma regra fixa (`consolidarRevendedora`). Juntar registro com
+   * registro, aos pares, perdia de onde cada campo tinha vindo: a base mudava
+   * conforme a ORDEM das cargas (806 registros diferentes entre duas ordens) e
+   * recarregar o mesmo arquivo regravava centenas, oscilando entre dois
+   * estados. Ausente = registro gravado antes desta forma.
+   */
+  fontes?: FontesDaRevendedora;
+}
+
+/** Uma fonte de dado da revendedora. */
+export interface FonteRevendedora {
+  nome: string;
+  /** Válidos, normalizados, na ordem de preferência DA FONTE (no cadastro: a
+   * coluna do celular antes da do residencial). */
+  telefones: string[];
+  papel: string | null;
+  endereco: EnderecoFiscal;
+  referencia: string;
+  pin: GeoPonto | null;
+  /** Data do pedido; null no cadastro. */
+  data: string | null;
+  /** Código do pedido: desempata dois pedidos da mesma data. */
+  codigo?: string;
+  /** Só o cadastro tem. */
+  situacao?: string | null;
+}
+
+export interface FontesDaRevendedora {
+  /** O cadastro de revendedoras do ERP (vale o último carregado). */
+  cadastro?: FonteRevendedora;
+  /** O pedido de ENTREGA mais novo: o endereço onde ela recebeu. */
+  pedido?: FonteRevendedora;
+  /** O pedido de RETIRADA mais novo: o bloco dele é o do cadastro (residencial). */
+  retirada?: FonteRevendedora;
 }
 
 /** Clientes que o motorista da rota precisa ler (paradas e exceções). */
@@ -537,6 +577,13 @@ export class RepositorioMemoria implements Repositorio {
       const r = this.revendedoras.get(id);
       return r ? [{ ...r, id }] : [];
     });
+  }
+
+  async anotarRomaneio(registros: Array<{ id: string; romaneio: string }>): Promise<void> {
+    for (const { id, romaneio } of registros) {
+      const p = this.pedidos.get(id);
+      if (p) this.pedidos.set(id, { ...p, romaneio });
+    }
   }
 
   async revendedorasComNome(nome: string, limite: number): Promise<Array<{ id: string } & Revendedora>> {

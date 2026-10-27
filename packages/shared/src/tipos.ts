@@ -113,6 +113,12 @@ export interface Cliente {
    * pedidos desse código para ESTE cliente, que tem o que foi aprendido em campo.
    */
   codigoErp?: string | null;
+  /**
+   * O Admin Estoque APAGOU o telefone (número errado — a homônima escolhida
+   * por engano). Importação e carga da base não o preenchem de novo como se
+   * faltasse; digitar um telefone novo tira a marca.
+   */
+  telefoneApagado?: boolean;
 }
 
 export interface ItemPedido {
@@ -363,6 +369,9 @@ export interface ExcecaoRota {
   volumes: number;
   pesoBrutoKg: number;
   quantidadeMateriais?: number;
+  /** Lista da NF-e, quando o pedido veio do XML. Sem ela, a exceção entregue
+   * contava na produtividade como "sem quantidade de itens". */
+  itens?: ItemPedido[];
   status: StatusPedido;
   baixaNoPainel?: BaixaNoPainel;
 }
@@ -746,6 +755,8 @@ export interface ClienteACompletar {
   endereco: string;
   telefone: string | null;
   observacoes: string;
+  /** Revendedora que o Admin já reconheceu como este cliente ("É ela"). */
+  codigoErp?: string | null;
 }
 
 /**

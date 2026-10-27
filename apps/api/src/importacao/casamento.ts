@@ -50,7 +50,14 @@ type ClienteCasavel = { id: string } & Pick<Cliente, 'nome' | 'enderecoFiscal'> 
   ehCliente?: boolean;
   /** Código do ERP que o Admin Estoque reconheceu ("É ela"). */
   codigoErp?: string | null;
+  /** "Consumidor Final" é cliente do SITE, não revendedora: ver a regra 2. */
+  papel?: string | null;
 };
+
+/** Cliente do site cadastrado no ERP (vem pela planilha com código numérico). */
+function ehConsumidorFinal(c: ClienteCasavel): boolean {
+  return normalizar(c.papel ?? '') === 'CONSUMIDOR FINAL';
+}
 
 /** Nome para comparar: sem acento, caixa, pontuação nem números ("98.765"). */
 export function chaveDeNome(nome: string): string {
@@ -132,8 +139,13 @@ export function criarCasador(candidatos: ClienteCasavel[]): (d: Destinataria) =>
    */
   const daBase = (codigo: string, nome: string, d: Destinataria): Casamento => {
     if (clientes.has(codigo)) return { id: codigo, nome, noCadastro: true, codigo };
-    const jaEra = ligados.get(codigo) ?? porId.get(idSemCadastro(d));
-    if (jaEra && clientes.has(jaEra.id)) return { id: jaEra.id, nome: jaEra.nome, noCadastro: true, codigo };
+    // A MESMA PORTA antes da ligação: ligada a um cliente de outra porta (ela
+    // se mudou, ou o Admin ligou dois), o pedido da porta nova ia para o
+    // cliente da velha — revisão falsa, ou o endereço trocado em silêncio.
+    const naPorta = porId.get(idSemCadastro(d));
+    if (naPorta && clientes.has(naPorta.id)) return { id: naPorta.id, nome: naPorta.nome, noCadastro: true, codigo };
+    const ligado = ligados.get(codigo);
+    if (ligado) return { id: ligado.id, nome: ligado.nome, noCadastro: true, codigo };
     return { id: codigo, nome, noCadastro: true, codigo };
   };
   const mesmaPorta = (c: ClienteCasavel, d: Destinataria) =>
@@ -153,8 +165,12 @@ export function criarCasador(candidatos: ClienteCasavel[]): (d: Destinataria) =>
     // de um romaneio: importado o cadastro depois, a revendedora passa a casar
     // com o registro dela, que tem telefone.
     const doErp = candidatos.filter((c) => DO_ERP.test(c.id));
-    // Pedido do site: só a mesma porta prova que é a revendedora.
-    if (doErp.length === 1 && !d.doSite) return daBase(doErp[0]!.id, doErp[0]!.nome, d);
+    // Pedido do site: só a mesma porta prova que é a revendedora. E do outro
+    // lado também: a Consumidor Final da planilha não herda, pelo nome, o
+    // pedido de uma revendedora homônima.
+    if (doErp.length === 1 && !d.doSite && !ehConsumidorFinal(doErp[0]!)) {
+      return daBase(doErp[0]!.id, doErp[0]!.nome, d);
+    }
     if (doErp.length >= 1) {
       const naPorta = doErp.filter((c) => mesmaPorta(c, d));
       if (naPorta.length === 1) return daBase(naPorta[0]!.id, naPorta[0]!.nome, d);

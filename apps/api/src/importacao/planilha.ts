@@ -529,12 +529,12 @@ function pesoKg(bruto: string): number | null {
 }
 
 /** `"Tipo de Entrega"` → `tipodeentrega`. O range de diacríticos vai como
- * ESCAPE (`̀-ͯ`), nunca como caractere literal: o literal já se
+ * ESCAPE (`\u0300-\u036f`), nunca como caractere literal: o literal já se
  * corrompeu numa edição e a normalização passou a devolver lixo em silêncio. */
 export function normalizar(s: string): string {
   return s
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '');
 }

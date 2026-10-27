@@ -71,7 +71,7 @@ test('cadastro: lê as DUAS abas, código sem pontos, e não lê CPF nem anivers
   );
   assert.ok(r.ok, !r.ok ? r.motivo : '');
   assert.deepEqual(r.linhas.map((l) => l.codigo), ['70000002', '98765']);
-  assert.equal(r.linhas[0]!.telefone, '(82) 99999-1234');
+  assert.deepEqual(r.linhas[0]!.telefones, ['(82) 99999-1234']);
   assert.equal(r.linhas[0]!.endereco.complemento, '43 CASA');
   const tudo = JSON.stringify(r.linhas);
   assert.ok(!tudo.includes('123.456.789'), 'CPF não pode sair do leitor');
@@ -93,8 +93,8 @@ test('cadastro: CPF digitado no telefone ou no nome, e e-mail no nome, não saem
   );
   assert.ok(r.ok);
   assert.deepEqual(r.linhas.map((l) => l.codigo), ['70000002', '4']);
-  assert.equal(r.linhas[0]!.telefone, '(82) 3333-4444');
-  assert.equal(r.linhas[1]!.telefone, null);
+  assert.deepEqual(r.linhas[0]!.telefones, ['(82) 3333-4444']);
+  assert.deepEqual(r.linhas[1]!.telefones, []);
   const tudo = JSON.stringify(r.linhas);
   assert.ok(!tudo.includes('123.456.789') && !tudo.includes('12345678') && !tudo.includes('@'));
 });

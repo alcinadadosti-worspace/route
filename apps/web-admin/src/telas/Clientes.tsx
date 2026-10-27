@@ -3,6 +3,7 @@ import { normalizar, quantidadeDeItens, type Cliente, type Pedido } from '@rota/
 import { listarClientes, listarPedidos, refazerPontoDoCliente } from '../api';
 import { FotoReferencia } from '../FotoReferencia';
 import { CompletarDados } from '../CompletarDados';
+import { confirmarDescarte } from '../alteracoesPendentes';
 
 /** Status em que há um ponto para refazer (RF-23). */
 const TEM_PONTO = new Set(['mapeado', 'geocodificado', 'aproximado']);
@@ -85,8 +86,10 @@ export function Clientes() {
   // Completado o último, a lista inteira volta sozinha — e não uma tabela vazia.
   const soEsses = soACompletar && aCompletar > 0;
   const q = normalizar(filtro.trim());
+  // O cliente em edição fica na lista mesmo que o filtro o esconda: sumir da
+  // tabela desmontava o formulário e descartava o que foi digitado.
   const filtrados = clientes.filter(
-    (c) => (!soEsses || c.completarDados) && (!q || normalizar(c.nome).includes(q)),
+    (c) => c.id === editando || ((!soEsses || c.completarDados) && (!q || normalizar(c.nome).includes(q))),
   );
 
   return (
@@ -167,6 +170,8 @@ export function Clientes() {
                         title="Completar ou corrigir telefone e referência"
                         onClick={(evento) => {
                           evento.stopPropagation();
+                          // Abrir outro (ou fechar este) desmonta o formulário aberto.
+                          if (editando !== null && !confirmarDescarte()) return;
                           setEditando(editando === c.id ? null : c.id);
                         }}
                       >
@@ -207,6 +212,7 @@ export function Clientes() {
                             endereco: `${e.logradouro}, ${e.numero} — ${e.bairro}, ${e.municipio}/${e.uf}`,
                             telefone: c.telefone,
                             observacoes: c.observacoes,
+                            codigoErp: c.codigoErp ?? null,
                           }}
                           pendente={c.completarDados === true}
                           aoConcluir={(atualizado) => {
