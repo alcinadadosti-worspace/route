@@ -1,3 +1,4 @@
+import { Girando } from '../Carregando';
 import { useState, type FormEvent } from 'react';
 import { FirebaseError } from 'firebase/app';
 import { mensagemDeErroAuth } from '../useAutenticacao';
@@ -51,7 +52,7 @@ export function Login({ entrar }: { entrar: (email: string, senha: string) => Pr
         {erro && <div className="erro">{erro}</div>}
 
         <button type="submit" className="primaria" disabled={enviando}>
-          {enviando ? 'ENTRANDO…' : 'ENTRAR'}
+          {enviando ? <Girando texto="ENTRANDO…" /> : 'ENTRAR'}
         </button>
         <div className="nota">Contas são criadas pelo administrador — sem autocadastro.</div>
       </form>

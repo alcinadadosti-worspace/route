@@ -1,3 +1,4 @@
+import { BuscaNaBase } from '../BuscaNaBase';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { normalizar, quantidadeDeItens, type Cliente, type Pedido } from '@rota/shared';
 import { listarClientes, listarPedidos, refazerPontoDoCliente } from '../api';
@@ -60,6 +61,9 @@ export function Clientes() {
     return mapa;
   }, [pedidos]);
 
+  /** Cliente com o ponto sendo refeito: o ↺ dele gira (a busca leva segundos). */
+  const [refazendo, setRefazendo] = useState<string | null>(null);
+
   async function refazerPonto(c: { id: string } & Cliente) {
     if (
       !window.confirm(
@@ -72,6 +76,7 @@ export function Clientes() {
       return;
     }
     setErro(null);
+    setRefazendo(c.id);
     try {
       await refazerPontoDoCliente(c.id);
       const [cs, ps] = await Promise.all([listarClientes(), listarPedidos()]);
@@ -79,6 +84,8 @@ export function Clientes() {
       setPedidos(ps);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao refazer o ponto');
+    } finally {
+      setRefazendo(null);
     }
   }
 
@@ -95,6 +102,7 @@ export function Clientes() {
   return (
     <section className="cartao">
       <h2>Clientes</h2>
+      <BuscaNaBase clientesNaLista={clientes.length} />
       {clientes.length > 0 && (
         <input
           type="search"
@@ -191,12 +199,13 @@ export function Clientes() {
                           className="apagar"
                           style={{ marginLeft: 8 }}
                           title="Descartar o ponto e reclassificar pelo endereço"
+                          disabled={refazendo !== null}
                           onClick={(evento) => {
                             evento.stopPropagation();
                             void refazerPonto(c);
                           }}
                         >
-                          ↺
+                          {refazendo === c.id ? <span className="giro pequeno so-giro" aria-hidden="true" /> : '↺'}
                         </button>
                       )}
                     </td>

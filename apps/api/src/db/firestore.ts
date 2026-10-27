@@ -147,6 +147,11 @@ class RepositorioFirestore implements Repositorio {
     return { ids: new Set(resposta.docs.map((d) => d.id)), idPorNumero };
   }
 
+  async contarPedidosComStatus(status: StatusPedido): Promise<number> {
+    const r = await this.pedidos.where('status', '==', status).count().get();
+    return r.data().count;
+  }
+
   async pedidosComStatus(status: StatusPedido): Promise<Array<{ id: string } & Pedido>> {
     const r = await this.pedidos.where('status', '==', status).get();
     return r.docs.map((d) => ({ ...(d.data() as Pedido), id: d.id }));
@@ -260,6 +265,22 @@ class RepositorioFirestore implements Repositorio {
           }),
       ),
     );
+  }
+
+  async revendedorasComecandoCom(prefixo: string, limite: number): Promise<Array<{ id: string } & Revendedora>> {
+    // Mesma faixa de `revendedorasComNome`, sem o "|": "MARIA JOSE" acha
+    // "MARIA JOSE|…", "MARIA JOSE DA SILVA|…" e "MARIA JOSEFA|…".
+    const r = await this.db
+      .collection('revendedoras')
+      .where('chave', '>=', prefixo)
+      .where('chave', '<', `${prefixo}~`)
+      .limit(limite)
+      .get();
+    return r.docs.map((d) => ({ ...(d.data() as Revendedora), id: d.id }));
+  }
+
+  async contarRevendedoras(): Promise<number> {
+    return (await this.db.collection('revendedoras').count().get()).data().count;
   }
 
   async revendedorasComNome(nome: string, limite: number): Promise<Array<{ id: string } & Revendedora>> {

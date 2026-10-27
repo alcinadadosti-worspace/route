@@ -1,3 +1,4 @@
+import { Girando } from '../Carregando';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type {
   ProdutividadeMotorista,
@@ -102,7 +103,7 @@ export function Produtividade() {
           onClick={() => (mudouPeriodo ? setPeriodo({ desde, ate }) : carregar(periodo))}
           disabled={carregando}
         >
-          {carregando ? 'CARREGANDO…' : mudouPeriodo ? 'VER ESTE PERÍODO' : 'Atualizar'}
+          {carregando ? <Girando texto="CARREGANDO…" /> : mudouPeriodo ? 'VER ESTE PERÍODO' : 'Atualizar'}
         </button>
       </div>
 

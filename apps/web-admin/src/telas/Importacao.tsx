@@ -207,15 +207,42 @@ export function Importacao() {
     }
   }
 
+  // Localizar no mapa: passo próprio (é PAGO), disponível sempre que há entrega
+  // sem ponto — inclusive a liberada em "Fora da montagem".
+  const botaoLocalizar = (
+    <button
+      className="primaria"
+      disabled={localizando !== null || enviando !== null || (naFila ?? 0) === 0}
+      onClick={() => void localizar()}
+    >
+      {localizando ? (
+        <>
+          <span className="giro pequeno" aria-hidden="true" />
+          Localizando… {localizando.feitos} feito(s), {localizando.restantes} na fila
+        </>
+      ) : (
+        `📍 Localizar endereços no mapa${naFila ? ` (${naFila} sem ponto)` : ''}`
+      )}
+    </button>
+  );
+  const resultadoDaLocalizacao = ultimaLocalizacao && !localizando && (
+    <div className="sucesso" style={{ marginTop: 8 }}>
+      Localização concluída: {ultimaLocalizacao.feitos} endereço(s) ganharam ponto
+      {ultimaLocalizacao.semResultado > 0 &&
+        ` · ${ultimaLocalizacao.semResultado} a busca não achou (vão como exceção da cidade, ou se mapeiam em campo)`}
+      . Monte a rota na aba Rotas.
+    </div>
+  );
+
   return (
     <section className="cartao">
       <h2>Importação do dia</h2>
       <p style={{ color: 'var(--texto-2)' }}>
-        Arraste os <strong>romaneios em PDF</strong> da Plataforma Logística do Boticário — ou clique para selecionar.
-        Quando a rota vem em <strong>mais de um romaneio</strong>, mande todos: juntos ou um de cada vez, eles se
-        somam na lista abaixo. Só depois de mandar todos, clique em <strong>Localizar endereços no mapa</strong>. O CD
-        sai do motorista da folha: Caique Santos = Palmeira dos Índios, Paulo Rogério Santos = Penedo. Reenviar a
-        mesma folha é inócuo — o pedido repetido é ignorado.
+        Arraste o <strong>romaneio em PDF</strong> da Plataforma Logística do Boticário — ou clique para selecionar.
+        Se a rota vem em <strong>mais de um romaneio</strong>, acrescente os outros com o botão{' '}
+        <strong>＋ Adicionar romaneio</strong>; quando tiver mandado todos, clique em{' '}
+        <strong>Localizar endereços no mapa</strong>. O CD sai do motorista da folha: Caique Santos = Palmeira dos
+        Índios, Paulo Rogério Santos = Penedo. Reenviar a mesma folha é inócuo — o pedido repetido é ignorado.
       </p>
       {/* O cadastro fica guardado no banco: pedir que ele acompanhe todo
           romaneio fazia parecer obrigatório um arquivo que se manda uma vez. */}
@@ -226,72 +253,65 @@ export function Importacao() {
         ConsultaPedidos e os XMLs de NF-e continuam aceitos.
       </p>
 
-      {/* Durante o envio a zona não aceita outro: uma segunda importação em
-          paralelo dobrava as leituras, e a que terminasse por último trocava o
-          relatório — e os alertas — da outra. */}
-      <div
-        className={`zona-upload${arrastando ? ' ativa' : ''}${enviando ? ' enviando' : ''}`}
-        aria-disabled={enviando !== null}
-        aria-busy={enviando !== null}
-        onClick={() => !enviando && inputRef.current?.click()}
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (!enviando) setArrastando(true);
-        }}
-        onDragLeave={() => setArrastando(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setArrastando(false);
-          if (!enviando) void enviar(e.dataTransfer.files);
-        }}
-      >
-        {enviando ? (
-          <>
-            <div className="processando" role="status" aria-live="polite">
-              <span className="giro" aria-hidden="true" />
-              <div>
-                <strong>
-                  Processando {enviando.arquivos.length} arquivo(s)… {segundos} s
-                </strong>
-                <div className="processando-detalhe">{enviando.arquivos.join(' · ')}</div>
-                <div className="processando-detalhe">
-                  {segundos >= 15
-                    ? 'O servidor pode levar até 1 minuto para acordar — continue com a tela aberta.'
-                    : 'Lendo as folhas e cruzando com a base de revendedoras…'}
-                </div>
-              </div>
-            </div>
-            <div className="barra-indeterminada" aria-hidden="true">
-              <span />
-            </div>
-          </>
-        ) : envios.length > 0 ? (
-          'SOLTE MAIS ROMANEIOS DESTA ROTA AQUI'
-        ) : (
-          'SOLTE OS ROMANEIOS (PDF) AQUI'
-        )}
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".pdf,.xml,.xlsx"
-          multiple
-          hidden
-          onChange={(e) => void enviar(e.target.files)}
-        />
-      </div>
+      {/* O seletor de arquivo, um só para a zona grande e para o "+". */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".pdf,.xml,.xlsx"
+        multiple
+        hidden
+        onChange={(e) => void enviar(e.target.files)}
+      />
+
+      {/* Antes do primeiro envio: a zona grande. Depois, ela dá lugar ao
+          cartão da rota com o "+" — o usuário pediu um botão claro para
+          acrescentar o romaneio seguinte, não "solte de novo na zona". */}
+      {envios.length === 0 && (
+        <div
+          className={`zona-upload${arrastando ? ' ativa' : ''}${enviando ? ' enviando' : ''}`}
+          aria-disabled={enviando !== null}
+          aria-busy={enviando !== null}
+          onClick={() => !enviando && inputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!enviando) setArrastando(true);
+          }}
+          onDragLeave={() => setArrastando(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setArrastando(false);
+            if (!enviando) void enviar(e.dataTransfer.files);
+          }}
+        >
+          {enviando ? <Processando arquivos={enviando.arquivos} segundos={segundos} /> : 'SOLTE OS ROMANEIOS (PDF) AQUI'}
+        </div>
+      )}
 
       {(erro ?? erroDoEnvio) && <div className="erro">{erro ?? erroDoEnvio}</div>}
 
-      {/* O que JÁ entrou neste lote: com a rota em vários romaneios, é aqui
-          que se confere que todos chegaram antes de localizar e montar. */}
+      {/* O cartão da rota: o que JÁ entrou, o "+" para o romaneio seguinte e o
+          Localizar — tudo junto, na ordem em que se faz. Aceita soltar PDF
+          em cima também. */}
       {envios.length > 0 && (
-        <div className="lote-importacao">
+        <div
+          className={`lote-importacao${arrastando ? ' ativa' : ''}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!enviando) setArrastando(true);
+          }}
+          onDragLeave={() => setArrastando(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setArrastando(false);
+            if (!enviando) void enviar(e.dataTransfer.files);
+          }}
+        >
           <div className="lote-cabecalho">
             <strong>
-              Enviados nesta rota: {relatorio?.romaneios ?? 0} romaneio(s)
+              Romaneios desta rota: {relatorio?.romaneios ?? 0}
               {pacotes > 0 ? ` · ${pacotes} pacote(s)` : ''} · {relatorio?.importados ?? 0} pedido(s) novo(s)
             </strong>
-            <button className="ligacao alvo-toque" disabled={enviando !== null} onClick={comecarOutraRota}>
+            <button className="ligacao alvo-toque" disabled={enviando !== null || localizando !== null} onClick={comecarOutraRota}>
               Começar outra rota
             </button>
           </div>
@@ -303,40 +323,29 @@ export function Importacao() {
               </li>
             ))}
           </ul>
+          {enviando && <Processando arquivos={enviando.arquivos} segundos={segundos} />}
+          <div className="lote-acoes">
+            <button disabled={enviando !== null || localizando !== null} onClick={() => inputRef.current?.click()}>
+              ＋ Adicionar romaneio
+            </button>
+            {botaoLocalizar}
+          </div>
+          {!localizando && !ultimaLocalizacao && (
+            <div className="decisao-aviso" style={{ marginTop: 8 }}>
+              A rota tem mais romaneios? Adicione com o ＋. Mandou todos? Localize os endereços — depois a rota se monta
+              na aba Rotas.
+            </div>
+          )}
+          {resultadoDaLocalizacao}
         </div>
       )}
 
-      {/* Localizar no mapa: passo próprio (é PAGO), disponível sempre que há
-          entrega sem ponto — inclusive a liberada em "Fora da montagem". */}
-      {(localizando || (naFila ?? 0) > 0 || ultimaLocalizacao) && (
+      {/* Sem lote nesta tela, mas com entrega sem ponto (de outra sessão, ou
+          liberada em "Fora da montagem"): o Localizar continua à mão. */}
+      {envios.length === 0 && !enviando && (localizando || (naFila ?? 0) > 0 || ultimaLocalizacao) && (
         <div className="acoes-rota">
-          {envios.length > 0 && !localizando && !ultimaLocalizacao && (
-            <div className="decisao-aviso" style={{ marginBottom: 8 }}>
-              Já mandou todos os romaneios da rota? Localize os endereços — depois a rota se monta na aba Rotas.
-            </div>
-          )}
-          <button
-            className="primaria"
-            disabled={localizando !== null || enviando !== null || (naFila ?? 0) === 0}
-            onClick={() => void localizar()}
-          >
-            {localizando ? (
-              <>
-                <span className="giro pequeno" aria-hidden="true" />
-                Localizando… {localizando.feitos} feito(s), {localizando.restantes} na fila
-              </>
-            ) : (
-              `📍 Localizar endereços no mapa${naFila ? ` (${naFila} sem ponto)` : ''}`
-            )}
-          </button>
-          {ultimaLocalizacao && !localizando && (
-            <div className="sucesso" style={{ marginTop: 8 }}>
-              Localização concluída: {ultimaLocalizacao.feitos} endereço(s) ganharam ponto
-              {ultimaLocalizacao.semResultado > 0 &&
-                ` · ${ultimaLocalizacao.semResultado} a busca não achou (vão como exceção da cidade, ou se mapeiam em campo)`}
-              .
-            </div>
-          )}
+          {botaoLocalizar}
+          {resultadoDaLocalizacao}
         </div>
       )}
 
@@ -484,6 +493,32 @@ function Metrica({ valor, rotulo }: { valor: number; rotulo: string }) {
     <div className="metrica">
       <div className="valor">{valor}</div>
       <div className="rotulo">{rotulo}</div>
+    </div>
+  );
+}
+
+/** O "processando" do envio: giro, relógio e barra em movimento — parada por
+ * até 1 min (API acordando), a tela parecia travada. */
+function Processando({ arquivos, segundos }: { arquivos: string[]; segundos: number }) {
+  return (
+    <div className="processando-bloco">
+      <div className="processando" role="status" aria-live="polite">
+        <span className="giro" aria-hidden="true" />
+        <div>
+          <strong>
+            Processando {arquivos.length} arquivo(s)… {segundos} s
+          </strong>
+          <div className="processando-detalhe">{arquivos.join(' · ')}</div>
+          <div className="processando-detalhe">
+            {segundos >= 15
+              ? 'O servidor pode levar até 1 minuto para acordar — continue com a tela aberta.'
+              : 'Lendo as folhas e cruzando com a base de revendedoras…'}
+          </div>
+        </div>
+      </div>
+      <div className="barra-indeterminada" aria-hidden="true">
+        <span />
+      </div>
     </div>
   );
 }

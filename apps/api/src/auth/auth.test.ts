@@ -167,6 +167,16 @@ test('pedido do SITE (código com hífen, vindo do romaneio) se apaga e se decid
   await app.close();
 });
 
+test('o número da aba Decisões conta os pedidos esperando decisão — e é de ESCRITÓRIO', async () => {
+  const repo = new RepositorioMemoria();
+  const app = await criarApp({ repo, autenticador });
+  const vazio = await app.inject({ method: 'GET', url: '/api/decisoes/pendentes', headers: bearer('tk-admin') });
+  assert.deepEqual(JSON.parse(vazio.body), { total: 0 });
+  const motorista = await app.inject({ method: 'GET', url: '/api/decisoes/pendentes', headers: bearer('tk-motorista') });
+  assert.equal(motorista.statusCode, 403);
+  await app.close();
+});
+
 /* ---------- dados do cliente que o romaneio trouxe fora da base ---------- */
 
 test('completar dados do cliente é de ESCRITÓRIO: motorista → 403 nas duas rotas', async () => {

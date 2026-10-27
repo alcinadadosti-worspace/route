@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Cliente } from '@rota/shared';
-import { camposDosDados, candidatasDoCliente, salvarDadosDoCliente } from './dados-cliente.js';
+import { buscarNaBase, camposDosDados, candidatasDoCliente, salvarDadosDoCliente } from './dados-cliente.js';
 import { RepositorioMemoria, type Revendedora } from '../db/repositorio.js';
 
 function cliente(extra: Partial<Cliente> = {}): Cliente {
@@ -108,6 +108,18 @@ function rev(id: string, cidade: string, extra: Partial<Revendedora> = {}): { id
     },
   };
 }
+
+test('busca na base: pelo começo do nome (qualquer cidade) ou pelo código; termo curto não varre nada', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.gravarRevendedoras([
+    rev('1', 'IGACI'),
+    { id: '2', dados: { ...rev('2', 'PENEDO').dados, nome: 'MARIA DO SITE SANTOS', chave: 'MARIA DO SITE SANTOS|PENEDO' } },
+    { id: '3', dados: { ...rev('3', 'PENEDO').dados, nome: 'JOANA', chave: 'JOANA|PENEDO' } },
+  ]);
+  assert.deepEqual((await buscarNaBase(repo, 'maria do site')).map((c) => c.codigo).sort(), ['1', '2']);
+  assert.deepEqual((await buscarNaBase(repo, '3')).map((c) => c.nome), ['JOANA']);
+  assert.deepEqual(await buscarNaBase(repo, 'ma'), []);
+});
 
 test('candidatas: mesmo nome em qualquer cidade, a MESMA cidade primeiro; nome diferente não entra', async () => {
   const repo = new RepositorioMemoria();

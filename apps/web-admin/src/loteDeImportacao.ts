@@ -39,12 +39,12 @@ const OPCIONAIS = [
 ] as const;
 
 /**
- * Avisos que descrevem o ESTADO (a fila da busca), não o envio: de cada um
- * vale só o último — repetidos, a tela dizia "11 sem ponto" e "20 sem ponto"
- * ao mesmo tempo. "Fora da base" sai daqui: a tela o refaz com a soma.
+ * Avisos que a tela do lote refaz por conta própria: "Endereços a localizar"
+ * é o ESTADO da fila, e o botão Localizar já mostra o total (o aviso do último
+ * envio dizia "2 sem ponto" ao lado do botão com 11); "Fora da base" a tela
+ * recalcula com o lote inteiro.
  */
-const SO_O_ULTIMO = new Set(['Endereços a localizar']);
-const REFEITOS_NA_TELA = new Set(['Fora da base de revendedoras']);
+const REFEITOS_NA_TELA = new Set(['Endereços a localizar', 'Fora da base de revendedoras']);
 
 /** O relatório do lote inteiro, somando os envios na ordem. */
 export function somarEnvios(envios: Envio[]): RelatorioImportacao | null {
@@ -77,7 +77,6 @@ export function somarEnvios(envios: Envio[]): RelatorioImportacao | null {
     for (const c of r.clientesACompletar ?? []) aCompletar.set(c.id, c);
     for (const a of r.alertas ?? []) {
       if (REFEITOS_NA_TELA.has(a.nome)) continue;
-      if (SO_O_ULTIMO.has(a.nome)) soma.alertas = soma.alertas.filter((x) => x.nome !== a.nome);
       soma.alertas.push(a);
     }
   }

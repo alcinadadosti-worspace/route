@@ -53,6 +53,9 @@ export function Pedidos() {
       .finally(() => setCarregando(false));
   }, []);
 
+  /** Pedido sendo apagado: o ✕ dele gira até o servidor responder. */
+  const [apagando, setApagando] = useState<string | null>(null);
+
   async function apagar(p: { id: string } & Pedido) {
     // Some da tela para sempre: vale um passo de confirmação com o número da
     // nota, para não apagar a linha de baixo por engano. Em rota, o aviso diz
@@ -63,12 +66,15 @@ export function Pedidos() {
         : `Apagar a nota ${p.numeroNota}/${p.serie}? A importação dela é desfeita — mas, se ela vier de novo numa planilha importada (as do ERP se repetem), ela volta.`;
     if (!window.confirm(aviso)) return;
     setErro(null);
+    setApagando(p.id);
     try {
       const { rotaApagada } = await apagarPedido(p.id);
       setPedidos((atual) => atual.filter((outro) => outro.id !== p.id));
       if (rotaApagada) setAviso(`Era a última parada: a rota ${rotaApagada} também foi apagada.`);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao apagar');
+    } finally {
+      setApagando(null);
     }
   }
 
@@ -160,9 +166,10 @@ export function Pedidos() {
                         className="apagar"
                         title={`Apagar a nota ${p.numeroNota}`}
                         aria-label={`Apagar a nota ${p.numeroNota}`}
+                        disabled={apagando !== null}
                         onClick={() => void apagar(p)}
                       >
-                        ✕
+                        {apagando === p.id ? <span className="giro pequeno so-giro" aria-hidden="true" /> : '✕'}
                       </button>
                     )}
                   </td>

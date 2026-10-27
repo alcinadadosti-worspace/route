@@ -43,8 +43,8 @@ test('dois romaneios da MESMA rota, mandados um de cada vez, somam no lote', () 
   assert.equal(soma.romaneios, 2);
   assert.deepEqual(soma.porCd, { palmeira: 16 });
   assert.equal(soma.folhas?.length, 2);
-  // O aviso da fila vale o último — não "9" e "14" juntos.
-  assert.deepEqual(soma.alertas.map((x) => x.mensagem), ['14 sem ponto']);
+  // O aviso da fila sai: o botão Localizar já mostra o total — não "9" e "14" ao lado dele.
+  assert.deepEqual(soma.alertas, []);
   // A cliente do primeiro envio continua esperando dados.
   assert.deepEqual(soma.clientesACompletar?.map((c) => c.id), ['x']);
 });

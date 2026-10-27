@@ -108,6 +108,9 @@ export interface Repositorio {
   /** Pedidos num status — consulta filtrada, para não ler a coleção inteira a
    * cada lote da busca de endereço (eram ~600 leituras por lote). */
   pedidosComStatus(status: StatusPedido): Promise<Array<{ id: string } & Pedido>>;
+  /** Quantos pedidos num status — contagem no banco, sem trazer os documentos:
+   * o painel pergunta isto a cada minuto para o aviso da aba Decisões. */
+  contarPedidosComStatus(status: StatusPedido): Promise<number>;
   /** Clientes com estas latitudes exatas — para achar ponto repetido sem ler
    * a coleção inteira a cada lote da busca. */
   clientesNasLatitudes(lats: number[]): Promise<Array<{ id: string } & Cliente>>;
@@ -149,6 +152,11 @@ export interface Repositorio {
   /** Revendedoras com este nome (`chaveDeNome`) em QUALQUER cidade — consulta
    * por faixa da `chave` ("NOME|…"), até `limite`. */
   revendedorasComNome(nome: string, limite: number): Promise<Array<{ id: string } & Revendedora>>;
+  /** Revendedoras cujo nome (`chaveDeNome`) COMEÇA com o prefixo — a busca da
+   * aba Clientes na base de 40 mil, sem ler a base inteira. */
+  revendedorasComecandoCom(prefixo: string, limite: number): Promise<Array<{ id: string } & Revendedora>>;
+  /** Tamanho da base (contagem no banco, sem trazer os documentos). */
+  contarRevendedoras(): Promise<number>;
   /** Grava SÓ o `romaneio` destes pedidos (os que não existem mais são
    * pulados) — gravar o doc inteiro lido antes desfazia outro campo mudado
    * no meio. */
@@ -474,6 +482,10 @@ export class RepositorioMemoria implements Repositorio {
     return [...this.pedidos].filter(([, p]) => p.status === status).map(([id, p]) => ({ ...p, id }));
   }
 
+  async contarPedidosComStatus(status: StatusPedido): Promise<number> {
+    return [...this.pedidos.values()].filter((p) => p.status === status).length;
+  }
+
   async clientesNasLatitudes(lats: number[]): Promise<Array<{ id: string } & Cliente>> {
     const procuradas = new Set(lats);
     return [...this.clientes]
@@ -584,6 +596,18 @@ export class RepositorioMemoria implements Repositorio {
       const p = this.pedidos.get(id);
       if (p) this.pedidos.set(id, { ...p, romaneio });
     }
+  }
+
+  async revendedorasComecandoCom(prefixo: string, limite: number): Promise<Array<{ id: string } & Revendedora>> {
+    return [...this.revendedoras]
+      .filter(([, r]) => r.chave.startsWith(prefixo))
+      .sort(([, a], [, b]) => a.chave.localeCompare(b.chave))
+      .slice(0, limite)
+      .map(([id, r]) => ({ ...r, id }));
+  }
+
+  async contarRevendedoras(): Promise<number> {
+    return this.revendedoras.size;
   }
 
   async revendedorasComNome(nome: string, limite: number): Promise<Array<{ id: string } & Revendedora>> {

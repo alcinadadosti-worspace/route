@@ -1,3 +1,4 @@
+import { Girando } from '../Carregando';
 import { useEffect, useState } from 'react';
 import type { Cliente, EnderecoFiscal, GeoPonto, Pedido } from '@rota/shared';
 import { aguardandoEscolhaDeModo, quantidadeDeItens, retiradaDuvidosa } from '@rota/shared';
@@ -386,7 +387,7 @@ function CartaoMudancaEndereco({
           disabled={!escolha || salvando}
           onClick={() => void confirmar()}
         >
-          {salvando ? 'SALVANDO…' : 'CONFIRMAR'}
+          {salvando ? <Girando texto="SALVANDO…" /> : 'CONFIRMAR'}
         </button>
       </div>
     </div>
@@ -497,7 +498,7 @@ function CartaoDecisao({
           disabled={!escolha || salvando || (escolha === 'entrega' && !coordEntrega)}
           onClick={() => void confirmar()}
         >
-          {salvando ? 'SALVANDO…' : 'CONFIRMAR ESCOLHA'}
+          {salvando ? <Girando texto="SALVANDO…" /> : 'CONFIRMAR ESCOLHA'}
         </button>
       </div>
     </div>

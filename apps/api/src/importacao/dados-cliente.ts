@@ -141,6 +141,28 @@ export async function candidatasDoCliente(
   return { ok: true, candidatas: candidatas.map(candidata) };
 }
 
+/** Quantos resultados a busca devolve: é para achar UMA pessoa, não listar a base. */
+const MAX_NA_BUSCA = 50;
+
+/**
+ * Busca na base de revendedoras (40 mil, inclusive inativas), para a aba
+ * Clientes: ela só mostra quem já teve pedido, e o Admin não tinha como ver
+ * o resto do que os cadastros e planilhas trouxeram. Código (só dígitos) acha
+ * a pessoa daquele código; texto acha os nomes que COMEÇAM com ele.
+ */
+export async function buscarNaBase(repo: Repositorio, termo: string): Promise<RevendedoraCandidata[]> {
+  const t = termo.trim();
+  if (/^[\d.\s-]+$/.test(t)) {
+    const codigo = t.replace(/\D/g, '');
+    if (!/^\d{1,20}$/.test(codigo)) return [];
+    return (await repo.revendedorasPorIds([codigo])).map(candidata);
+  }
+  const prefixo = chaveDeNome(t);
+  if (prefixo.length < 3) return [];
+  const achadas = await repo.revendedorasComecandoCom(prefixo, MAX_NA_BUSCA);
+  return achadas.map(candidata);
+}
+
 function candidata(r: { id: string } & Revendedora): RevendedoraCandidata {
   return {
     codigo: r.id,

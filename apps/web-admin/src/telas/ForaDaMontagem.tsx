@@ -1,3 +1,4 @@
+import { Girando } from '../Carregando';
 import { useEffect, useMemo, useState } from 'react';
 import { formatarDia, type Cliente, type Pedido } from '@rota/shared';
 import { alterarLiberacao } from '../api';
@@ -253,7 +254,7 @@ export function ForaDaMontagem({
                 onClick={() => void aplicar()}
               >
                 {enviando
-                  ? 'GRAVANDO…'
+                  ? <Girando texto="GRAVANDO…" />
                   : vista === 'fora'
                     ? `LIBERAR${marcados.size ? ` ${marcados.size}` : ''} PARA A MONTAGEM`
                     : `DEVOLVER${marcados.size ? ` ${marcados.size}` : ''} PARA FORA DA MONTAGEM`}

@@ -13,7 +13,7 @@ import {
 import { importarPlanilha } from './importacao/servico-planilha.js';
 import { importarCadastro } from './importacao/servico-cadastro.js';
 import { importarRomaneios } from './importacao/servico-romaneio.js';
-import { candidatasDoCliente, salvarDadosDoCliente } from './importacao/dados-cliente.js';
+import { buscarNaBase, candidatasDoCliente, salvarDadosDoCliente } from './importacao/dados-cliente.js';
 import { localizarEnderecos } from './importacao/geocodificacao-lote.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
 import { alterarLiberacao } from './rotas/liberacao.js';
@@ -249,6 +249,14 @@ export async function criarApp({
 
   app.get('/api/pedidos', { config: { papeis: ESCRITORIO } }, async () => repo.listarPedidos());
 
+  // O número no ícone da aba Decisões: pedidos esperando o Admin Estoque (o
+  // endereço mudou num cliente que já tinha ponto; rota ou retirada a
+  // confirmar). Sem ele, a pendência ficava escondida numa aba que ninguém
+  // abria — e o pedido não entrava em rota nenhuma.
+  app.get('/api/decisoes/pendentes', { config: { papeis: ESCRITORIO } }, async () => ({
+    total: await repo.contarPedidosComStatus('pendente_de_decisao'),
+  }));
+
   // Seção 8.4: Admin Estoque resolve a ambiguidade de endereço (entrega em local
   // diverso). Escolhe fiscal ou entrega; a escolha vira override no pedido, sem
   // tocar o cadastro do cliente. `coordenada` (opcional) é o pin ajustado no mapa.
@@ -393,6 +401,16 @@ export async function criarApp({
     if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
     return resultado.candidatas;
   });
+
+  // A base de revendedoras na aba Clientes: só por busca (nome ou código) —
+  // a coleção tem 40 mil, e listá-la inteira esgotaria a cota do banco.
+  app.get('/api/revendedoras', { config: { papeis: ESCRITORIO } }, async (req) => {
+    const { busca } = req.query as { busca?: string };
+    return buscarNaBase(repo, String(busca ?? '').slice(0, 100));
+  });
+  app.get('/api/revendedoras/total', { config: { papeis: ESCRITORIO } }, async () => ({
+    total: await repo.contarRevendedoras(),
+  }));
 
   app.get('/api/cds', { config: { papeis: ESCRITORIO } }, async () => repo.obterCds());
 

@@ -1,3 +1,5 @@
+import { Girando } from '../Carregando';
+import { motoristasParaRota } from '../motoristas';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   diaEmAlagoas,
@@ -104,6 +106,9 @@ export function Rotas() {
   const [motoristaId, setMotoristaId] = useState('');
   const [publicando, setPublicando] = useState(false);
   const [apagandoLote, setApagandoLote] = useState(false);
+  /** Ação de UMA linha em curso (desfazer rota, apagar pedido): o botão dela
+   * gira — leva segundos, e o ✕ parado parecia não ter pegado. */
+  const [trabalhando, setTrabalhando] = useState<string | null>(null);
   const [publicada, setPublicada] = useState<string | null>(null);
   const [rotas, setRotas] = useState<Array<{ id: string } & Rota>>([]);
   /** Rota expandida no acompanhamento, para ver parada a parada. */
@@ -171,10 +176,7 @@ export function Rotas() {
         // TODOS ficam guardados para dar nome às rotas antigas: filtrar aqui
         // fazia a rota de um motorista desativado exibir o uid cru para sempre.
         setUsuarios(us);
-        const ativos = us.filter((u) => u.ativo);
-        setMotoristaId(
-          (atual) => atual || (ativos.find((u) => u.papel === 'motorista') ?? ativos[0])?.id || '',
-        );
+        setMotoristaId((atual) => atual || motoristasParaRota(us)[0]?.id || '');
         setRotas(rs);
       })
       .catch((e) => setErro(e instanceof Error ? e.message : 'Falha ao carregar'));
@@ -632,6 +634,7 @@ export function Rotas() {
     }
     setErro(null);
     setAviso(null);
+    setTrabalhando(r.id);
     try {
       await apagarRota(r.id);
       // Dizer PARA ONDE os pedidos foram. Sem isto, eles reaparecem sozinhos na
@@ -646,6 +649,8 @@ export function Rotas() {
       recarregarTudo();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao desfazer a rota');
+    } finally {
+      setTrabalhando(null);
     }
   }
 
@@ -669,11 +674,14 @@ export function Rotas() {
     }
     setErro(null);
     setAviso(null);
+    setTrabalhando(p.id);
     try {
       await apagarPedido(p.id);
       recarregarTudo();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao apagar');
+    } finally {
+      setTrabalhando(null);
     }
   }
 
@@ -984,12 +992,13 @@ export function Rotas() {
                             className="apagar"
                             title="Desfazer esta rota"
                             aria-label={`Desfazer a rota ${r.id}`}
+                            disabled={trabalhando !== null}
                             onClick={(evento) => {
                               evento.stopPropagation();
                               void desfazerRota(r);
                             }}
                           >
-                            ✕
+                            {trabalhando === r.id ? <span className="giro pequeno so-giro" aria-hidden="true" /> : '✕'}
                           </button>
                         )}
                       </td>
@@ -1026,7 +1035,7 @@ export function Rotas() {
                           ))}
                           <div className="barra-rota">
                             <button disabled={gerandoPdf === r.id} onClick={() => void baixarPdf(r)}>
-                              {gerandoPdf === r.id ? 'GERANDO…' : '📄 Baixar PDF'}
+                              {gerandoPdf === r.id ? <Girando texto="GERANDO…" /> : '📄 Baixar PDF'}
                             </button>
                             {/* Pelo que falta, não pelo status: rota fechada no
                                 app com parada por entregar também precisa. */}
@@ -1170,7 +1179,7 @@ export function Rotas() {
                           {Object.keys(marcasBaixa).length > 0 && (
                             <div className="barra-rota">
                               <button className="primaria" disabled={baixando} onClick={() => void registrarBaixa(r)}>
-                                {baixando ? 'REGISTRANDO…' : `REGISTRAR BAIXA (${Object.keys(marcasBaixa).length})`}
+                                {baixando ? <Girando texto="REGISTRANDO…" /> : `REGISTRAR BAIXA (${Object.keys(marcasBaixa).length})`}
                               </button>
                               <button disabled={baixando} onClick={() => setMarcasBaixa({})}>
                                 Limpar marcas
@@ -1468,10 +1477,10 @@ export function Rotas() {
                       className="apagar"
                       title={`Apagar a nota ${p.numeroNota}`}
                       aria-label={`Apagar a nota ${p.numeroNota}`}
-                      disabled={apagandoLote}
+                      disabled={apagandoLote || trabalhando !== null}
                       onClick={() => void apagarDaMontagem(p)}
                     >
-                      ✕
+                      {trabalhando === p.id ? <span className="giro pequeno so-giro" aria-hidden="true" /> : '✕'}
                     </button>
                   </td>
                 </tr>
@@ -1490,7 +1499,7 @@ export function Rotas() {
             onClick={() => void apagarSelecionados()}
           >
             {apagandoLote
-              ? 'APAGANDO…'
+              ? <Girando texto="APAGANDO…" />
               : `✕ Apagar ${selecionados.size} pedido(s) selecionado(s)`}
           </button>
         )}
@@ -1572,7 +1581,7 @@ export function Rotas() {
             disabled={selecionados.size === 0 || !cdId || otimizando || misturaCds}
             onClick={() => void otimizar()}
           >
-            {otimizando ? 'OTIMIZANDO…' : `OTIMIZAR ROTA (${selecionados.size})`}
+            {otimizando ? <Girando texto="OTIMIZANDO…" /> : `OTIMIZAR ROTA (${selecionados.size})`}
           </button>
         </div>
 
@@ -1681,21 +1690,22 @@ export function Rotas() {
             <label className="opcao">
               Motorista:
               <select value={motoristaId} onChange={(e) => setMotoristaId(e.target.value)}>
-                {usuarios
-                  .filter((u) => u.ativo)
-                  .map((u) => (
+                {motoristasParaRota(usuarios).map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.nome} ({u.papel})
+                    {u.nome}
                   </option>
                 ))}
               </select>
+              {usuarios.length > 0 && motoristasParaRota(usuarios).length === 0 && (
+                <span className="decisao-aviso"> Nenhum motorista ativo cadastrado — a rota não tem para quem ir.</span>
+              )}
             </label>
             <button
               className="primaria"
               disabled={publicando || !motoristaId}
               onClick={() => void publicar(true)}
             >
-              {publicando ? 'PUBLICANDO…' : 'PUBLICAR E BAIXAR PDF'}
+              {publicando ? <Girando texto="PUBLICANDO…" /> : 'PUBLICAR E BAIXAR PDF'}
             </button>
             <button disabled={publicando || !motoristaId} onClick={() => void publicar(false)}>
               Publicar sem PDF

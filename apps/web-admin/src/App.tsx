@@ -9,6 +9,8 @@ import { Login } from './telas/Login';
 import { useAutenticacao } from './useAutenticacao';
 import { useAtualizacao } from './useAtualizacao';
 import { alteracoesPendentes, confirmarDescarte } from './alteracoesPendentes';
+import { BarraDeAtividade } from './Carregando';
+import { useDecisoesPendentes } from './useDecisoesPendentes';
 
 type Aba = 'importacao' | 'decisoes' | 'rotas' | 'pedidos' | 'clientes' | 'produtividade';
 
@@ -32,6 +34,7 @@ export function App() {
   const [aba, setAba] = useState<Aba>('importacao');
   const atualizacao = useAtualizacao();
   const { usuario, papel, ehEscritorio, carregando, entrar, sair } = useAutenticacao();
+  const decisoesPendentes = useDecisoesPendentes(!!usuario && ehEscritorio === true, aba);
 
   // Fechar ou recarregar a página com dados de cliente digitados e não
   // salvos: o navegador pergunta antes (ver `alteracoesPendentes`).
@@ -109,6 +112,8 @@ export function App() {
         </div>
       </header>
 
+      <BarraDeAtividade />
+
       <nav className="abas" role="tablist">
         {ABAS.map((a) => (
           <button
@@ -119,6 +124,11 @@ export function App() {
             onClick={() => (a.id === aba || confirmarDescarte()) && setAba(a.id)}
           >
             {a.rotulo}
+            {a.id === 'decisoes' && (decisoesPendentes ?? 0) > 0 && (
+              <span className="selo" aria-label={`${decisoesPendentes} pedido(s) esperando decisão`}>
+                {decisoesPendentes}
+              </span>
+            )}
           </button>
         ))}
       </nav>

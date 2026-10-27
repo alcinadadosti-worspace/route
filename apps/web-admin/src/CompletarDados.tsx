@@ -1,3 +1,4 @@
+import { Girando } from './Carregando';
 import { useEffect, useState } from 'react';
 import { telefoneLegivel, type Cliente, type ClienteACompletar, type RevendedoraCandidata } from '@rota/shared';
 import { candidatasDoCliente, salvarDadosDoCliente, type DadosDoCliente } from './api';
@@ -189,7 +190,7 @@ export function CompletarDados({
           disabled={salvando}
           onClick={() => void enviar(corpoDoFormulario(inicial, campos, escolhida))}
         >
-          {salvando ? 'SALVANDO…' : 'SALVAR DADOS'}
+          {salvando ? <Girando texto="SALVANDO…" /> : 'SALVAR DADOS'}
         </button>
         {/* Sai da lista sem mexer em nada: o pedido do site, por exemplo, não
             tem de onde tirar telefone — e a lista não pode virar ruído. */}

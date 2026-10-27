@@ -15,6 +15,7 @@ import type {
   Usuario,
 } from '@rota/shared';
 import { auth } from './firebase';
+import { comecarAtividade } from './atividade';
 
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
@@ -32,13 +33,20 @@ export const SEM_RESPOSTA =
   'Sem resposta do servidor — a conexão caiu ou ele está acordando (leva até 1 min). Tente de novo.';
 
 async function apiFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  const token = await auth.currentUser?.getIdToken();
-  const headers = new Headers(init.headers);
-  if (token) headers.set('Authorization', `Bearer ${token}`);
+  // Ação (não leitura): o painel mostra "Processando…" enquanto ela espera.
+  const metodo = (init.method ?? 'GET').toUpperCase();
+  const terminar = metodo === 'GET' ? null : comecarAtividade();
   try {
-    return await fetch(url, { ...init, headers });
-  } catch {
-    throw new Error(SEM_RESPOSTA);
+    const token = await auth.currentUser?.getIdToken();
+    const headers = new Headers(init.headers);
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    try {
+      return await fetch(url, { ...init, headers });
+    } catch {
+      throw new Error(SEM_RESPOSTA);
+    }
+  } finally {
+    terminar?.();
   }
 }
 
@@ -77,6 +85,23 @@ export async function importarArquivos(arquivos: File[]): Promise<RelatorioImpor
 export async function listarPedidos(): Promise<Array<{ id: string } & Pedido>> {
   const resposta = await apiFetch(`${BASE}/api/pedidos`);
   return lerResposta(resposta);
+}
+
+/** Busca na base de revendedoras (nome que começa com o termo, ou código). */
+export async function buscarNaBase(termo: string): Promise<RevendedoraCandidata[]> {
+  const resposta = await apiFetch(`${BASE}/api/revendedoras?busca=${encodeURIComponent(termo)}`);
+  return lerResposta(resposta);
+}
+
+export async function contarBase(): Promise<number> {
+  const resposta = await apiFetch(`${BASE}/api/revendedoras/total`);
+  return (await lerResposta<{ total: number }>(resposta)).total;
+}
+
+/** Quantos pedidos esperam decisão — o número no ícone da aba Decisões. */
+export async function contarDecisoesPendentes(): Promise<number> {
+  const resposta = await apiFetch(`${BASE}/api/decisoes/pendentes`);
+  return (await lerResposta<{ total: number }>(resposta)).total;
 }
 
 export async function listarClientes(): Promise<Array<{ id: string } & Cliente>> {
