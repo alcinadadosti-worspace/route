@@ -13,7 +13,12 @@ import {
 import { importarPlanilha } from './importacao/servico-planilha.js';
 import { importarCadastro } from './importacao/servico-cadastro.js';
 import { importarRomaneios } from './importacao/servico-romaneio.js';
-import { buscarNaBase, candidatasDoCliente, salvarDadosDoCliente } from './importacao/dados-cliente.js';
+import {
+  aindaACompletar,
+  buscarNaBase,
+  candidatasDoCliente,
+  salvarDadosDoCliente,
+} from './importacao/dados-cliente.js';
 import { localizarEnderecos } from './importacao/geocodificacao-lote.js';
 import { removerPedido, removerRota } from './rotas/remover.js';
 import { alterarLiberacao } from './rotas/liberacao.js';
@@ -390,6 +395,17 @@ export async function criarApp({
     const resultado = await salvarDadosDoCliente(repo, clienteId, req.body);
     if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
     return resultado.cliente;
+  });
+
+  // Dos clientes da lista de completar (ids separados por vírgula), os que
+  // AINDA esperam dados — a tela de Importação refaz a lista com isto.
+  app.get('/api/clientes/a-completar', { config: { papeis: ESCRITORIO } }, async (req) => {
+    const { ids } = req.query as { ids?: string };
+    const lista = String(ids ?? '')
+      .split(',')
+      .filter((id) => ID_DE_CLIENTE.test(id))
+      .slice(0, 200);
+    return { ids: await aindaACompletar(repo, lista) };
   });
 
   // Quem tem o mesmo nome na base de revendedoras — para o Admin reconhecer a

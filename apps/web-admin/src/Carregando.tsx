@@ -12,19 +12,17 @@ export function Girando({ texto }: { texto: string }) {
 }
 
 /**
- * Aviso no topo do painel enquanto alguma ação espera o servidor. Só aparece
- * depois de 300 ms: a ação rápida não pisca a tela.
+ * Aviso no topo do painel enquanto alguma ação espera o servidor. Aparece e
+ * some com 300 ms de atraso: a ação rápida não pisca a tela, e entre ações em
+ * sequência (as confirmações nota a nota, os lotes do Localizar) ela fica
+ * acesa em vez de apagar e reacender a cada uma.
  */
 export function BarraDeAtividade() {
   const [emCurso, setEmCurso] = useState(atividadesEmCurso());
   const [visivel, setVisivel] = useState(false);
   useEffect(() => ouvirAtividade(setEmCurso), []);
   useEffect(() => {
-    if (emCurso === 0) {
-      setVisivel(false);
-      return;
-    }
-    const espera = setTimeout(() => setVisivel(true), 300);
+    const espera = setTimeout(() => setVisivel(emCurso > 0), 300);
     return () => clearTimeout(espera);
   }, [emCurso]);
   if (!visivel) return null;

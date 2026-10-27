@@ -141,6 +141,16 @@ export async function candidatasDoCliente(
   return { ok: true, candidatas: candidatas.map(candidata) };
 }
 
+/**
+ * Dos clientes que o lote da Importação mostra para completar, quais AINDA
+ * esperam dados. O lote fica guardado a sessão inteira, e o cliente
+ * completado na aba Clientes (ou noutro computador) continuava com o
+ * formulário vazio aberto — preenchê-lo de novo regravava o telefone.
+ */
+export async function aindaACompletar(repo: Repositorio, ids: string[]): Promise<string[]> {
+  return (await repo.clientesPorIds(ids)).filter((c) => c.completarDados).map((c) => c.id);
+}
+
 /** Quantos resultados a busca devolve: é para achar UMA pessoa, não listar a base. */
 const MAX_NA_BUSCA = 50;
 

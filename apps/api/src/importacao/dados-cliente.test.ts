@@ -1,7 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Cliente } from '@rota/shared';
-import { buscarNaBase, camposDosDados, candidatasDoCliente, salvarDadosDoCliente } from './dados-cliente.js';
+import {
+  aindaACompletar,
+  buscarNaBase,
+  camposDosDados,
+  candidatasDoCliente,
+  salvarDadosDoCliente,
+} from './dados-cliente.js';
 import { RepositorioMemoria, type Revendedora } from '../db/repositorio.js';
 
 function cliente(extra: Partial<Cliente> = {}): Cliente {
@@ -108,6 +114,14 @@ function rev(id: string, cidade: string, extra: Partial<Revendedora> = {}): { id
     },
   };
 }
+
+test('ainda a completar: sai quem já teve os dados salvos (ou "não tenho mais"); id inexistente não volta', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('1', cliente());
+  await repo.salvarCliente('2', cliente({ nome: 'JOANA' }));
+  await salvarDadosDoCliente(repo, '2', { telefone: '82988887777' });
+  assert.deepEqual(await aindaACompletar(repo, ['1', '2', '3']), ['1']);
+});
 
 test('busca na base: pelo começo do nome (qualquer cidade) ou pelo código; termo curto não varre nada', async () => {
   const repo = new RepositorioMemoria();

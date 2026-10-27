@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CentroDistribuicao } from '@rota/shared';
-import { contarEnderecosALocalizar, importarArquivos, listarCds, localizarEnderecos } from '../api';
+import {
+  clientesAindaACompletar,
+  contarEnderecosALocalizar,
+  importarArquivos,
+  listarCds,
+  localizarEnderecos,
+} from '../api';
 import { CompletarDados } from '../CompletarDados';
 import { resumoDoSalvo } from '../formularioCliente';
 import { confirmarDescarte } from '../alteracoesPendentes';
-import { descricaoDoEnvio, somarEnvios, type Envio } from '../loteDeImportacao';
+import { descricaoDoEnvio, resolvidosFora, somarEnvios, type Envio } from '../loteDeImportacao';
 
 /**
  * O lote vive FORA do componente (e na sessão da aba do navegador): trocar de
@@ -16,6 +22,10 @@ import { descricaoDoEnvio, somarEnvios, type Envio } from '../loteDeImportacao';
  * volta, deixava soltar outro arquivo em paralelo.
  */
 interface EstadoDoLote {
+  /** De quem é o lote (uid). Sair e entrar com outra conta na mesma aba do
+   * navegador mostrava os romaneios e os formulários da conta anterior — e o
+   * romaneio novo se somava a eles. */
+  dono: string | null;
   envios: Envio[];
   /** Clientes fora da base já resolvidos neste lote (id → o que foi salvo). */
   completados: Record<string, string>;
@@ -28,11 +38,11 @@ const lote: EstadoDoLote = {
   ...(() => {
     try {
       const salvo = sessionStorage.getItem(CHAVE_DA_SESSAO);
-      if (salvo) return JSON.parse(salvo) as Pick<EstadoDoLote, 'envios' | 'completados'>;
+      if (salvo) return JSON.parse(salvo) as Pick<EstadoDoLote, 'dono' | 'envios' | 'completados'>;
     } catch {
       // Sem sessionStorage (modo privado, cota): o lote vale só enquanto a página estiver aberta.
     }
-    return { envios: [], completados: {} };
+    return { dono: null, envios: [], completados: {} };
   })(),
   enviando: null,
   erroDoEnvio: null,
@@ -41,7 +51,10 @@ const ouvintes = new Set<() => void>();
 function mudarLote(mudanca: Partial<EstadoDoLote>) {
   Object.assign(lote, mudanca);
   try {
-    sessionStorage.setItem(CHAVE_DA_SESSAO, JSON.stringify({ envios: lote.envios, completados: lote.completados }));
+    sessionStorage.setItem(
+      CHAVE_DA_SESSAO,
+      JSON.stringify({ dono: lote.dono, envios: lote.envios, completados: lote.completados }),
+    );
   } catch {
     // Idem: sem onde guardar, segue só na memória.
   }
@@ -58,18 +71,31 @@ function useLote(): EstadoDoLote {
   return lote;
 }
 
+/** A conta logada mudou (ou saiu): o lote de outra conta não aparece nela.
+ * Recarregar a página com a mesma conta mantém o lote. */
+export function trocarDonoDoLote(uid: string | null): void {
+  if (lote.dono === uid) return;
+  mudarLote({ dono: uid, envios: [], completados: {}, enviando: null, erroDoEnvio: null });
+}
+
 /** Manda os arquivos e põe o resultado no lote — fora do componente, para não
  * se perder se a tela for desmontada no meio. */
 async function enviarAoLote(aceitos: File[]): Promise<void> {
   const arquivos = aceitos.map((f) => f.name);
-  mudarLote({ enviando: { arquivos, desde: Date.now() }, erroDoEnvio: null });
+  const marca = { arquivos, desde: Date.now() };
+  const dono = lote.dono;
+  mudarLote({ enviando: marca, erroDoEnvio: null });
+  // Saiu da conta no meio do envio: o resultado não cai no lote de quem entrou.
+  const aindaDoMesmo = () => lote.dono === dono && lote.enviando === marca;
   try {
     const novo = await importarArquivos(aceitos);
-    mudarLote({ envios: [...lote.envios, { quando: new Date().toISOString(), arquivos, relatorio: novo }] });
+    if (aindaDoMesmo()) {
+      mudarLote({ envios: [...lote.envios, { quando: new Date().toISOString(), arquivos, relatorio: novo }] });
+    }
   } catch (e) {
-    mudarLote({ erroDoEnvio: e instanceof Error ? e.message : 'Falha na importação' });
+    if (aindaDoMesmo()) mudarLote({ erroDoEnvio: e instanceof Error ? e.message : 'Falha na importação' });
   } finally {
-    mudarLote({ enviando: null });
+    if (lote.enviando === marca) mudarLote({ enviando: null });
   }
 }
 
@@ -105,6 +131,11 @@ export function Importacao() {
     montado.current = true;
     return () => {
       montado.current = false;
+      // O erro do envio já foi visto: ele ficava ao lado de tudo o que se
+      // fazia depois ("Localização concluída" com "Sem resposta do
+      // servidor" embaixo). O que falhou com a tela fechada continua até ela
+      // ser aberta e deixada.
+      if (lote.erroDoEnvio && !lote.enviando) mudarLote({ erroDoEnvio: null });
     };
   }, []);
 
@@ -118,8 +149,15 @@ export function Importacao() {
     listarCds()
       .then(setCds)
       .catch(() => setCds({}));
-    contarFila();
   }, []);
+
+  // A fila conta ao abrir e a cada envio que entra no lote. Contar no fim do
+  // `enviar` falhava quando o Admin trocava de aba no meio: a tela que mandou
+  // já não existia, a de volta tinha contado antes de a importação acabar, e
+  // o Localizar ficava desligado com endereço na fila.
+  useEffect(() => {
+    contarFila();
+  }, [envios.length]);
 
   // O relógio do "processando": com a API acordando o envio leva até 1 min, e
   // uma tela parada nesse tempo parecia travada.
@@ -134,6 +172,25 @@ export function Importacao() {
   }, [enviando]);
 
   const relatorio = useMemo(() => somarEnvios(envios), [envios]);
+
+  // Completado na aba Clientes (ou noutro computador) sai daqui: o formulário
+  // guardado no lote ficava aberto e vazio, e preenchê-lo regravava o que já
+  // tinha sido salvo. Confere ao abrir a tela — é como se volta da aba Clientes.
+  useEffect(() => {
+    const lista = somarEnvios(lote.envios)?.clientesACompletar ?? [];
+    const pendentes = lista.filter((c) => !(c.id in lote.completados));
+    if (pendentes.length === 0) return;
+    clientesAindaACompletar(pendentes.map((c) => c.id))
+      .then((aindaEsperam) => {
+        const fora = resolvidosFora(lista, aindaEsperam, lote.completados);
+        if (fora.length === 0) return;
+        const completados = { ...lote.completados };
+        for (const id of fora) completados[id] = 'dados já completados em outra tela';
+        mudarLote({ completados });
+      })
+      // Sem resposta: fica a lista como está — o formulário ainda funciona.
+      .catch(() => undefined);
+  }, []);
   const aCompletar = (relatorio?.clientesACompletar ?? []).filter((c) => !(c.id in completados));
   const pacotes = (relatorio?.folhas ?? []).reduce((soma, f) => soma + f.pacotes, 0);
 
@@ -156,7 +213,6 @@ export function Importacao() {
     if (lote.enviando) return;
     setErro(null);
     await enviarAoLote(aceitos);
-    if (montado.current) contarFila();
   }
 
   /** Esvazia a LISTA da tela para a próxima rota — os pedidos já importados
@@ -178,6 +234,7 @@ export function Importacao() {
   async function localizar() {
     if (localizando) return;
     setErro(null);
+    if (lote.erroDoEnvio) mudarLote({ erroDoEnvio: null });
     setUltimaLocalizacao(null);
     setLocalizando({ feitos: 0, restantes: naFila ?? 0 });
     let feitos = 0;
@@ -308,8 +365,11 @@ export function Importacao() {
         >
           <div className="lote-cabecalho">
             <strong>
-              Romaneios desta rota: {relatorio?.romaneios ?? 0}
-              {pacotes > 0 ? ` · ${pacotes} pacote(s)` : ''} · {relatorio?.importados ?? 0} pedido(s) novo(s)
+              {/* Planilha e XML não têm folha: ali conta o que foi enviado. */}
+              {(relatorio?.folhas ?? []).length > 0
+                ? `Romaneios desta rota: ${relatorio?.romaneios ?? 0} · ${pacotes} pacote(s)`
+                : `Envios: ${envios.length}`}{' '}
+              · {relatorio?.importados ?? 0} pedido(s) novo(s)
             </strong>
             <button className="ligacao alvo-toque" disabled={enviando !== null || localizando !== null} onClick={comecarOutraRota}>
               Começar outra rota

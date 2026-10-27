@@ -92,7 +92,13 @@ export async function importarRomaneiosLidos(
     relatorio.romaneios = (relatorio.romaneios ?? 0) + 1;
     relatorio.folhas = [
       ...(relatorio.folhas ?? []),
-      { rota: romaneio.rota, motorista: romaneio.motorista, pacotes: romaneio.linhas.length },
+      // O número impresso na folha: é com ele que o Admin confere o lote. As
+      // linhas aceitas deixavam de fora as recusadas, e o total não batia.
+      {
+        rota: romaneio.rota,
+        motorista: romaneio.motorista,
+        pacotes: romaneio.quantidade ?? romaneio.linhas.length + (romaneio.recusadas?.length ?? 0),
+      },
     ];
     // Data no futuro (relógio errado no PC que imprimiu) não vale: virava o
     // `enderecoDe` do cliente, e até ela passar nenhuma folha mais nova

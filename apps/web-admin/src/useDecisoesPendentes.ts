@@ -18,21 +18,30 @@ export function useDecisoesPendentes(ativo: boolean, aba: string): number | null
   useEffect(() => {
     if (!ativo) return;
     let vivo = true;
+    // Só a resposta do pedido MAIS RECENTE vale: a contagem do minuto que saiu
+    // antes de uma decisão e chegou depois punha o número antigo de volta.
+    let ultimo = 0;
     const atualizar = () => {
       if (document.visibilityState === 'hidden') return;
+      const este = ++ultimo;
       contarDecisoesPendentes()
-        .then((n) => vivo && setPendentes(n))
+        .then((n) => vivo && este === ultimo && setPendentes(n))
         // Sem resposta (API acordando): fica o último número, sem alarde.
         .catch(() => undefined);
     };
     atualizar();
     const relogio = setInterval(atualizar, 60_000);
+    // Uma contagem por RAJADA de ações, 1 s depois da última: confirmando nota
+    // a nota, eram uma contagem por nota.
+    let depoisDaAcao: ReturnType<typeof setTimeout> | undefined;
     const pararDeOuvir = ouvirAtividade((emCurso) => {
-      if (emCurso === 0) atualizar();
+      clearTimeout(depoisDaAcao);
+      if (emCurso === 0) depoisDaAcao = setTimeout(atualizar, 1000);
     });
     return () => {
       vivo = false;
       clearInterval(relogio);
+      clearTimeout(depoisDaAcao);
       pararDeOuvir();
     };
   }, [ativo, aba]);

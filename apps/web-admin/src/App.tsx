@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Importacao } from './telas/Importacao';
+import { Importacao, trocarDonoDoLote } from './telas/Importacao';
 import { Decisoes } from './telas/Decisoes';
 import { Pedidos } from './telas/Pedidos';
 import { Clientes } from './telas/Clientes';
@@ -35,6 +35,12 @@ export function App() {
   const atualizacao = useAtualizacao();
   const { usuario, papel, ehEscritorio, carregando, entrar, sair } = useAutenticacao();
   const decisoesPendentes = useDecisoesPendentes(!!usuario && ehEscritorio === true, aba);
+
+  // Só depois de o login se resolver: no carregamento da página o usuário é
+  // null por um instante, e zerar ali apagava o lote a cada recarga.
+  useEffect(() => {
+    if (!carregando) trocarDonoDoLote(usuario?.uid ?? null);
+  }, [carregando, usuario]);
 
   // Fechar ou recarregar a página com dados de cliente digitados e não
   // salvos: o navegador pergunta antes (ver `alteracoesPendentes`).

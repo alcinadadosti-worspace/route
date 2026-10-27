@@ -68,8 +68,11 @@ export async function publicarRota(
     return { ok: false, status: 400, erro: 'Data inválida (esperado AAAA-MM-DD)' };
   }
 
+  // Só papel motorista: o painel listava todo usuário ativo, e uma rota
+  // publicada para a conta do Admin Estoque não chega a celular nenhum — os
+  // pedidos ficavam "em rota" sem ninguém para entregá-los.
   const usuarios = await repo.listarUsuarios();
-  const motorista = usuarios.find((u) => u.id === entrada.motoristaId && u.ativo);
+  const motorista = usuarios.find((u) => u.id === entrada.motoristaId && u.ativo && u.papel === 'motorista');
   if (!motorista) {
     return { ok: false, status: 400, erro: 'Motorista inválido ou inativo' };
   }

@@ -87,6 +87,12 @@ export async function listarPedidos(): Promise<Array<{ id: string } & Pedido>> {
   return lerResposta(resposta);
 }
 
+/** Dos clientes passados, os que ainda esperam dados (telefone, referência). */
+export async function clientesAindaACompletar(ids: string[]): Promise<string[]> {
+  const resposta = await apiFetch(`${BASE}/api/clientes/a-completar?ids=${encodeURIComponent(ids.join(','))}`);
+  return (await lerResposta<{ ids: string[] }>(resposta)).ids;
+}
+
 /** Busca na base de revendedoras (nome que começa com o termo, ou código). */
 export async function buscarNaBase(termo: string): Promise<RevendedoraCandidata[]> {
   const resposta = await apiFetch(`${BASE}/api/revendedoras?busca=${encodeURIComponent(termo)}`);

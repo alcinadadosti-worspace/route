@@ -271,6 +271,17 @@ test('publicar recusa motorista inválido e pedido já em rota', async () => {
   );
   assert.equal(semMotorista.ok, false);
 
+  // Conta ativa, mas de escritório: rota para ela não chega a celular nenhum.
+  const repoComAdmin = Object.assign(repo, {
+    listarUsuarios: async () => [
+      { id: 'admin-1', nome: 'Logística', papel: 'admin' as const, ativo: true },
+      { id: 'motorista-demo', nome: 'Motorista Demo', papel: 'motorista' as const, ativo: true },
+    ],
+  });
+  const paraAdmin = await publicarRota({ pedidoIds: ['p1'], cdId: 'penedo', motoristaId: 'admin-1' }, repoComAdmin, osrm);
+  assert.equal(paraAdmin.ok, false);
+  assert.equal((await repo.obterPedido('p1'))?.status, pedidoDe('c1').status);
+
   await repo.salvarPedido('p1', { ...pedidoDe('c1'), status: 'em_rota', rotaId: 'outra' });
   const jaEmRota = await publicarRota(
     { pedidoIds: ['p1'], cdId: 'penedo', motoristaId: 'motorista-demo' },

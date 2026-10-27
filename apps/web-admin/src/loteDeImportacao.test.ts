@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { RelatorioImportacao } from '@rota/shared';
-import { descricaoDoEnvio, somarEnvios, type Envio } from './loteDeImportacao.js';
+import { descricaoDoEnvio, resolvidosFora, somarEnvios, type Envio } from './loteDeImportacao.js';
 
 function relatorio(extra: Partial<RelatorioImportacao> = {}): RelatorioImportacao {
   return {
@@ -47,6 +47,18 @@ test('dois romaneios da MESMA rota, mandados um de cada vez, somam no lote', () 
   assert.deepEqual(soma.alertas, []);
   // A cliente do primeiro envio continua esperando dados.
   assert.deepEqual(soma.clientesACompletar?.map((c) => c.id), ['x']);
+});
+
+test('a MESMA folha mandada duas vezes conta um romaneio; vale a versão mais nova', () => {
+  const folha = (pacotes: number) => relatorio({ romaneios: 1, folhas: [{ rota: '1673300', motorista: 'Caique Santos', pacotes }] });
+  const soma = somarEnvios([envio(folha(11)), envio(relatorio({ romaneios: 1, folhas: [{ rota: '1673301', motorista: 'Caique Santos', pacotes: 2 }] })), envio(folha(12))])!;
+  assert.equal(soma.romaneios, 2);
+  assert.deepEqual(soma.folhas?.map((f) => [f.rota, f.pacotes]), [['1673300', 12], ['1673301', 2]]);
+});
+
+test('completado fora da tela sai da lista; o completado aqui e quem ainda espera, não', () => {
+  const c = (id: string) => ({ id, nome: id, endereco: 'RUA A', telefone: null, observacoes: '' });
+  assert.deepEqual(resolvidosFora([c('a'), c('b'), c('c')], ['a'], { c: 'salvo' }), ['b']);
 });
 
 test('lote vazio não tem relatório; o "Fora da base" é refeito pela tela', () => {

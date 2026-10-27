@@ -64,6 +64,7 @@ export function somarEnvios(envios: Envio[]): RelatorioImportacao | null {
     semCarga: 0,
   };
   const aCompletar = new Map<string, ClienteACompletar>();
+  const folhas = new Map<string, NonNullable<RelatorioImportacao['folhas']>[number]>();
   for (const { relatorio: r } of envios) {
     for (const campo of SOMAVEIS) soma[campo] += r[campo] ?? 0;
     for (const campo of OPCIONAIS) {
@@ -71,7 +72,10 @@ export function somarEnvios(envios: Envio[]): RelatorioImportacao | null {
     }
     soma.rejeitados.push(...(r.rejeitados ?? []));
     for (const [cd, n] of Object.entries(r.porCd ?? {})) soma.porCd[cd] = (soma.porCd[cd] ?? 0) + n;
-    if (r.folhas) soma.folhas = [...(soma.folhas ?? []), ...r.folhas];
+    // A mesma folha mandada duas vezes (o "+" com o arquivo de antes) conta
+    // UMA: o cabeçalho dizia "2 romaneios" e o Admin achava que tinha mandado
+    // os dois da rota. Vale a versão mais nova, no lugar da primeira.
+    for (const f of r.folhas ?? []) folhas.set(f.rota, f);
     // O mais recente de cada cliente (pode ter sido completado num envio e
     // voltado noutro), na posição em que apareceu primeiro.
     for (const c of r.clientesACompletar ?? []) aCompletar.set(c.id, c);
@@ -80,8 +84,26 @@ export function somarEnvios(envios: Envio[]): RelatorioImportacao | null {
       soma.alertas.push(a);
     }
   }
+  if (folhas.size > 0) {
+    soma.folhas = [...folhas.values()];
+    soma.romaneios = folhas.size;
+  }
   if (aCompletar.size > 0) soma.clientesACompletar = [...aCompletar.values()];
   return soma;
+}
+
+/**
+ * Dos clientes que o lote pede para completar, os que já foram resolvidos FORA
+ * desta tela (aba Clientes, outro computador): o servidor diz quem ainda
+ * espera, e quem não está na resposta sai da lista.
+ */
+export function resolvidosFora(
+  aCompletar: ClienteACompletar[],
+  aindaEsperam: string[],
+  completados: Record<string, string>,
+): string[] {
+  const esperam = new Set(aindaEsperam);
+  return aCompletar.filter((c) => !(c.id in completados) && !esperam.has(c.id)).map((c) => c.id);
 }
 
 /** O que a lista do lote mostra de cada envio. */

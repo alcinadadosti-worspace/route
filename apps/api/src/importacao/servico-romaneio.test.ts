@@ -283,6 +283,8 @@ test('romaneio: a data impressa na folha é a do pedido; linha ilegível vira re
   assert.match(r.rejeitados[0]!.motivo, /ilegível/);
   // 2 pacotes = 1 lida + 1 recusada: a contagem fecha, sem o alerta duplicado.
   assert.ok(!r.alertas.some((a) => a.nome === 'Romaneio 1673300'));
+  // E o lote mostra os 2 da folha, não só a linha aceita.
+  assert.equal(r.folhas?.[0]?.pacotes, 2);
 });
 
 test('pedido do SITE pelo romaneio e pela planilha (outro código, mesmo pacote) entra UMA vez, em qualquer ordem', async () => {
