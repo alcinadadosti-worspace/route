@@ -1233,3 +1233,17 @@ button.ligacao.alvo-toque {
   padding: 8px 12px;
   resize: vertical;
 }
+
+/* Aba Romaneios e digitados: uma folha (ou a lista dos digitados) por bloco. */
+.origem-grupo {
+  margin-top: 22px;
+}
+
+.origem-grupo h3 {
+  margin: 0 0 2px;
+}
+
+.origem-dia {
+  margin-top: 12px;
+  margin-bottom: 0;
+}

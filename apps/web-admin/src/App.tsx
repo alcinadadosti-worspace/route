@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Importacao, trocarDonoDoLote } from './telas/Importacao';
 import { Decisoes } from './telas/Decisoes';
 import { Pedidos } from './telas/Pedidos';
+import { RomaneiosEDigitados } from './telas/RomaneiosEDigitados';
 import { Clientes } from './telas/Clientes';
 import { Produtividade } from './telas/Produtividade';
 import { Rotas } from './telas/Rotas';
@@ -12,7 +13,7 @@ import { alteracoesPendentes, confirmarDescarte } from './alteracoesPendentes';
 import { BarraDeAtividade } from './Carregando';
 import { useDecisoesPendentes } from './useDecisoesPendentes';
 
-type Aba = 'importacao' | 'decisoes' | 'rotas' | 'pedidos' | 'clientes' | 'produtividade';
+type Aba = 'importacao' | 'decisoes' | 'rotas' | 'pedidos' | 'origem' | 'clientes' | 'produtividade';
 
 /** Papel do custom claim em português — o operador não lê enum. */
 const ROTULO_PAPEL: Record<string, string> = {
@@ -26,6 +27,7 @@ const ABAS: Array<{ id: Aba; rotulo: string }> = [
   { id: 'decisoes', rotulo: 'Decisões' },
   { id: 'rotas', rotulo: 'Rotas' },
   { id: 'pedidos', rotulo: 'Pedidos' },
+  { id: 'origem', rotulo: 'Romaneios e digitados' },
   { id: 'clientes', rotulo: 'Clientes' },
   { id: 'produtividade', rotulo: 'Produtividade' },
 ];
@@ -143,6 +145,7 @@ export function App() {
       {aba === 'decisoes' && <Decisoes />}
       {aba === 'rotas' && <Rotas />}
       {aba === 'pedidos' && <Pedidos />}
+      {aba === 'origem' && <RomaneiosEDigitados />}
       {aba === 'clientes' && <Clientes />}
       {aba === 'produtividade' && <Produtividade />}
     </div>

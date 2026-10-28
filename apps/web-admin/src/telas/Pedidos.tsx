@@ -19,7 +19,7 @@ const APAGAVEIS = new Set([
   'em_rota',
 ]);
 
-const ROTULO_STATUS: Record<string, { texto: string; classe: string }> = {
+export const ROTULO_STATUS: Record<string, { texto: string; classe: string }> = {
   pendente_de_mapeamento: { texto: 'Pendente de mapeamento', classe: 'pendente' },
   pendente_de_decisao: { texto: 'Aguardando decisão', classe: 'pendente' },
   pronto_para_rota: { texto: 'Pronto para rota', classe: 'pronto' },
