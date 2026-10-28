@@ -1,7 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { RelatorioImportacao } from '@rota/shared';
-import { descricaoDoEnvio, resolvidosFora, somarEnvios, type Envio } from './loteDeImportacao.js';
+import {
+  cabecalhoDoLote,
+  descricaoDoEnvio,
+  mensagemDoDigitado,
+  resolvidosFora,
+  somarEnvios,
+  type Envio,
+} from './loteDeImportacao.js';
 
 function relatorio(extra: Partial<RelatorioImportacao> = {}): RelatorioImportacao {
   return {
@@ -72,4 +79,30 @@ test('a lista do lote: rota, motorista e pacotes de cada folha; planilha pelo no
     'Rota 1673300 · Caique Santos · 11 pacote(s)',
   ]);
   assert.deepEqual(descricaoDoEnvio(envio(relatorio(), ['ConsultaPedidos.xlsx'])), ['ConsultaPedidos.xlsx']);
+});
+
+test('cabeçalho do lote: folhas e pacotes; digitado à parte; planilha conta envios', () => {
+  const comFolha = relatorio({ romaneios: 1, folhas: [{ rota: '1673300', motorista: 'Caique Santos', pacotes: 11 }] });
+  assert.equal(cabecalhoDoLote(comFolha, 1), 'Romaneios desta rota: 1 · 11 pacote(s) · 11 pedido(s) novo(s)');
+  const soma = somarEnvios([envio(comFolha), envio(relatorio({ importados: 1, digitados: 1 }))])!;
+  assert.equal(cabecalhoDoLote(soma, 2), 'Romaneios desta rota: 1 · 11 pacote(s) · 1 digitado(s) · 12 pedido(s) novo(s)');
+  assert.equal(cabecalhoDoLote(relatorio({ importados: 1, digitados: 1 }), 1), 'Pedidos digitados: 1 · 1 pedido(s) novo(s)');
+  assert.equal(cabecalhoDoLote(relatorio(), 1), 'Envios: 1 · 11 pedido(s) novo(s)');
+});
+
+test('pedido digitado: a frase diz para onde foi; repetido não entrou', () => {
+  const base = { importados: 1, prontosParaRota: 0, pendentesDeMapeamento: 0, pendentesDeDecisao: 0 };
+  assert.match(mensagemDoDigitado(relatorio({ ...base, prontosParaRota: 1 }), '537733613').texto, /537733613 entrou — pronto/);
+  assert.match(mensagemDoDigitado(relatorio({ ...base, pendentesDeMapeamento: 1, semCadastro: 1 }), '1').texto, /Localizar.*complete o telefone/);
+  assert.match(mensagemDoDigitado(relatorio({ ...base, pendentesDeDecisao: 1 }), '1').texto, /Decisões/);
+  const repetido = mensagemDoDigitado(relatorio({ importados: 0, duplicados: 1 }), '537733613');
+  assert.equal(repetido.entrou, false);
+  assert.match(repetido.texto, /já está no sistema/);
+  for (const r of [repetido, mensagemDoDigitado(relatorio({ importados: 0 }), '9')]) assert.doesNotMatch(r.texto, /undefined|NaN|\{/);
+});
+
+test('o envio digitado aparece na lista pela descrição', () => {
+  assert.deepEqual(descricaoDoEnvio({ ...envio(relatorio(), []), descricao: 'Pedido 537733613 digitado · MARIA' }), [
+    'Pedido 537733613 digitado · MARIA',
+  ]);
 });

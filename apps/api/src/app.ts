@@ -12,7 +12,7 @@ import {
 } from './importacao/servico.js';
 import { importarPlanilha } from './importacao/servico-planilha.js';
 import { importarCadastro } from './importacao/servico-cadastro.js';
-import { importarRomaneios } from './importacao/servico-romaneio.js';
+import { importarPedidoDigitado, importarRomaneios } from './importacao/servico-romaneio.js';
 import {
   aindaACompletar,
   buscarNaBase,
@@ -395,6 +395,13 @@ export async function criarApp({
     const resultado = await salvarDadosDoCliente(repo, clienteId, req.body);
     if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
     return resultado.cliente;
+  });
+
+  // Pedido digitado à mão: a linha da folha copiada no painel.
+  app.post('/api/pedidos/digitados', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
+    const resultado = await importarPedidoDigitado(repo, req.body, req.usuario?.uid ?? 'sem-autenticacao');
+    if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro, erros: resultado.erros });
+    return resultado.relatorio;
   });
 
   // Dos clientes da lista de completar (ids separados por vírgula), os que

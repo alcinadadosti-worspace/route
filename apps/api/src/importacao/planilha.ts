@@ -67,6 +67,8 @@ export interface LinhaPlanilha {
   /** Linha que veio do ROMANEIO do Boticário (não desta planilha): número da
    * rota de lá, guardado no pedido para a busca do painel. */
   romaneio?: string;
+  /** Linha DIGITADA à mão no painel: quem e quando (vai para o pedido). */
+  digitado?: { por: string; em: string };
   /** Romaneio: GPS que o CADASTRO de revendedoras tinha para esta pessoa (o
    * romaneio em si não traz). Na planilha ele sai do texto do endereço. */
   pin?: GeoPonto | null;

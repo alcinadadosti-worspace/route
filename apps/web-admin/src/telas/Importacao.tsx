@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CentroDistribuicao } from '@rota/shared';
+import type { CentroDistribuicao, PedidoDigitado as CamposDigitados, RelatorioImportacao } from '@rota/shared';
 import {
   clientesAindaACompletar,
   contarEnderecosALocalizar,
+  digitarPedido,
   importarArquivos,
   listarCds,
   localizarEnderecos,
 } from '../api';
 import { CompletarDados } from '../CompletarDados';
+import { PedidoDigitado } from '../PedidoDigitado';
 import { resumoDoSalvo } from '../formularioCliente';
 import { confirmarDescarte } from '../alteracoesPendentes';
-import { descricaoDoEnvio, resolvidosFora, somarEnvios, type Envio } from '../loteDeImportacao';
+import { cabecalhoDoLote, descricaoDoEnvio, resolvidosFora, somarEnvios, type Envio } from '../loteDeImportacao';
 
 /**
  * O lote vive FORA do componente (e na sessão da aba do navegador): trocar de
@@ -99,6 +101,19 @@ async function enviarAoLote(aceitos: File[]): Promise<void> {
   }
 }
 
+/** O pedido digitado à mão entra no lote como um envio — também fora do
+ * componente, pelo mesmo motivo. Só o que ENTROU vai para a lista: o repetido
+ * fica no formulário, que diz por quê. */
+async function digitarNoLote(campos: CamposDigitados): Promise<RelatorioImportacao> {
+  const dono = lote.dono;
+  const relatorio = await digitarPedido(campos);
+  if (relatorio.importados > 0 && lote.dono === dono) {
+    const descricao = `Pedido ${campos.pedido.trim()} digitado à mão · ${campos.nome.trim().toUpperCase()}`;
+    mudarLote({ envios: [...lote.envios, { quando: new Date().toISOString(), arquivos: [], descricao, relatorio }] });
+  }
+  return relatorio;
+}
+
 /** Fluxo 1 — o operador solta os romaneios do dia (ou a planilha/XMLs do ERP) (RF-01, RF-04). */
 export function Importacao() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -106,6 +121,8 @@ export function Importacao() {
   const { envios, completados, enviando, erroDoEnvio } = useLote();
   const [segundos, setSegundos] = useState(0);
   const [erro, setErro] = useState<string | null>(null);
+  /** O "＋": escolhendo o que adicionar, ou com o formulário de digitar aberto. */
+  const [adicionando, setAdicionando] = useState<null | 'escolher' | 'digitar'>(null);
   /** Progresso da localização de endereços (passo separado, pago e em lotes). */
   const [localizando, setLocalizando] = useState<{ feitos: number; restantes: number } | null>(null);
   /** Resultado da última localização — fica na tela (sumia em 4 s, e o número
@@ -192,7 +209,9 @@ export function Importacao() {
       .catch(() => undefined);
   }, []);
   const aCompletar = (relatorio?.clientesACompletar ?? []).filter((c) => !(c.id in completados));
-  const pacotes = (relatorio?.folhas ?? []).reduce((soma, f) => soma + f.pacotes, 0);
+  // O CD já em uso no lote abre selecionado: os pedidos de uma rota são de um CD só.
+  const cdsDoLote = Object.keys(relatorio?.porCd ?? {}).filter((id) => id in cds);
+  const cdDoLote = cdsDoLote.length === 1 ? cdsDoLote[0]! : '';
 
   async function enviar(lista: FileList | null) {
     // Copia ANTES de limpar: `files` é uma lista VIVA do input, e zerar o value
@@ -297,7 +316,8 @@ export function Importacao() {
       <p style={{ color: 'var(--texto-2)' }}>
         Arraste o <strong>romaneio em PDF</strong> da Plataforma Logística do Boticário — ou clique para selecionar.
         Se a rota vem em <strong>mais de um romaneio</strong>, acrescente os outros com o botão{' '}
-        <strong>＋ Adicionar romaneio</strong>; quando tiver mandado todos, clique em{' '}
+        <strong>＋ Adicionar</strong> — ali também dá para <strong>digitar um pedido</strong> da folha, com as mesmas
+        colunas do romaneio; quando tiver mandado todos, clique em{' '}
         <strong>Localizar endereços no mapa</strong>. O CD sai do motorista da folha: Caique Santos = Palmeira dos
         Índios, Paulo Rogério Santos = Penedo. Reenviar a mesma folha é inócuo — o pedido repetido é ignorado.
       </p>
@@ -343,6 +363,11 @@ export function Importacao() {
           {enviando ? <Processando arquivos={enviando.arquivos} segundos={segundos} /> : 'SOLTE OS ROMANEIOS (PDF) AQUI'}
         </div>
       )}
+      {envios.length === 0 && adicionando !== 'digitar' && (
+        <button className="alvo-toque" style={{ marginTop: 8 }} onClick={() => setAdicionando('digitar')}>
+          ⌨ Ou digitar um pedido da folha
+        </button>
+      )}
 
       {(erro ?? erroDoEnvio) && <div className="erro">{erro ?? erroDoEnvio}</div>}
 
@@ -364,13 +389,7 @@ export function Importacao() {
           }}
         >
           <div className="lote-cabecalho">
-            <strong>
-              {/* Planilha e XML não têm folha: ali conta o que foi enviado. */}
-              {(relatorio?.folhas ?? []).length > 0
-                ? `Romaneios desta rota: ${relatorio?.romaneios ?? 0} · ${pacotes} pacote(s)`
-                : `Envios: ${envios.length}`}{' '}
-              · {relatorio?.importados ?? 0} pedido(s) novo(s)
-            </strong>
+            <strong>{cabecalhoDoLote(relatorio, envios.length)}</strong>
             <button className="ligacao alvo-toque" disabled={enviando !== null || localizando !== null} onClick={comecarOutraRota}>
               Começar outra rota
             </button>
@@ -385,19 +404,47 @@ export function Importacao() {
           </ul>
           {enviando && <Processando arquivos={enviando.arquivos} segundos={segundos} />}
           <div className="lote-acoes">
-            <button disabled={enviando !== null || localizando !== null} onClick={() => inputRef.current?.click()}>
-              ＋ Adicionar romaneio
-            </button>
+            {adicionando === 'escolher' ? (
+              <>
+                <button
+                  disabled={enviando !== null || localizando !== null}
+                  onClick={() => {
+                    setAdicionando(null);
+                    inputRef.current?.click();
+                  }}
+                >
+                  📄 Romaneio em PDF
+                </button>
+                <button onClick={() => setAdicionando('digitar')}>⌨ Digitar pedido</button>
+                <button className="ligacao alvo-toque" onClick={() => setAdicionando(null)}>
+                  Cancelar
+                </button>
+              </>
+            ) : (
+              <button
+                disabled={localizando !== null || adicionando === 'digitar'}
+                onClick={() => setAdicionando('escolher')}
+              >
+                ＋ Adicionar
+              </button>
+            )}
             {botaoLocalizar}
           </div>
           {!localizando && !ultimaLocalizacao && (
             <div className="decisao-aviso" style={{ marginTop: 8 }}>
-              A rota tem mais romaneios? Adicione com o ＋. Mandou todos? Localize os endereços — depois a rota se monta
-              na aba Rotas.
+              A rota tem mais romaneios, ou um pedido que a folha em PDF não trouxe? Adicione com o ＋. Mandou todos?
+              Localize os endereços — depois a rota se monta na aba Rotas.
             </div>
           )}
           {resultadoDaLocalizacao}
         </div>
+      )}
+
+      {/* Fora do cartão de propósito: na mesma posição antes e depois do 1º
+          envio — senão o primeiro pedido digitado recriava o formulário, e a
+          frase dizendo para onde ele foi sumia. */}
+      {adicionando === 'digitar' && (
+        <PedidoDigitado cds={cds} cdInicial={cdDoLote} enviar={digitarNoLote} aoFechar={() => setAdicionando(null)} />
       )}
 
       {/* Sem lote nesta tela, mas com entrega sem ponto (de outra sessão, ou
@@ -413,6 +460,7 @@ export function Importacao() {
         <>
           <div className="grade-relatorio">
             {(relatorio.romaneios ?? 0) > 0 && <Metrica valor={relatorio.romaneios ?? 0} rotulo="Romaneios lidos" />}
+            {(relatorio.digitados ?? 0) > 0 && <Metrica valor={relatorio.digitados ?? 0} rotulo="Digitados à mão" />}
             {/* Cadastro de revendedoras: não gera pedido nem cliente — fica
                 guardado para casar os romaneios. */}
             {relatorio.revendedoras !== undefined && (

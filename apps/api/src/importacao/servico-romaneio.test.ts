@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { Cliente } from '@rota/shared';
 import { blocoDoRomaneio, type LinhaRomaneio, type Romaneio } from './romaneio.js';
 import type { LinhaPlanilha } from './planilha.js';
-import { importarRomaneiosLidos } from './servico-romaneio.js';
+import { importarPedidoDigitado, importarRomaneiosLidos } from './servico-romaneio.js';
 import { importarLinhas, relatorioVazio } from './servico-planilha.js';
 import { salvarDadosDoCliente } from './dados-cliente.js';
 import { RepositorioMemoria } from '../db/repositorio.js';
@@ -494,4 +494,50 @@ test('romaneio: a folha diz N pacotes e a leitura achou outro número — avisa'
   const r = relatorioVazio();
   await importarRomaneiosLidos([{ romaneio: romaneio([linha()], 2), codCd: '684' }], repo, r);
   assert.ok(r.alertas.some((a) => a.nome === 'Romaneio 1673300' && /2 pacote.*1 linha/.test(a.mensagem)));
+});
+
+test('pedido DIGITADO: a linha da folha entra como no PDF (casa com o cliente), marcada com quem digitou', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('70000001', cliente());
+  const corpo = {
+    cdId: 'palmeira',
+    notaFiscal: '190001',
+    cep: '57750-000',
+    nome: 'joana batista da silva',
+    pedido: '530000001',
+    bairro: 'centro',
+    cidade: 'quebrangulo',
+    endereco: 'prefeito josé inácio, 43, casa-subida da padaria',
+  };
+  const r = await importarPedidoDigitado(repo, corpo, 'admin-1');
+  assert.ok(r.ok);
+  assert.equal(r.relatorio.importados, 1);
+  assert.equal(r.relatorio.digitados, 1);
+  // Não é romaneio: não conta folha nem "N pacotes".
+  assert.equal(r.relatorio.romaneios, undefined);
+  assert.equal(r.relatorio.folhas, undefined);
+  assert.equal(r.relatorio.pendentesDeDecisao, 0, 'o mesmo endereço não abre revisão');
+  const p = await repo.obterPedido('530000001');
+  assert.equal(p?.clienteId, '70000001');
+  assert.equal(p?.cdId, 'palmeira');
+  assert.equal(p?.status, 'pronto_para_rota');
+  assert.equal(p?.romaneio, undefined);
+  assert.equal(p?.digitado?.por, 'admin-1');
+
+  // Digitado de novo (ou o PDF com a mesma linha): repetido, nada muda.
+  const outra = await importarPedidoDigitado(repo, corpo, 'admin-1');
+  assert.ok(outra.ok);
+  assert.equal(outra.relatorio.importados, 0);
+  assert.equal(outra.relatorio.duplicados, 1);
+});
+
+test('pedido DIGITADO: campo errado ou CD desconhecido não grava nada', async () => {
+  const repo = new RepositorioMemoria();
+  const semNome = await importarPedidoDigitado(repo, { cdId: 'palmeira', notaFiscal: '1', pedido: '530000001' }, 'admin-1');
+  assert.equal(semNome.ok, false);
+  if (!semNome.ok) assert.ok(semNome.erros?.nome && semNome.erros.endereco);
+  const corpo = { cdId: 'recife', notaFiscal: '1', nome: 'ANA PAULA', pedido: '530000002', bairro: 'C', cidade: 'PENEDO', endereco: 'RUA A, 1' };
+  const cdErrado = await importarPedidoDigitado(repo, corpo, 'admin-1');
+  assert.equal(cdErrado.ok, false);
+  assert.equal((await repo.listarPedidos()).length, 0);
 });

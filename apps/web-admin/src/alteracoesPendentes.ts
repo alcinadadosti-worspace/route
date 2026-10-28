@@ -20,7 +20,7 @@ export function alteracoesPendentes(): number {
 /** O texto da pergunta — separado para o teste conferir que não vaza placeholder. */
 export function perguntaDeDescarte(quantos: number): string {
   return (
-    `Há dados digitados e não salvos de ${quantos} cliente(s). ` +
+    `Há dados digitados e não salvos em ${quantos} formulário(s). ` +
     'Sair agora descarta o que foi digitado (os clientes continuam na aba Clientes, para completar depois). Continuar?'
   );
 }

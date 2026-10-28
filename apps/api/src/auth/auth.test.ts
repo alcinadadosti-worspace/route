@@ -177,6 +177,29 @@ test('o número da aba Decisões conta os pedidos esperando decisão — e é de
   await app.close();
 });
 
+test('pedido digitado é de ESCRITÓRIO; entra com quem digitou, e campo errado volta campo a campo', async () => {
+  const repo = new RepositorioMemoria();
+  const app = await criarApp({ repo, autenticador });
+  const corpo = {
+    cdId: 'penedo',
+    notaFiscal: '900001',
+    nome: 'FULANA DE TESTE',
+    pedido: '599000001',
+    bairro: 'CENTRO',
+    cidade: 'PENEDO',
+    endereco: 'RUA INVENTADA, 10',
+  };
+  const motorista = await app.inject({ method: 'POST', url: '/api/pedidos/digitados', headers: bearer('tk-motorista'), payload: corpo });
+  assert.equal(motorista.statusCode, 403);
+  const errado = await app.inject({ method: 'POST', url: '/api/pedidos/digitados', headers: bearer('tk-admin'), payload: { ...corpo, pedido: '12' } });
+  assert.equal(errado.statusCode, 400);
+  assert.ok(JSON.parse(errado.body).erros.pedido);
+  const certo = await app.inject({ method: 'POST', url: '/api/pedidos/digitados', headers: bearer('tk-admin'), payload: corpo });
+  assert.equal(JSON.parse(certo.body).importados, 1);
+  assert.equal((await repo.obterPedido('599000001'))?.digitado?.por, 'u-admin');
+  await app.close();
+});
+
 /* ---------- dados do cliente que o romaneio trouxe fora da base ---------- */
 
 test('completar dados do cliente é de ESCRITÓRIO: motorista → 403 nas duas rotas', async () => {

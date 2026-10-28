@@ -15,7 +15,7 @@ test('com algo digitado, pergunta; "não" mantém, "sim" descarta e limpa', () =
   assert.equal(alteracoesPendentes(), 1);
   let texto = '';
   assert.equal(confirmarDescarte((t) => ((texto = t), false)), false);
-  assert.match(texto, /1 cliente/);
+  assert.match(texto, /1 formulário/);
   assert.equal(alteracoesPendentes(), 1, 'recusou: continua pendente');
   assert.equal(confirmarDescarte(() => true), true);
   assert.equal(alteracoesPendentes(), 0);

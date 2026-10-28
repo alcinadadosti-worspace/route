@@ -205,6 +205,12 @@ export interface Pedido {
    */
   romaneio?: string;
   /**
+   * Pedido DIGITADO à mão na Importação (a linha da folha que o PDF não
+   * trouxe, ou que veio em papel): quem digitou e quando. Sem documento de
+   * origem, é por aqui que se confere de onde ele veio.
+   */
+  digitado?: { por: string; em: string };
+  /**
    * Pedido do SITE vindo da planilha do ERP: o código como o romaneio o
    * imprime ("160000001-1"). É a ponte do dedupe entre as duas fontes — a
    * planilha dá a ele outro `CodigoPedido`, e o pacote entrava duas vezes.
@@ -709,6 +715,8 @@ export interface RelatorioImportacao {
   jaEntregues?: number;
   /** Romaneios em PDF do Boticário lidos nesta remessa. */
   romaneios?: number;
+  /** Pedidos digitados à mão (a linha da folha copiada no painel). */
+  digitados?: number;
   /**
    * Cada folha lida, para a tela listar o que JÁ entrou: uma rota do
    * Boticário às vezes vem em mais de um romaneio, mandados um de cada vez, e

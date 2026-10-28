@@ -11,6 +11,8 @@ export interface Envio {
   /** Hora do envio, ISO. */
   quando: string;
   arquivos: string[];
+  /** O que a lista mostra quando não é arquivo (o pedido digitado à mão). */
+  descricao?: string;
   relatorio: RelatorioImportacao;
 }
 
@@ -33,6 +35,7 @@ const OPCIONAIS = [
   'canceladasApagadas',
   'jaEntregues',
   'romaneios',
+  'digitados',
   'semCadastro',
   'revendedoras',
   'clientesAtualizados',
@@ -108,9 +111,58 @@ export function resolvidosFora(
 
 /** O que a lista do lote mostra de cada envio. */
 export function descricaoDoEnvio(envio: Envio): string[] {
+  if (envio.descricao) return [envio.descricao];
   const folhas = envio.relatorio.folhas ?? [];
   if (folhas.length > 0) {
     return folhas.map((f) => `Rota ${f.rota} · ${f.motorista || 'sem motorista'} · ${f.pacotes} pacote(s)`);
   }
   return envio.arquivos.length > 0 ? envio.arquivos : ['(sem arquivo)'];
+}
+
+/**
+ * A linha de cima do cartão do lote. Romaneio conta folhas e pacotes (para
+ * conferir com o papel); o digitado conta à parte; planilha e XML, que não
+ * têm folha, contam os envios — "Romaneios: 0" com pedidos na tela confundia.
+ */
+export function cabecalhoDoLote(relatorio: RelatorioImportacao | null, envios: number): string {
+  const folhas = relatorio?.folhas ?? [];
+  const digitados = relatorio?.digitados ?? 0;
+  const partes: string[] = [];
+  if (folhas.length > 0) {
+    const pacotes = folhas.reduce((soma, f) => soma + f.pacotes, 0);
+    partes.push(`Romaneios desta rota: ${relatorio?.romaneios ?? folhas.length}`, `${pacotes} pacote(s)`);
+    if (digitados > 0) partes.push(`${digitados} digitado(s)`);
+  } else if (digitados > 0) {
+    partes.push(`Pedidos digitados: ${digitados}`);
+  } else {
+    partes.push(`Envios: ${envios}`);
+  }
+  partes.push(`${relatorio?.importados ?? 0} pedido(s) novo(s)`);
+  return partes.join(' · ');
+}
+
+/**
+ * O que o formulário diz depois de salvar um pedido digitado. Entrou também
+ * diz PARA ONDE foi — pronto, à espera do Localizar, ou em Decisões — porque
+ * o Admin não vê o relatório ali, só esta frase. Repetido não entra no lote.
+ */
+export function mensagemDoDigitado(r: RelatorioImportacao, pedido: string): { entrou: boolean; texto: string } {
+  if (r.importados > 0) {
+    if (r.pendentesDeDecisao > 0) {
+      return {
+        entrou: true,
+        texto: `Pedido ${pedido} entrou, mas espera decisão: o endereço mudou e a cliente já tinha ponto no mapa — veja a aba Decisões.`,
+      };
+    }
+    const onde =
+      r.prontosParaRota > 0
+        ? 'pronto para a rota'
+        : 'falta o ponto no mapa (use Localizar endereços, ou o motorista mapeia em campo)';
+    const fora = (r.semCadastro ?? 0) > 0 ? ' A destinatária não está na base: complete o telefone logo abaixo.' : '';
+    return { entrou: true, texto: `Pedido ${pedido} entrou — ${onde}.${fora} Digite o próximo, ou feche.` };
+  }
+  if (r.duplicados > 0) {
+    return { entrou: false, texto: `O pedido ${pedido} já está no sistema — nada foi gravado.` };
+  }
+  return { entrou: false, texto: r.rejeitados[0]?.motivo ?? `O pedido ${pedido} não entrou.` };
 }

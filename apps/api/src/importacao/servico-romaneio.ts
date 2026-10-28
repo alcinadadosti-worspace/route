@@ -1,4 +1,9 @@
-import { enderecosDivergem, type RelatorioImportacao } from '@rota/shared';
+import {
+  enderecosDivergem,
+  validarPedidoDigitado,
+  type CampoDoPedidoDigitado,
+  type RelatorioImportacao,
+} from '@rota/shared';
 import { chaveDeRevendedora, codigoNoNome, criarCasador } from './casamento.js';
 import { enderecoDeBloco, type LinhaPlanilha } from './planilha.js';
 import {
@@ -8,7 +13,7 @@ import {
   lerRomaneio,
   type Romaneio,
 } from './romaneio.js';
-import { importarLinhas, relatorioVazio } from './servico-planilha.js';
+import { codCdDoCd, importarLinhas, relatorioVazio } from './servico-planilha.js';
 import { clienteACompletar } from './dados-cliente.js';
 import type { Repositorio } from '../db/repositorio.js';
 
@@ -59,10 +64,41 @@ export async function importarRomaneios(
   return relatorio;
 }
 
+export type ResultadoDigitado =
+  | { ok: true; relatorio: RelatorioImportacao }
+  | { ok: false; status: number; erro: string; erros?: Partial<Record<CampoDoPedidoDigitado, string>> };
+
+/**
+ * Pedido DIGITADO à mão no painel: as colunas da linha da folha, e o CD. Vira
+ * uma folha de uma linha e passa pelo mesmo miolo do PDF — o mesmo leitor do
+ * endereço, o mesmo casamento com a base, o mesmo dedupe. Digitar não cria
+ * atalho: o que o romaneio não deixaria entrar, isto também não deixa.
+ */
+export async function importarPedidoDigitado(
+  repo: Repositorio,
+  corpo: unknown,
+  uid: string,
+): Promise<ResultadoDigitado> {
+  const v = validarPedidoDigitado(corpo);
+  if (!v.ok) return { ok: false, status: 400, erro: 'Confira os campos do pedido.', erros: v.erros };
+  const { cdId, ...linha } = v.pedido;
+  const codCd = codCdDoCd(cdId);
+  if (!codCd) return { ok: false, status: 400, erro: `CD '${cdId}' não cadastrado.`, erros: { cdId: 'CD não cadastrado.' } };
+  const relatorio = relatorioVazio();
+  await importarRomaneiosLidos(
+    [{ romaneio: { rota: '', motorista: '', quantidade: null, linhas: [linha] }, codCd, digitadoPor: uid }],
+    repo,
+    relatorio,
+  );
+  return { ok: true, relatorio };
+}
+
 /** A parte depois da leitura do PDF — separada para o teste não depender de
  * um PDF de verdade (o romaneio real tem dados pessoais e não vai para o git). */
 export async function importarRomaneiosLidos(
-  lidos: Array<{ romaneio: Romaneio; codCd: string }>,
+  /** `digitadoPor`: a "folha" é a linha que o Admin digitou (uid dele) — não
+   * conta como romaneio, e o pedido guarda quem a digitou. */
+  lidos: Array<{ romaneio: Romaneio; codCd: string; digitadoPor?: string }>,
   repo: Repositorio,
   relatorio: RelatorioImportacao,
 ): Promise<void> {
@@ -88,18 +124,23 @@ export async function importarRomaneiosLidos(
   /** Cliente do romaneio que agora casou com a base (id ≠ código): fica ligado. */
   const passaramABase = new Map<string, string>();
 
-  for (const { romaneio, codCd } of lidos) {
-    relatorio.romaneios = (relatorio.romaneios ?? 0) + 1;
-    relatorio.folhas = [
-      ...(relatorio.folhas ?? []),
-      // O número impresso na folha: é com ele que o Admin confere o lote. As
-      // linhas aceitas deixavam de fora as recusadas, e o total não batia.
-      {
-        rota: romaneio.rota,
-        motorista: romaneio.motorista,
-        pacotes: romaneio.quantidade ?? romaneio.linhas.length + (romaneio.recusadas?.length ?? 0),
-      },
-    ];
+  for (const { romaneio, codCd, digitadoPor } of lidos) {
+    const digitado = digitadoPor ? { por: digitadoPor, em: agora } : undefined;
+    if (digitado) {
+      relatorio.digitados = (relatorio.digitados ?? 0) + romaneio.linhas.length;
+    } else {
+      relatorio.romaneios = (relatorio.romaneios ?? 0) + 1;
+      relatorio.folhas = [
+        ...(relatorio.folhas ?? []),
+        // O número impresso na folha: é com ele que o Admin confere o lote. As
+        // linhas aceitas deixavam de fora as recusadas, e o total não batia.
+        {
+          rota: romaneio.rota,
+          motorista: romaneio.motorista,
+          pacotes: romaneio.quantidade ?? romaneio.linhas.length + (romaneio.recusadas?.length ?? 0),
+        },
+      ];
+    }
     // Data no futuro (relógio errado no PC que imprimiu) não vale: virava o
     // `enderecoDe` do cliente, e até ela passar nenhuma folha mais nova
     // conseguia corrigir o endereço.
@@ -163,7 +204,7 @@ export async function importarRomaneiosLidos(
         volumes: 1,
         pesoBrutoKg: 0,
         emitidoEm,
-        romaneio: romaneio.rota,
+        ...(digitado ? { digitado } : { romaneio: romaneio.rota }),
         pin,
         foraDoCadastro: !c.noCadastro,
       });

@@ -140,17 +140,18 @@ export function Pedidos() {
                     </div>
                   </td>
                   <td className="mono">
-                    {p.numeroPedido ?? '—'} · {p.romaneio ? `romaneio ${p.romaneio}` : (p.lote ?? '—')}
+                    {p.numeroPedido ?? '—'} ·{' '}
+                    {p.romaneio ? `romaneio ${p.romaneio}` : p.digitado ? 'digitado' : (p.lote ?? '—')}
                   </td>
                   <td>{p.emitidoEm.slice(0, 10)}</td>
                   {/* O romaneio não traz itens nem valor: "0" e "R$ 0,00" pareceriam
                       pedido vazio. */}
-                  <td>{p.romaneio ? '—' : quantidadeDeItens(p)}</td>
+                  <td>{p.romaneio || p.digitado ? '—' : quantidadeDeItens(p)}</td>
                   <td>
                     {formatarCarga(p.volumes, p.pesoBrutoKg)}
                   </td>
                   <td className="mono">
-                    {p.romaneio
+                    {p.romaneio || p.digitado
                       ? '—'
                       : p.valorTotal.toLocaleString('pt-BR', {
                           style: 'currency',

@@ -61,6 +61,12 @@ const CD_POR_CODCD: Record<string, { cdId: string; serie: number }> = {
   '684': { cdId: 'palmeira', serie: 0 },
 };
 
+/** O `CodCD` do CD (o inverso do mapa acima): o pedido digitado escolhe o CD
+ * pelo nome, e o miolo da importação o reconhece pelo código. */
+export function codCdDoCd(cdId: string): string | null {
+  return Object.entries(CD_POR_CODCD).find(([, cd]) => cd.cdId === cdId)?.[0] ?? null;
+}
+
 export function relatorioVazio(): RelatorioImportacao {
   return {
     total: 0,
@@ -461,6 +467,7 @@ export async function importarLinhas(
         // Também na retirada: a lista de liberação mostra o que o ERP afirma.
         ...(linha.entregueNoErp ? { entregueNoErp: { data: linha.dataEntrega } } : {}),
         ...(linha.romaneio ? { romaneio: linha.romaneio } : {}),
+        ...(linha.digitado ? { digitado: linha.digitado } : {}),
         ...(linha.codigoExterno ? { codigoExterno: linha.codigoExterno } : {}),
       },
     });

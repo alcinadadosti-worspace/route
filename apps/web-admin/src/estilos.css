@@ -1200,3 +1200,19 @@ button.ligacao.alvo-toque {
   flex: 1 1 260px;
   margin-bottom: 0;
 }
+
+/* Pedido digitado à mão: as colunas da folha, o nome e o endereço inteiros. */
+.pedido-digitado {
+  margin-top: 12px;
+}
+
+.completar-campos label.largo {
+  grid-column: 1 / -1;
+}
+
+.erro-campo {
+  display: block;
+  margin-top: 4px;
+  color: var(--vermelho-falha);
+  font-size: 0.85rem;
+}

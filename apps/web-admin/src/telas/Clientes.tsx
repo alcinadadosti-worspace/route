@@ -256,12 +256,17 @@ export function Clientes() {
                                 {p.numeroNota}/{p.serie}
                               </span>
                               <span>{p.emitidoEm.slice(0, 10)}</span>
-                              {/* Pedido do romaneio não traz itens nem valor. */}
+                              {/* Pedido do romaneio (ou digitado da folha) não traz itens nem valor. */}
                               <span>
-                                {p.romaneio ? `romaneio ${p.romaneio}` : `${quantidadeDeItens(p)} itens`} · {p.volumes} vol
+                                {p.romaneio
+                                  ? `romaneio ${p.romaneio}`
+                                  : p.digitado
+                                    ? 'digitado'
+                                    : `${quantidadeDeItens(p)} itens`}{' '}
+                                · {p.volumes} vol
                               </span>
                               <span className="mono">
-                                {p.romaneio
+                                {p.romaneio || p.digitado
                                   ? '—'
                                   : p.valorTotal.toLocaleString('pt-BR', {
                                       style: 'currency',

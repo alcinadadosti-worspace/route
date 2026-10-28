@@ -10,6 +10,7 @@ import type {
   RelatorioImportacao,
   RevendedoraCandidata,
   GrupoSugerido,
+  PedidoDigitado,
   RelatorioProdutividade,
   Rota,
   Usuario,
@@ -85,6 +86,11 @@ export async function importarArquivos(arquivos: File[]): Promise<RelatorioImpor
 export async function listarPedidos(): Promise<Array<{ id: string } & Pedido>> {
   const resposta = await apiFetch(`${BASE}/api/pedidos`);
   return lerResposta(resposta);
+}
+
+/** O pedido digitado à mão (a linha da folha): entra como uma importação. */
+export async function digitarPedido(campos: PedidoDigitado): Promise<RelatorioImportacao> {
+  return post(`${BASE}/api/pedidos/digitados`, campos);
 }
 
 /** Dos clientes passados, os que ainda esperam dados (telefone, referência). */

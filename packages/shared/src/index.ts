@@ -19,3 +19,4 @@ export * from './baixa.js';
 export * from './excecoes.js';
 export * from './liberacao.js';
 export * from './pontoRepetido.js';
+export * from './pedidoDigitado.js';
