@@ -29,6 +29,7 @@ import { FORMATO_PEDIDO_ID, FORMATO_ROTA_ID } from './rotas/comum.js';
 import { calcularProdutividade, validarJanela } from './produtividade.js';
 import { previaDeRota, type EntradaPrevia } from './rotas/previa.js';
 import { publicarRota, type EntradaPublicacao } from './rotas/publicar.js';
+import { trocarObservacaoDaRota } from './rotas/observacao.js';
 import { sugerirOrdemDeParadas } from './rotas/ordem-sugerida.js';
 import { recalcularTracado } from './rotas/rerota.js';
 import { processarTrilhasBrutas, type RelatorioProcessamento } from './trilhas/processar.js';
@@ -522,6 +523,15 @@ export async function criarApp({
         .send({ erro: resultado.erro, pendentes: resultado.pendentes });
     }
     return { rotaId: resultado.rotaId, rota: resultado.rota };
+  });
+
+  // A observação do rodapé do PDF, trocada no Acompanhamento do dia.
+  app.post('/api/rotas/:rotaId/observacao', { config: { papeis: ESCRITORIO } }, async (req, reply) => {
+    const { rotaId } = req.params as { rotaId: string };
+    if (!FORMATO_ROTA_ID.test(rotaId)) return reply.code(400).send({ erro: 'rotaId inválido' });
+    const resultado = await trocarObservacaoDaRota(repo, rotaId, req.body);
+    if (!resultado.ok) return reply.code(resultado.status).send({ erro: resultado.erro });
+    return { observacao: resultado.observacao };
   });
 
   // Baixa pelo painel: a rota saiu em PDF e o Admin Estoque registra, na volta

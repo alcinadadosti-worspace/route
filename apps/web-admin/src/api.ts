@@ -179,8 +179,18 @@ export async function publicarRota(entrada: {
   cdId: string;
   retornaAoCd: boolean;
   motoristaId: string;
+  /** Sai no rodapé do PDF. */
+  observacao?: string;
 }): Promise<{ rotaId: string; rota: Rota }> {
   return post(`${BASE}/api/rotas`, entrada);
+}
+
+/** Troca a observação do rodapé do PDF de uma rota já publicada. */
+export async function trocarObservacaoDaRota(rotaId: string, observacao: string | null): Promise<string | null> {
+  const r = await post<{ observacao: string | null }>(`${BASE}/api/rotas/${encodeURIComponent(rotaId)}/observacao`, {
+    observacao,
+  });
+  return r.observacao;
 }
 
 /** Baixa da rota em PDF: o que o motorista entregou, registrado na volta. */

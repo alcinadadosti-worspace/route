@@ -413,6 +413,9 @@ export interface Rota {
   status: StatusRota;
   publicadaEm: string | null;
   concluidaEm: string | null;
+  /** Recado do Admin Estoque ao motorista, impresso no rodapé de toda página
+   * do PDF (ver `observacaoDaRota`). Ausente = sem observação. */
+  observacao?: string;
 }
 
 /** `usuarios/{uid}` — espelho de perfil para listagens (seção 7.6). */

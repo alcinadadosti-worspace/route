@@ -1,6 +1,8 @@
 import {
   chaveDeMunicipio,
   formatarDia,
+  MAX_OBSERVACAO_ROTA,
+  observacaoDaRota,
   telefoneDaParada,
   telefoneLegivel,
   type Cliente,
@@ -44,6 +46,8 @@ export interface Roteiro {
   paradas: ItemRoteiro[];
   excecoes: ItemRoteiro[];
   rodape: string;
+  /** O recado do Admin Estoque, no rodapé de toda página; null = nenhum. */
+  observacao: string | null;
 }
 
 const numero = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -175,5 +179,29 @@ export function montarRoteiro(
     paradas,
     excecoes: itensExcecao,
     rodape: `Rota ${rotaId} · gerado em ${gerado}`,
+    observacao: rota.observacao?.trim() || null,
   };
+}
+
+/**
+ * A observação que vai no PDF baixado de novo, e se ela tem de ser salva na
+ * rota antes. É opcional e NUNCA trava o PDF: texto fora da regra (a tela já
+ * corta em 300) vai cortado, e a falha ao salvar só vira aviso — o papel sai
+ * com o que o Admin escreveu.
+ */
+export function observacaoAoBaixar(
+  editada: string | undefined,
+  salva: string | undefined,
+): { texto: string | null; salvar: boolean } {
+  const atual = salva?.trim() || null;
+  if (editada === undefined) return { texto: atual, salvar: false };
+  const v = observacaoDaRota(editada);
+  const texto = v.ok ? v.observacao : editada.replace(/\s+/g, ' ').trim().slice(0, MAX_OBSERVACAO_ROTA) || null;
+  return { texto, salvar: texto !== atual };
+}
+
+/** A rota com esta observação (null tira o campo). */
+export function comObservacao<T extends Rota>(rota: T, texto: string | null): T {
+  const { observacao: _antiga, ...resto } = rota;
+  return (texto ? { ...resto, observacao: texto } : resto) as T;
 }

@@ -148,6 +148,18 @@ export async function gerarPdfRoteiro(roteiro: Roteiro): Promise<JsPDF> {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   let y = TOPO;
 
+  // A observação tira espaço do pé de TODA página: medida antes de desenhar
+  // qualquer parada, para a lista parar acima dela e nunca passar por cima.
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  const linhasObs = roteiro.observacao
+    ? (doc.splitTextToSize(textoParaPdf(`Observação: ${roteiro.observacao}`), PAGINA.largura - 2 * MARGEM) as string[])
+    : [];
+  const ultimaObs = PAGINA.altura - 13.5;
+  const primeiraObs = ultimaObs - (linhasObs.length - 1) * alturaLinha(9);
+  const separador = primeiraObs - alturaLinha(9) + 0.8;
+  const base = linhasObs.length > 0 ? separador - 2 : BASE;
+
   const bloco = (texto: string, pt: number, estilo: Linha['estilo'], largura = PAGINA.largura - 2 * MARGEM) => {
     doc.setFont('helvetica', estilo);
     doc.setFontSize(pt);
@@ -157,7 +169,7 @@ export async function gerarPdfRoteiro(roteiro: Roteiro): Promise<JsPDF> {
     }
   };
   const caber = (altura: number) => {
-    if (y + altura > BASE) {
+    if (y + altura > base) {
       doc.addPage();
       y = TOPO;
     }
@@ -217,6 +229,15 @@ export async function gerarPdfRoteiro(roteiro: Roteiro): Promise<JsPDF> {
   const total = doc.getNumberOfPages();
   for (let i = 1; i <= total; i++) {
     doc.setPage(i);
+    if (linhasObs.length > 0) {
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.3);
+      doc.line(MARGEM, separador, PAGINA.largura - MARGEM, separador);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(0);
+      linhasObs.forEach((t, k) => doc.text(t, MARGEM, primeiraObs + k * alturaLinha(9)));
+    }
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(110);

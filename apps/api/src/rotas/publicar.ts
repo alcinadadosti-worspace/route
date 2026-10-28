@@ -1,4 +1,4 @@
-import type { ExcecaoRota, ParadaRota, Rota, StatusPedido } from '@rota/shared';
+import { observacaoDaRota, type ExcecaoRota, type ParadaRota, type Rota, type StatusPedido } from '@rota/shared';
 import { randomUUID } from 'node:crypto';
 import { coletarParadas, enderecoEmLinha, type FalhaColeta } from './previa.js';
 import type { Repositorio } from '../db/repositorio.js';
@@ -25,6 +25,8 @@ export interface EntradaPublicacao {
   motoristaId: string;
   /** YYYY-MM-DD; padrão: hoje no fuso de Alagoas. */
   data?: string;
+  /** Sai no rodapé do PDF (ver `observacaoDaRota`). */
+  observacao?: string;
 }
 
 export type ResultadoPublicacao =
@@ -76,6 +78,10 @@ export async function publicarRota(
   if (!motorista) {
     return { ok: false, status: 400, erro: 'Motorista inválido ou inativo' };
   }
+  // Antes do OSRM: recusar depois de segundos de cálculo só pela observação
+  // seria desperdício, e o Admin corrige o texto na hora.
+  const obs = observacaoDaRota(entrada.observacao);
+  if (!obs.ok) return { ok: false, status: 400, erro: obs.erro };
 
   const cds = await repo.obterCds();
   // hasOwnProperty: `cdId='__proto__'` retornaria o protótipo (truthy) e
@@ -231,6 +237,7 @@ export async function publicarRota(
     status: 'publicada',
     publicadaEm: new Date().toISOString(),
     concluidaEm: null,
+    ...(obs.observacao ? { observacao: obs.observacao } : {}),
   };
 
   // Escrita atômica: grava a rota e move os pedidos para em_rota de uma vez, e

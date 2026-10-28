@@ -256,6 +256,23 @@ test('publicar grava a rota, denormaliza paradas com ETA e move pedidos para em_
   const pedidos = await repo.listarPedidos();
   assert.ok(pedidos.every((p) => p.status === 'em_rota' && p.rotaId === resultado.rotaId));
   assert.equal((await repo.listarRotas()).length, 1);
+  assert.equal('observacao' in rota, false, 'sem observação, a rota fica com a forma de sempre');
+});
+
+test('publicar com observação: vai para a rota (sai no rodapé do PDF); longa demais recusa sem reservar', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('c1', clienteCom({ lat: -9.42, lng: -36.64 }, 'CLIENTE UM'));
+  await repo.salvarPedido('p1', pedidoDe('c1'));
+  const osrm = criarClienteOsrm('http://osrm.local', fetchPorRota())!;
+  const entrada = { pedidoIds: ['p1'], cdId: 'penedo', motoristaId: 'motorista-demo' };
+
+  const longa = await publicarRota({ ...entrada, observacao: 'x'.repeat(301) }, repo, osrm);
+  assert.equal(longa.ok, false);
+  assert.equal((await repo.obterPedido('p1'))?.status, pedidoDe('c1').status);
+
+  const r = await publicarRota({ ...entrada, observacao: '  Levar o troco.\nVolta antes das 16h ' }, repo, osrm);
+  assert.ok(r.ok);
+  assert.equal(r.rota.observacao, 'Levar o troco. Volta antes das 16h');
 });
 
 test('publicar recusa motorista inválido e pedido já em rota', async () => {

@@ -20,3 +20,4 @@ export * from './excecoes.js';
 export * from './liberacao.js';
 export * from './pontoRepetido.js';
 export * from './pedidoDigitado.js';
+export * from './observacaoDaRota.js';

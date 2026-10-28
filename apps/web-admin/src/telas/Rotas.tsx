@@ -10,6 +10,7 @@ import {
   formatarHora,
   chaveDeMunicipio,
   municipioDoPedido,
+  MAX_OBSERVACAO_ROTA,
   paradasEmAberto,
   rotasSemBaixa,
   type ResultadoBaixa,
@@ -39,12 +40,13 @@ import {
   listarUsuarios,
   previaDeRota,
   publicarRota,
+  trocarObservacaoDaRota,
 } from '../api';
 import { MapaRota } from '../MapaRota';
 import { MapaAcompanhamento } from '../MapaAcompanhamento';
 import { LimiteDeErro } from '../LimiteDeErro';
 import { FotoReferencia } from '../FotoReferencia';
-import { montarRoteiro } from '../roteiro';
+import { comObservacao, montarRoteiro, observacaoAoBaixar } from '../roteiro';
 import { baixarPdfRoteiro, preCarregarPdf } from '../roteiroPdf';
 import { alternarGrupo, estadoDoGrupo } from '../selecaoCidades';
 import { ForaDaMontagem } from './ForaDaMontagem';
@@ -104,6 +106,8 @@ export function Rotas() {
   );
   const [usuarios, setUsuarios] = useState<Array<{ id: string } & Usuario>>([]);
   const [motoristaId, setMotoristaId] = useState('');
+  /** Sai no rodapé do PDF da rota que vai ser publicada. */
+  const [observacao, setObservacao] = useState('');
   const [publicando, setPublicando] = useState(false);
   const [apagandoLote, setApagandoLote] = useState(false);
   /** Ação de UMA linha em curso (desfazer rota, apagar pedido): o botão dela
@@ -129,6 +133,8 @@ export function Rotas() {
   const [baixando, setBaixando] = useState(false);
   const [erroBaixa, setErroBaixa] = useState<string | null>(null);
   const [gerandoPdf, setGerandoPdf] = useState<string | null>(null);
+  /** A observação sendo editada no Acompanhamento, por rota (ausente = a salva). */
+  const [obsEditada, setObsEditada] = useState<Record<string, string>>({});
   /**
    * Quando a última baixa foi gravada. Uma busca do acompanhamento que SAIU
    * antes dela traz o estado de antes e, chegando depois, desfazia na tela a
@@ -733,16 +739,34 @@ export function Rotas() {
   /** O PDF sai sempre de uma rota PUBLICADA: é a publicação que reserva os
    * pedidos. Baixar de novo depois da baixa parcial mostra o que já foi feito. */
   async function baixarPdf(r: { id: string } & Rota) {
-    setGerandoPdf(r.id);
     setErroBaixa(null);
+    setGerandoPdf(r.id);
+    // A observação do campo vai para a ROTA antes do PDF: o papel impresso e o
+    // que a próxima impressão traz não podem divergir. Mas ela é opcional e
+    // NÃO trava o papel: sem rede para salvar, o PDF sai com o que foi
+    // escrito, e só o aviso diz que a rota ficou com a anterior.
+    const { texto, salvar } = observacaoAoBaixar(obsEditada[r.id], r.observacao);
+    const rota = comObservacao(r, texto);
+    let aviso: string | null = null;
+    if (salvar) {
+      try {
+        await trocarObservacaoDaRota(r.id, texto);
+        carregar();
+      } catch (e) {
+        aviso =
+          `O PDF saiu com a observação, mas ela não foi salva na rota${e instanceof Error ? ` (${e.message.replace(/\.$/, '')})` : ''}. ` +
+          'Baixe de novo quando a conexão voltar para salvá-la.';
+      }
+    }
     try {
       await baixarPdfRoteiro(
-        montarRoteiro(r.id, r, {
+        montarRoteiro(r.id, rota, {
           motorista: nomeDoUsuario(r.motoristaId),
           clientes,
           geradoEm: new Date(),
         }),
       );
+      if (aviso) setErroBaixa(aviso);
     } catch (e) {
       setErroBaixa(e instanceof Error ? `Falha ao gerar o PDF: ${e.message}` : 'Falha ao gerar o PDF');
     } finally {
@@ -866,8 +890,10 @@ export function Rotas() {
         cdId: previa.cd.id,
         retornaAoCd: previa.retornaAoCd,
         motoristaId,
+        ...(observacao.trim() ? { observacao } : {}),
       });
       setPublicada(resultado.rotaId);
+      setObservacao('');
       setPrevia(null);
       setSelecionados(new Set());
       setExcecoesDesmarcadas(new Set());
@@ -875,11 +901,18 @@ export function Rotas() {
       if (comPdf) {
         try {
           await baixarPdfRoteiro(
-            montarRoteiro(resultado.rotaId, resultado.rota, {
-              motorista: nomeDoUsuario(motoristaId),
-              clientes,
-              geradoEm: new Date(),
-            }),
+            montarRoteiro(
+              resultado.rotaId,
+              // A API de antes deste campo o ignora: o papel sai com o que foi escrito.
+              resultado.rota.observacao
+                ? resultado.rota
+                : comObservacao(resultado.rota, observacaoAoBaixar(observacao, undefined).texto),
+              {
+                motorista: nomeDoUsuario(motoristaId),
+                clientes,
+                geradoEm: new Date(),
+              },
+            ),
           );
         } catch {
           // A rota já existe e os pedidos já estão reservados — o que falhou foi
@@ -1033,6 +1066,18 @@ export function Rotas() {
                               motorista para NÃO entregar.
                             </div>
                           ))}
+                          <label className="observacao-pdf">
+                            <span className="decisao-rotulo">
+                              Observação no rodapé do PDF — salva na rota ao baixar
+                            </span>
+                            <textarea
+                              className="filtro"
+                              rows={2}
+                              maxLength={MAX_OBSERVACAO_ROTA}
+                              value={obsEditada[r.id] ?? r.observacao ?? ''}
+                              onChange={(e) => setObsEditada((atual) => ({ ...atual, [r.id]: e.target.value }))}
+                            />
+                          </label>
                           <div className="barra-rota">
                             <button disabled={gerandoPdf === r.id} onClick={() => void baixarPdf(r)}>
                               {gerandoPdf === r.id ? <Girando texto="GERANDO…" /> : '📄 Baixar PDF'}
@@ -1686,6 +1731,20 @@ export function Rotas() {
             </div>
           )}
 
+          <label className="observacao-pdf">
+            <span className="decisao-rotulo">Observação — sai no rodapé de todas as páginas do PDF (opcional)</span>
+            <textarea
+              className="filtro"
+              rows={2}
+              maxLength={MAX_OBSERVACAO_ROTA}
+              placeholder="Ex.: Levar o troco. Voltar ao CD antes das 16h."
+              value={observacao}
+              onChange={(e) => setObservacao(e.target.value)}
+            />
+            <span className="decisao-aviso">
+              {observacao.length}/{MAX_OBSERVACAO_ROTA}
+            </span>
+          </label>
           <div className="publicacao">
             <label className="opcao">
               Motorista:

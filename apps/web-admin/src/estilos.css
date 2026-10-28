@@ -1216,3 +1216,20 @@ button.ligacao.alvo-toque {
   color: var(--vermelho-falha);
   font-size: 0.85rem;
 }
+
+/* Observação do rodapé do PDF: na publicação e no Acompanhamento do dia. */
+.observacao-pdf {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 0 8px;
+}
+
+/* O `.filtro` é a caixa de busca (380px, uma linha): aqui o texto corre a
+   largura toda, como vai sair no pé da página. */
+.observacao-pdf textarea {
+  width: 100%;
+  max-width: none;
+  padding: 8px 12px;
+  resize: vertical;
+}

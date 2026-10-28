@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { telefoneLegivel, type Cliente, type ExcecaoRota, type ParadaRota, type Rota } from '@rota/shared';
-import { duracaoLegivel, montarRoteiro } from './roteiro.js';
+import { comObservacao, duracaoLegivel, montarRoteiro, observacaoAoBaixar } from './roteiro.js';
 import { textoParaPdf } from './roteiroPdf.js';
 
 test('texto do PDF: quebra de linha vira espaço, e o que o Latin-1 não tem é trocado ou some', () => {
@@ -94,6 +94,12 @@ test('roteiro: título pela cidade, resumo em pt-BR e nome de arquivo sem acento
   assert.equal(r.resumo, '2 paradas · 1 exceção · 1.284,6 km · ~3h40 de direção · volta ao CD');
   assert.equal(r.arquivo, 'rota-2026-10-16-teotonio-vilela.pdf');
   assert.equal(r.rodape, 'Rota 2026-10-16_ab12cd34 · gerado em 16/10/2026, 07:12');
+  assert.equal(r.observacao, null);
+});
+
+test('roteiro: a observação da rota vai para o rodapé', () => {
+  const r = montarRoteiro('2026-10-16_ab12cd34', { ...rota(), observacao: 'Levar o troco.' }, CONTEXTO);
+  assert.equal(r.observacao, 'Levar o troco.');
 });
 
 test('roteiro: paradas na ordem, com km ACUMULADO desde o CD e o como-chegar do cliente', () => {
@@ -149,4 +155,25 @@ test('telefone e duração legíveis, e nada de placeholder vazando', () => {
   assert.equal(duracaoLegivel(45), '45 min');
   assert.equal(duracaoLegivel(125), '2h05');
   assert.equal(duracaoLegivel(-3), '0 min');
+});
+
+test('observação ao baixar: opcional, salva só quando mudou, e nunca impede o PDF', () => {
+  // Campo não mexido: imprime a salva, nada a gravar.
+  assert.deepEqual(observacaoAoBaixar(undefined, 'Levar o troco.'), { texto: 'Levar o troco.', salvar: false });
+  assert.deepEqual(observacaoAoBaixar(undefined, undefined), { texto: null, salvar: false });
+  // Mesmo texto com outra quebra de linha: não grava de novo.
+  assert.deepEqual(observacaoAoBaixar('Levar o\ntroco.', 'Levar o troco.'), { texto: 'Levar o troco.', salvar: false });
+  // Apagou: o PDF sai sem, e a rota perde o campo.
+  assert.deepEqual(observacaoAoBaixar('   ', 'Levar o troco.'), { texto: null, salvar: true });
+  // Longa demais (não passa pela tela, que corta): sai cortada, não trava.
+  const longa = observacaoAoBaixar('x'.repeat(400), undefined);
+  assert.equal(longa.texto?.length, 300);
+  assert.equal(longa.salvar, true);
+});
+
+test('rota com observação: troca ou tira o campo, o resto fica', () => {
+  const r = { ...rota(), observacao: 'antiga' };
+  assert.equal(comObservacao(r, 'nova').observacao, 'nova');
+  assert.equal('observacao' in comObservacao(r, null), false);
+  assert.equal(comObservacao(r, null).motoristaId, 'm1');
 });
