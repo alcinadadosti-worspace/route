@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { criarClienteOsrm } from './osrm.js';
-import { coletarParadas, previaDeRota } from './previa.js';
+import { coletarParadas, previaDeRota, refinarViagem } from './previa.js';
 import { publicarRota } from './publicar.js';
 import { RepositorioMemoria } from '../db/repositorio.js';
 import type { Cliente, Pedido } from '@rota/shared';
@@ -223,6 +223,132 @@ test('prévia com ordem manual respeita a sequência dada (RF-12)', async () => 
     ['CLIENTE UM', 'CLIENTE DOIS'], // ordem de entrada, sem otimizar
   );
   assert.equal(resultado.previa.polyline, 'xyz789'); // veio do /route, não do /trip
+});
+
+/**
+ * OSRM falso de 3 paradas: o /trip devolve a ordem 1-2-3 (a dele, 300 km /
+ * 300 min), mas a matriz do /table diz que 1-3-2 é muito mais curta. O /route
+ * da ordem nova dá `route` (km, min) — por padrão, 120 km / 120 min.
+ */
+function osrmComTripRuim(
+  falha: { table?: boolean; route?: boolean } = {},
+  route: { km: number; min: number } = { km: 120, min: 120 },
+) {
+  const chamadas: string[] = [];
+  const fetchFalso = (async (url: string) => {
+    const tipo = /\/(trip|table|route)\//.exec(String(url))?.[1] ?? '?';
+    chamadas.push(tipo);
+    const corpo =
+      tipo === 'trip'
+        ? {
+            code: 'Ok',
+            trips: [{ geometry: 'do-trip', distance: 300000, duration: 18000 }],
+            waypoints: [0, 1, 2, 3].map((i) => ({ waypoint_index: i })),
+          }
+        : tipo === 'table'
+          ? falha.table
+            ? { code: 'TooBig' }
+            : {
+                code: 'Ok',
+                // CD→1, 1→3, 3→2 e 2→CD custam 1; todo o resto, 100.
+                durations: [
+                  [0, 1, 100, 100],
+                  [100, 0, 100, 1],
+                  [1, 100, 0, 100],
+                  [100, 100, 1, 0],
+                ],
+              }
+          : falha.route
+            ? { code: 'NoRoute' }
+            : {
+                code: 'Ok',
+                routes: [
+                  { geometry: 'do-route', distance: route.km * 1000, duration: route.min * 60, legs: [] },
+                ],
+              };
+    return { ok: true, status: 200, json: async () => corpo };
+  }) as unknown as typeof fetch;
+  return { osrm: criarClienteOsrm('http://osrm.local', fetchFalso)!, chamadas };
+}
+
+async function repoDeTresParadas() {
+  const repo = new RepositorioMemoria();
+  for (const [i, nome] of ['CLIENTE UM', 'CLIENTE DOIS', 'CLIENTE TRÊS'].entries()) {
+    await repo.salvarCliente(`c${i + 1}`, clienteCom({ lat: -10.2 - i / 100, lng: -36.5 }, nome));
+    await repo.salvarPedido(`p${i + 1}`, pedidoDe(`c${i + 1}`));
+  }
+  return repo;
+}
+
+test('prévia de rota fechada refina a ordem do /trip, e o traçado é o da ordem nova', async () => {
+  const repo = await repoDeTresParadas();
+  const { osrm, chamadas } = osrmComTripRuim();
+  const r = await previaDeRota({ pedidoIds: ['p1', 'p2', 'p3'], cdId: 'penedo' }, repo, osrm);
+
+  assert.ok(r.ok);
+  // É esta a ordem que a publicação grava e que sai no PDF.
+  assert.deepEqual(
+    r.previa.paradas.map((p) => [p.posicao, p.nome]),
+    [
+      [1, 'CLIENTE UM'],
+      [2, 'CLIENTE TRÊS'],
+      [3, 'CLIENTE DOIS'],
+    ],
+  );
+  assert.equal(r.previa.polyline, 'do-route');
+  assert.equal(r.previa.distanciaTotalKm, 120);
+  assert.equal(r.previa.duracaoTotalMin, 120);
+  assert.deepEqual(chamadas, ['trip', 'table', 'route']);
+});
+
+test('prévia de rota fechada: sem o /table ou sem o /route, fica a ordem do /trip em vez de dar erro', async () => {
+  for (const falha of [{ table: true }, { route: true }]) {
+    const repo = await repoDeTresParadas();
+    const { osrm } = osrmComTripRuim(falha);
+    const r = await previaDeRota({ pedidoIds: ['p1', 'p2', 'p3'], cdId: 'penedo' }, repo, osrm);
+
+    assert.ok(r.ok, JSON.stringify(falha));
+    assert.deepEqual(
+      r.previa.paradas.map((p) => p.nome),
+      ['CLIENTE UM', 'CLIENTE DOIS', 'CLIENTE TRÊS'],
+    );
+    assert.equal(r.previa.polyline, 'do-trip');
+    assert.equal(r.previa.distanciaTotalKm, 300);
+  }
+});
+
+test('prévia de rota fechada: a ordem nova só fica se o traçado dela não perde em km nem em minutos', async () => {
+  // A matriz mede tempo e não é o caminho exato do /route: no traçado de
+  // verdade a ordem "melhor" pode sair mais longa ou mais demorada.
+  for (const route of [
+    { km: 310, min: 100 }, // mais rápida, mas mais longa
+    { km: 100, min: 310 }, // mais curta, mas mais demorada
+    { km: 300, min: 300 }, // empate: trocar a ordem não ganha nada
+  ]) {
+    const repo = await repoDeTresParadas();
+    const { osrm } = osrmComTripRuim({}, route);
+    const r = await previaDeRota({ pedidoIds: ['p1', 'p2', 'p3'], cdId: 'penedo' }, repo, osrm);
+    assert.ok(r.ok);
+    assert.equal(r.previa.polyline, 'do-trip', JSON.stringify(route));
+    assert.deepEqual(r.previa.paradas.map((p) => p.nome), ['CLIENTE UM', 'CLIENTE DOIS', 'CLIENTE TRÊS']);
+  }
+  // Ganha em uma e empata na outra: fica a nova.
+  const repo = await repoDeTresParadas();
+  const { osrm } = osrmComTripRuim({}, { km: 300, min: 250 });
+  const r = await previaDeRota({ pedidoIds: ['p1', 'p2', 'p3'], cdId: 'penedo' }, repo, osrm);
+  assert.ok(r.ok);
+  assert.equal(r.previa.polyline, 'do-route');
+});
+
+test('refinar a viagem tem prazo: OSRM parado depois do /trip não segura a prévia', async () => {
+  const viagem = { ordem: [0, 1], polyline: 'do-trip', distanciaKm: 10, duracaoMin: 10 };
+  const parado = {
+    table: () => new Promise<number[][]>(() => {}),
+  } as unknown as Parameters<typeof refinarViagem>[3];
+  const inicio = Date.now();
+  const r = await refinarViagem({ lat: 0, lng: 0 }, [{ lat: 1, lng: 1 }, { lat: 2, lng: 2 }], viagem, parado, 30);
+  assert.equal(r, viagem);
+  assert.ok(Date.now() - inicio < 2000);
 });
 
 test('publicar grava a rota, denormaliza paradas com ETA e move pedidos para em_rota', async () => {

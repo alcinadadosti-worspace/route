@@ -8,8 +8,9 @@ import {
   type PreviaRota,
 } from '@rota/shared';
 import { ordemRotaAberta } from './rota-aberta.js';
+import { refinarOrdem } from './refinar-ordem.js';
 import type { Repositorio } from '../db/repositorio.js';
-import type { ClienteOsrm } from './osrm.js';
+import type { ClienteOsrm, ResultadoTrip } from './osrm.js';
 
 /**
  * Endereço em uma linha para a parada e para o roteiro em PDF. Sem número, não
@@ -25,7 +26,7 @@ export function enderecoEmLinha(e: EnderecoFiscal): string {
 
 /**
  * Prévia de rota (RF-11/RF-12): seleção de pedidos + CD de partida → ordem das
- * paradas (otimizada via /trip, ou fixa via /route quando o operador ajustou
+ * paradas (otimizada via /trip e refinada, ou fixa via /route quando o operador ajustou
  * manualmente), traçado e estimativas. A publicação (RF-13) usa a mesma coleta.
  */
 
@@ -195,6 +196,72 @@ export async function coletarParadas(
   return { ok: true, candidatas };
 }
 
+/**
+ * Teto para refinar a ordem na prévia. O cliente OSRM insiste ~24 s num 502/
+ * 503 antes de desistir; aqui o `/trip` já respondeu, então esperar tudo isso
+ * por um ganho opcional só trava a tela de quem está montando.
+ */
+const PRAZO_DO_REFINO_MS = 10_000;
+
+/**
+ * A ordem do `/trip` passada pela busca local (refinar-ordem.ts), com o
+ * traçado refeito pelo `/route` quando ela muda. É esta ordem que a publicação
+ * grava e que sai no PDF.
+ *
+ * O `/trip` já devolveu uma rota válida: o refinamento é ganho, não requisito.
+ * Se o `/table` ou o `/route` falharem aqui (o serviço caindo no meio da
+ * prévia), ou passarem do prazo, fica a do `/trip` em vez de a prévia virar
+ * erro ou demora.
+ */
+export async function refinarViagem(
+  cd: GeoPonto,
+  pontos: GeoPonto[],
+  viagem: ResultadoTrip,
+  osrm: ClienteOsrm,
+  prazoMs = PRAZO_DO_REFINO_MS,
+): Promise<ResultadoTrip> {
+  let relogio: ReturnType<typeof setTimeout> | undefined;
+  const esgotou = new Promise<ResultadoTrip>((resolver) => {
+    relogio = setTimeout(() => resolver(viagem), prazoMs);
+  });
+  try {
+    return await Promise.race([tentarRefinar(cd, pontos, viagem, osrm), esgotou]);
+  } finally {
+    clearTimeout(relogio);
+  }
+}
+
+async function tentarRefinar(
+  cd: GeoPonto,
+  pontos: GeoPonto[],
+  viagem: ResultadoTrip,
+  osrm: ClienteOsrm,
+): Promise<ResultadoTrip> {
+  try {
+    const duracoes = await osrm.table([cd, ...pontos]);
+    const ordem = refinarOrdem(duracoes, viagem.ordem, { fechada: true });
+    if (ordem.every((indice, i) => indice === viagem.ordem[i])) return viagem;
+    const tracado = await osrm.route([cd, ...ordem.map((indice) => pontos[indice]!), cd]);
+    // A busca mede TEMPO na matriz do /table, que não é exatamente o caminho
+    // do /route (que, por exemplo, não dá meia-volta em cima da parada) — e o
+    // motorista sente também os km. A ordem nova só fica se, no traçado de
+    // verdade, não perde em nada para a do /trip e ganha em alguma coisa.
+    const naoPerde =
+      tracado.duracaoMin <= viagem.duracaoMin && tracado.distanciaKm <= viagem.distanciaKm;
+    const ganha =
+      tracado.duracaoMin < viagem.duracaoMin || tracado.distanciaKm < viagem.distanciaKm;
+    if (!naoPerde || !ganha) return viagem;
+    return {
+      ordem,
+      polyline: tracado.polyline,
+      distanciaKm: tracado.distanciaKm,
+      duracaoMin: tracado.duracaoMin,
+    };
+  } catch {
+    return viagem;
+  }
+}
+
 export async function previaDeRota(
   entrada: EntradaPrevia,
   repo: Repositorio,
@@ -241,11 +308,9 @@ export async function previaDeRota(
     distanciaTotalKm = resultado.distanciaKm;
     duracaoTotalMin = resultado.duracaoMin;
   } else if (retornaAoCd) {
-    const resultado = await osrm.trip(
-      cd.coordenada,
-      candidatas.map((c) => c.coordenada),
-      true,
-    );
+    const pontos = candidatas.map((c) => c.coordenada);
+    const viagem = await osrm.trip(cd.coordenada, pontos, true);
+    const resultado = await refinarViagem(cd.coordenada, pontos, viagem, osrm);
     ordenadas = resultado.ordem.map((indice) => candidatas[indice]!);
     polyline = resultado.polyline;
     distanciaTotalKm = resultado.distanciaKm;
