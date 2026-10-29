@@ -9,6 +9,7 @@ import {
 } from '@rota/shared';
 import { ordemRotaAberta } from './rota-aberta.js';
 import { refinarOrdem } from './refinar-ordem.js';
+import { agruparMesmoLugar, mesmoPercurso } from './mesmo-lugar.js';
 import type { Repositorio } from '../db/repositorio.js';
 import type { ClienteOsrm, ResultadoTrip } from './osrm.js';
 
@@ -197,11 +198,25 @@ export async function coletarParadas(
 }
 
 /**
- * Teto para refinar a ordem na prévia. O cliente OSRM insiste ~24 s num 502/
- * 503 antes de desistir; aqui o `/trip` já respondeu, então esperar tudo isso
- * por um ganho opcional só trava a tela de quem está montando.
+ * Teto para tudo o que a prévia faz DEPOIS do `/trip` (refinar e juntar o
+ * mesmo lugar). O cliente OSRM insiste ~24 s num 502/503 antes de desistir, e
+ * sem resposta nenhuma espera para sempre; aqui o `/trip` já respondeu, então
+ * esperar isso por um ganho opcional só trava a tela de quem está montando.
  */
 const PRAZO_DO_REFINO_MS = 10_000;
+
+/** O trabalho, ou `seEsgotar()` se ele não terminar em `prazoMs`. */
+async function comPrazo<T>(trabalho: Promise<T>, prazoMs: number, seEsgotar: () => T): Promise<T> {
+  let relogio: ReturnType<typeof setTimeout> | undefined;
+  const esgotou = new Promise<T>((resolver) => {
+    relogio = setTimeout(() => resolver(seEsgotar()), Math.max(0, prazoMs));
+  });
+  try {
+    return await Promise.race([trabalho, esgotou]);
+  } finally {
+    clearTimeout(relogio);
+  }
+}
 
 /**
  * A ordem do `/trip` passada pela busca local (refinar-ordem.ts), com o
@@ -220,15 +235,7 @@ export async function refinarViagem(
   osrm: ClienteOsrm,
   prazoMs = PRAZO_DO_REFINO_MS,
 ): Promise<ResultadoTrip> {
-  let relogio: ReturnType<typeof setTimeout> | undefined;
-  const esgotou = new Promise<ResultadoTrip>((resolver) => {
-    relogio = setTimeout(() => resolver(viagem), prazoMs);
-  });
-  try {
-    return await Promise.race([tentarRefinar(cd, pontos, viagem, osrm), esgotou]);
-  } finally {
-    clearTimeout(relogio);
-  }
+  return comPrazo(tentarRefinar(cd, pontos, viagem, osrm), prazoMs, () => viagem);
 }
 
 async function tentarRefinar(
@@ -243,9 +250,10 @@ async function tentarRefinar(
     if (ordem.every((indice, i) => indice === viagem.ordem[i])) return viagem;
     const tracado = await osrm.route([cd, ...ordem.map((indice) => pontos[indice]!), cd]);
     // A busca mede TEMPO na matriz do /table, que não é exatamente o caminho
-    // do /route (que, por exemplo, não dá meia-volta em cima da parada) — e o
-    // motorista sente também os km. A ordem nova só fica se, no traçado de
-    // verdade, não perde em nada para a do /trip e ganha em alguma coisa.
+    // do /route — e o motorista sente também os km. A ordem nova só fica se,
+    // no traçado de verdade, não perde em nada para a do /trip e ganha em
+    // alguma coisa. (As duas medidas deixam dar meia-volta na parada: ver o
+    // continue_straight em osrm.ts.)
     const naoPerde =
       tracado.duracaoMin <= viagem.duracaoMin && tracado.distanciaKm <= viagem.distanciaKm;
     const ganha =
@@ -260,6 +268,35 @@ async function tentarRefinar(
   } catch {
     return viagem;
   }
+}
+
+/**
+ * Paradas do mesmo ponto em sequência (mesmo-lugar.ts), sobre a ordem já
+ * otimizada da rota fechada. Quando só trocaram de lugar paradas de um mesmo
+ * ponto, traçado e estimativas são os mesmos; quando sumiu uma volta ao mesmo
+ * ponto, o /route refaz os números. Se ele falhar ou passar do prazo, a ordem
+ * agrupada fica do mesmo jeito, com os números da anterior: pedido da mesma
+ * casa separado no papel é erro que chega na porta, km estimado um pouco fora
+ * não é — e a publicação refaz o traçado da ordem gravada de qualquer forma.
+ */
+export async function juntarMesmoLugar(
+  cd: GeoPonto,
+  candidatas: Array<Pick<CandidataParada, 'coordenada' | 'clienteId'>>,
+  viagem: ResultadoTrip,
+  osrm: ClienteOsrm,
+  prazoMs = PRAZO_DO_REFINO_MS,
+): Promise<ResultadoTrip> {
+  const ponto = (indice: number) => candidatas[indice]!.coordenada;
+  const ordem = agruparMesmoLugar(viagem.ordem, ponto, (indice) => candidatas[indice]!.clienteId);
+  if (ordem.every((indice, i) => indice === viagem.ordem[i])) return viagem;
+  if (mesmoPercurso(ordem, viagem.ordem, ponto)) return { ...viagem, ordem };
+  const tracado = await comPrazo(
+    osrm.route([cd, ...ordem.map(ponto), cd]).catch(() => null),
+    prazoMs,
+    () => null,
+  );
+  if (!tracado) return { ...viagem, ordem };
+  return { ordem, polyline: tracado.polyline, distanciaKm: tracado.distanciaKm, duracaoMin: tracado.duracaoMin };
 }
 
 export async function previaDeRota(
@@ -310,7 +347,9 @@ export async function previaDeRota(
   } else if (retornaAoCd) {
     const pontos = candidatas.map((c) => c.coordenada);
     const viagem = await osrm.trip(cd.coordenada, pontos, true);
-    const resultado = await refinarViagem(cd.coordenada, pontos, viagem, osrm);
+    const limite = Date.now() + PRAZO_DO_REFINO_MS;
+    const refinada = await refinarViagem(cd.coordenada, pontos, viagem, osrm);
+    const resultado = await juntarMesmoLugar(cd.coordenada, candidatas, refinada, osrm, limite - Date.now());
     ordenadas = resultado.ordem.map((indice) => candidatas[indice]!);
     polyline = resultado.polyline;
     distanciaTotalKm = resultado.distanciaKm;
@@ -320,7 +359,11 @@ export async function previaDeRota(
     // fim fixo), então a ordem sai da matriz de durações — ver rota-aberta.ts.
     // O traçado vem depois, com a sequência já decidida.
     const duracoes = await osrm.table([cd.coordenada, ...candidatas.map((c) => c.coordenada)]);
-    ordenadas = ordemRotaAberta(duracoes).map((indice) => candidatas[indice]!);
+    ordenadas = agruparMesmoLugar(
+      ordemRotaAberta(duracoes).map((indice) => candidatas[indice]!),
+      (c) => c.coordenada,
+      (c) => c.clienteId,
+    );
     const resultado = await osrm.route([cd.coordenada, ...ordenadas.map((c) => c.coordenada)]);
     polyline = resultado.polyline;
     distanciaTotalKm = resultado.distanciaKm;

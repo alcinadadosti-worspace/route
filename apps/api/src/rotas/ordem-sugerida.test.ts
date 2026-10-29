@@ -182,3 +182,13 @@ test('OSRM dormindo devolve 503 com mensagem, não 500 cru', async () => {
     assert.match(r.erro, /acordando/);
   }
 });
+
+test('na sugestão, os pedidos da mesma casa também saem seguidos', async () => {
+  // Tudo no mesmo ponto (centro da cidade): a matriz não diz ordem nenhuma, e
+  // a cliente X saía partida pela Y.
+  const doX = (id: string) => ({ ...parada(id, 'em_rota', -10.27), clienteId: 'cliente-X' });
+  const repo = await repoComRota([doX('p1'), parada('p2', 'em_rota', -10.27), doX('p3')]);
+  const r = await sugerirOrdemDeParadas({ rotaId: ROTA_ID, origem: ORIGEM, uid: null }, repo, osrmFake());
+  assert.ok(r.ok);
+  if (r.ok) assert.deepEqual(r.ordem, ['p1', 'p3', 'p2']);
+});

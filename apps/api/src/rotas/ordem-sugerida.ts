@@ -1,6 +1,7 @@
 import { validarGeoPonto, type GeoPonto } from '@rota/shared';
 import { FORMATO_ROTA_ID } from './comum.js';
 import { ordemRotaAberta } from './rota-aberta.js';
+import { agruparMesmoLugar } from './mesmo-lugar.js';
 import type { Repositorio } from '../db/repositorio.js';
 import type { ClienteOsrm } from './osrm.js';
 
@@ -61,7 +62,13 @@ export async function sugerirOrdemDeParadas(
     // onde pediu o recálculo). O /trip do OSRM não resolve isso — responde
     // NotImplemented —, então a ordem sai da matriz de durações do /table.
     const duracoes = await osrm.table([origem, ...pendentes.map((p) => p.coordenada)]);
-    return { ok: true, ordem: ordemRotaAberta(duracoes).map((i) => pendentes[i]!.pedidoId) };
+    // Os pedidos da mesma casa seguidos também aqui (ver mesmo-lugar.ts).
+    const ordem = agruparMesmoLugar(
+      ordemRotaAberta(duracoes).map((i) => pendentes[i]!),
+      (p) => p.coordenada,
+      (p) => p.clienteId,
+    );
+    return { ok: true, ordem: ordem.map((p) => p.pedidoId) };
   } catch (erro) {
     return {
       ok: false,

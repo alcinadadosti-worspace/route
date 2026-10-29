@@ -134,7 +134,15 @@ export function criarClienteOsrm(
 
     async route(pontos) {
       const coordenadas = pontos.map((p) => `${p.lng},${p.lat}`).join(';');
-      const url = `${raiz}/route/v1/driving/${coordenadas}?geometries=polyline&overview=full`;
+      // continue_straight=false: pode dar meia-volta NA PARADA, como o /trip e
+      // o /table, que escolhem a ordem assumindo isso. O padrão do perfil de
+      // carro proíbe, e o traçado da mesma ordem saía mais longo que o
+      // calculado: rota de 29/10/2026 (43 paradas), 115,4 km / 142 min no
+      // /trip contra 119,8 km / 156 min no /route — a prévia mostrava um
+      // número e a rota publicada gravava outro, e a guarda do refino
+      // (previa.ts) comparava medidas diferentes. Na entrega é o que se faz:
+      // para na porta, entrega e volta se a próxima ficou para trás.
+      const url = `${raiz}/route/v1/driving/${coordenadas}?geometries=polyline&overview=full&continue_straight=false`;
 
       const resposta = await fetchOsrm(fetchFn, url);
       if (!resposta.ok) throw new Error(`OSRM respondeu HTTP ${resposta.status}`);

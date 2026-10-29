@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { criarClienteOsrm } from './osrm.js';
-import { coletarParadas, previaDeRota, refinarViagem } from './previa.js';
+import { coletarParadas, juntarMesmoLugar, previaDeRota, refinarViagem } from './previa.js';
 import { publicarRota } from './publicar.js';
 import { RepositorioMemoria } from '../db/repositorio.js';
 import type { Cliente, Pedido } from '@rota/shared';
@@ -203,6 +203,21 @@ test('route() converte pernas, distância e duração', async () => {
   ]);
 });
 
+test('route() mede como o /trip: deixa dar meia-volta na parada', async () => {
+  // Sem isto o traçado da MESMA ordem saía mais longo que o do /trip, e a
+  // prévia mostrava um km que a rota publicada não gravava.
+  let pedida = '';
+  const osrm = criarClienteOsrm('http://osrm.local', (async (url: string) => {
+    pedida = String(url);
+    return { ok: true, status: 200, json: async () => RESPOSTA_ROUTE };
+  }) as unknown as typeof fetch)!;
+  await osrm.route([
+    { lat: -10.28, lng: -36.56 },
+    { lat: -9.75, lng: -36.65 },
+  ]);
+  assert.match(pedida, /[?&]continue_straight=false(&|$)/);
+});
+
 test('prévia com ordem manual respeita a sequência dada (RF-12)', async () => {
   const repo = new RepositorioMemoria();
   await repo.salvarCliente('c1', clienteCom({ lat: -9.42, lng: -36.64 }, 'CLIENTE UM'));
@@ -338,6 +353,97 @@ test('prévia de rota fechada: a ordem nova só fica se o traçado dela não per
   const r = await previaDeRota({ pedidoIds: ['p1', 'p2', 'p3'], cdId: 'penedo' }, repo, osrm);
   assert.ok(r.ok);
   assert.equal(r.previa.polyline, 'do-route');
+});
+
+/**
+ * OSRM falso que devolve a ordem de entrada no /trip, recusa o /table (para o
+ * refino não mexer) e responde o /route — e conta as chamadas.
+ */
+function osrmNaOrdemDada(n: number) {
+  const chamadas: string[] = [];
+  const fetchFalso = (async (url: string) => {
+    const tipo = /\/(trip|table|route)\//.exec(String(url))?.[1] ?? '?';
+    chamadas.push(tipo);
+    const corpo =
+      tipo === 'trip'
+        ? {
+            code: 'Ok',
+            trips: [{ geometry: 'do-trip', distance: 50000, duration: 3000 }],
+            waypoints: Array.from({ length: n + 1 }, (_, i) => ({ waypoint_index: i })),
+          }
+        : tipo === 'table'
+          ? { code: 'TooBig' }
+          : { code: 'Ok', routes: [{ geometry: 'do-route', distance: 40000, duration: 2400, legs: [] }] };
+    return { ok: true, status: 200, json: async () => corpo };
+  }) as unknown as typeof fetch;
+  return { osrm: criarClienteOsrm('http://osrm.local', fetchFalso)!, chamadas };
+}
+
+test('prévia junta os pedidos da mesma cliente no mesmo ponto, mesmo com o /trip separando', async () => {
+  // Três paradas no MESMO ponto (centro da cidade): a cliente X tem dois
+  // pedidos, e o /trip pôs a Y entre eles.
+  const centro = { lat: -9.5376, lng: -36.6306 };
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('cx', clienteCom(centro, 'CLIENTE X'));
+  await repo.salvarCliente('cy', clienteCom(centro, 'CLIENTE Y'));
+  await repo.salvarPedido('p1', pedidoDe('cx'));
+  await repo.salvarPedido('p2', pedidoDe('cy'));
+  await repo.salvarPedido('p3', pedidoDe('cx'));
+
+  const { osrm, chamadas } = osrmNaOrdemDada(3);
+  const r = await previaDeRota({ pedidoIds: ['p1', 'p2', 'p3'], cdId: 'penedo' }, repo, osrm);
+  assert.ok(r.ok);
+  assert.deepEqual(r.previa.paradas.map((p) => p.pedidoId), ['p1', 'p3', 'p2']);
+  // Só trocaram de lugar paradas do mesmo ponto: o caminho é o mesmo, sem /route.
+  assert.equal(r.previa.polyline, 'do-trip');
+  assert.deepEqual(chamadas, ['trip', 'table']);
+});
+
+test('prévia não volta ao mesmo ponto: o pedido da mesma casa sobe e o traçado é refeito', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('cx', clienteCom({ lat: -9.53, lng: -36.63 }, 'CLIENTE X'));
+  await repo.salvarCliente('cy', clienteCom({ lat: -9.42, lng: -36.64 }, 'CLIENTE Y'));
+  await repo.salvarPedido('p1', pedidoDe('cx'));
+  await repo.salvarPedido('p2', pedidoDe('cy'));
+  await repo.salvarPedido('p3', pedidoDe('cx'));
+
+  const { osrm, chamadas } = osrmNaOrdemDada(3);
+  const r = await previaDeRota({ pedidoIds: ['p1', 'p2', 'p3'], cdId: 'penedo' }, repo, osrm);
+  assert.ok(r.ok);
+  assert.deepEqual(r.previa.paradas.map((p) => p.pedidoId), ['p1', 'p3', 'p2']);
+  assert.equal(r.previa.polyline, 'do-route');
+  assert.equal(r.previa.distanciaTotalKm, 40);
+  assert.deepEqual(chamadas, ['trip', 'table', 'route']);
+});
+
+test('ordem manual com a mesma cliente separada é respeitada (o operador sabe o porquê)', async () => {
+  const repo = new RepositorioMemoria();
+  await repo.salvarCliente('cx', clienteCom({ lat: -9.53, lng: -36.63 }, 'CLIENTE X'));
+  await repo.salvarCliente('cy', clienteCom({ lat: -9.42, lng: -36.64 }, 'CLIENTE Y'));
+  await repo.salvarPedido('p1', pedidoDe('cx'));
+  await repo.salvarPedido('p2', pedidoDe('cy'));
+  await repo.salvarPedido('p3', pedidoDe('cx'));
+
+  const { osrm } = osrmNaOrdemDada(3);
+  const r = await previaDeRota({ pedidoIds: ['p1', 'p2', 'p3'], cdId: 'penedo', ordemManual: true }, repo, osrm);
+  assert.ok(r.ok);
+  assert.deepEqual(r.previa.paradas.map((p) => p.pedidoId), ['p1', 'p2', 'p3']);
+});
+
+test('juntar o mesmo lugar também tem prazo: sem resposta do /route, fica a ordem agrupada', async () => {
+  // X, Y, X: juntar a X muda o percurso e pede o /route — que não responde.
+  const candidatas = [
+    { clienteId: 'X', coordenada: { lat: 1, lng: 1 } },
+    { clienteId: 'Y', coordenada: { lat: 2, lng: 2 } },
+    { clienteId: 'X', coordenada: { lat: 1, lng: 1 } },
+  ];
+  const viagem = { ordem: [0, 1, 2], polyline: 'do-trip', distanciaKm: 10, duracaoMin: 10 };
+  const parado = { route: () => new Promise(() => {}) } as unknown as Parameters<typeof juntarMesmoLugar>[3];
+  const inicio = Date.now();
+  const r = await juntarMesmoLugar({ lat: 0, lng: 0 }, candidatas, viagem, parado, 30);
+  assert.deepEqual(r.ordem, [0, 2, 1]);
+  assert.equal(r.polyline, 'do-trip');
+  assert.ok(Date.now() - inicio < 2000);
 });
 
 test('refinar a viagem tem prazo: OSRM parado depois do /trip não segura a prévia', async () => {
